@@ -1,5 +1,5 @@
 """senses/ears/main.py — wake word -> VAD -> STT -> text. (Phase 1: hotkey
-instead of wake word; VAD lives inside whisper-cli, see transcribe.py.)
+instead of wake word; VAD lives inside whisper-server, see transcribe.py.)
 
 Runs as a long-lived server: listens on a Unix socket, accepts whoever
 connects (the Phase 1 echo bridge today, core/ from Phase 3 on), and emits
@@ -15,10 +15,10 @@ from pathlib import Path
 from typing import Any
 
 from senses import ipc
-from senses.ears import config
+from senses.ears import config, whisper_server
 from senses.ears.audio_capture import AudioSource, MicAudioSource
 from senses.ears.hotkey import Hotkey, PynputHotkey
-from senses.ears.transcribe import Transcriber, WhisperCliTranscriber
+from senses.ears.transcribe import Transcriber, WhisperServerTranscriber
 
 Emit = Callable[[dict[str, Any]], None]
 
@@ -76,24 +76,32 @@ def run_forever(
 
 
 def main() -> None:
-    hotkey = PynputHotkey()
-    audio_source = MicAudioSource()
-    transcriber = WhisperCliTranscriber()
+    print("ears: starting whisper-server (model load takes a few seconds)...")
+    server_process = whisper_server.start()
+    try:
+        whisper_server.wait_until_ready()
+        print(f"ears: whisper-server ready at {whisper_server.BASE_URL}")
 
-    server = ipc.listen(config.SOCKET_PATH)
-    print(f"ears: listening on {config.SOCKET_PATH}, hold Tab to talk")
+        hotkey = PynputHotkey()
+        audio_source = MicAudioSource()
+        transcriber = WhisperServerTranscriber()
 
-    while True:
-        conn = ipc.accept_one(server)
-        print("ears: bridge/core connected")
-        try:
-            run_forever(
-                hotkey, audio_source, transcriber,
-                lambda msg, conn=conn: ipc.send_line(conn, msg),
-            )
-        except (BrokenPipeError, ConnectionResetError):
-            print("ears: bridge/core disconnected, waiting for reconnect")
-            continue
+        socket_server = ipc.listen(config.SOCKET_PATH)
+        print(f"ears: listening on {config.SOCKET_PATH}, hold Tab to talk")
+
+        while True:
+            conn = ipc.accept_one(socket_server)
+            print("ears: bridge/core connected")
+            try:
+                run_forever(
+                    hotkey, audio_source, transcriber,
+                    lambda msg, conn=conn: ipc.send_line(conn, msg),
+                )
+            except (BrokenPipeError, ConnectionResetError):
+                print("ears: bridge/core disconnected, waiting for reconnect")
+                continue
+    finally:
+        whisper_server.stop(server_process)
 
 
 if __name__ == "__main__":

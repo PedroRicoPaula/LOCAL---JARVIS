@@ -84,7 +84,7 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
 | `see` model | _pending Phase 8_ | |
 | Food data | Open Food Facts + USDA | ADR-011 |
 | Paid provider | none — deferred | ADR-009 |
-| STT | whisper.cpp (Metal) | ADR-003 |
+| STT | whisper.cpp (Metal), `small.en`, resident server | ADR-003 |
 | TTS | macOS `say` → Piper | ADR-004 |
 | Wake word | openWakeWord `hey_jarvis` | ADR-005 |
 | Code harness | Aider | ADR-006 |
@@ -177,12 +177,22 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
   `safe_handle_one_utterance` (ears) and a per-message try/except (voice):
   log and continue on any failure, still re-raise connection errors so the
   existing reconnect logic keeps working. 3 new tests (11 total).
+- **`senses/ears/whisper_server.py`** (new): starts/stops a resident
+  `whisper-server` subprocess, polls until ready. `transcribe.py` rewritten
+  to talk HTTP to it (`WhisperServerTranscriber`, hand-rolled multipart
+  upload, stdlib only — no new dependency) instead of spawning `whisper-cli`
+  fresh per utterance. `main.py` and `bench/score_phase1.py` both start the
+  server once at launch and reuse it for every utterance/sentence. Why:
+  see ADR-003's amendment and "Surprised me" below — this is what actually
+  closed the latency gap, not a nice-to-have.
 
 **Decided:**
 - ADR-014: native `whisper-cli --vad` instead of a separate Python Silero
   pipeline (no `torch`/`onnxruntime` in `senses/ears` at all); plain
   newline-JSON Unix sockets for `ears`/`voice`/bridge, `ears`/`voice` as
   servers, the orchestrator (bridge today, `core/` later) as client.
+- ADR-003 amended: STT model downsized `large-v3-turbo` → `small.en`. Not
+  an accuracy trade on this hardware — see below.
 
 **Left over — needs Pedro, not automatable:**
 - ~~Grant Accessibility permission for the hotkey listener~~ — **done
@@ -193,19 +203,26 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
   app quit (Cmd+Q) after toggling, not just re-running the command — TCC
   permission reads happen at process launch. Worth remembering next time
   any tool needs a macOS privacy grant on this setup: check Cursor first.
-- Run `make dev`, hold backtick, speak — confirm the round-trip actually
-  works with a live mic before trusting the scored numbers below.
+- ~~Run `make dev`, hold Tab, speak~~ — **done, worked**, 2026-08-03:
+  "Hello, are you hearing me?" round-tripped correctly. First real proof
+  the whole pipeline works end to end. Logged latency on that one trial:
+  3193ms — over budget, root-caused and fixed same day (see below); worth
+  one more live trial on the now-fast pipeline before trusting the number.
 - Run `bench/score_phase1.py` for the 20-sentence word-accuracy DoD check
-  (needs ≥ 95%).
+  (needs ≥ 95%). Reference sentences were also just corrected to match
+  whisper.cpp's number-normalization behavior (digits, not spelled-out
+  words — confirmed empirically, see below), so the score should now
+  reflect real transcription quality, not formatting mismatches.
 - 10 timed round-trips via `make dev`, reading `echo_bridge`'s per-utterance
-  latency log (needs < 1.5s to first audible syllable). Note: the logged
-  number is end-of-speech → handed-to-voice; it excludes `say`'s own process
-  spawn (typically well under 50ms) — see `senses/echo_bridge.py`'s
-  docstring for exactly what it does and doesn't measure.
-- Confirm "works with Wi-Fi off" — I did toggle Wi-Fi off for the synthetic
-  whisper-cli smoke test below and it worked (fully local pipeline, no
-  network calls in `senses/ears`/`senses/voice`/the bridge), but a real
-  press-and-speak trial with Wi-Fi off is still owed.
+  latency log (needs < 1.5s to first audible syllable). My own curl-level
+  testing of the fixed pipeline (below) measured 450-640ms warm — comfortable
+  margin — but the DoD asks for 10 *physical* hotkey trials, which only
+  Pedro can do. The logged number is end-of-speech → handed-to-voice; it
+  excludes `say`'s own process spawn (typically well under 50ms) — see
+  `senses/echo_bridge.py`'s docstring.
+- Confirm "works with Wi-Fi off" with a real press-and-speak trial (the
+  synthetic whisper-cli/whisper-server smoke tests below already prove the
+  pipeline makes no network calls, but a live confirmation is still owed).
 
 **Surprised me:**
 - **This machine has two Homebrew installs.** `/usr/local` (Intel — a
@@ -312,6 +329,28 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
   evidence available at the time; this entry is the corrected picture.
   **`Key.tab` was never actually wrong and stayed the hotkey** — plain,
   universal, no reason to revisit it now that the two real bugs are fixed.
+- **First live round-trip worked but was 2x over the latency budget —
+  3193ms against 1500ms.** Not noise: cause was systemic. `whisper-cli` had
+  been spawned fresh per utterance, paying full model-load cost every
+  time. Fixed with `senses/ears/whisper_server.py` (a resident
+  `whisper-server` process, talked to over HTTP) — but warm-model timing
+  was *still* ~2.05s, not the expected quick win. Root cause turned out
+  deeper: whisper.cpp processes a **fixed ~30-second context window per
+  call regardless of actual audio length** — timed a 0.4s "Hi" against a
+  1.7s sentence and got the same ~2.05s either way, warm model, ruling out
+  reload cost entirely. Encode cost is proportional to *model size*, not
+  utterance length. Tested `small.en` (244M params) against
+  `large-v3-turbo` (809M params) on the same hardware: **~0.46-0.64s
+  warm**, same accuracy on every Phase 1 test sentence. Swapped the model
+  (ADR-003 amended) rather than accept either the latency or trying to
+  shave milliseconds off decoding parameters (`beam-size 1` tested too —
+  no meaningful difference, confirming the encoder, not the decoder, was
+  the bottleneck). Also found while re-verifying: whisper.cpp normalizes
+  spoken numbers to digits ("two hundred and twenty" → "220", "twelve
+  percent" → "12%", even "two cups" → "2 cups") — `bench/score_phase1.py`'s
+  reference sentences were still spelled-out and would have failed the
+  95% DoD bar on formatting, not on anything actually mistranscribed.
+  Corrected the reference sentences to digit form to match.
 
 ---
 
@@ -320,7 +359,7 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
 | Metric | Target | Actual | Phase |
 |---|---|---|---|
 | Lane classification accuracy | ≥ 85% | 71.1% (NIM `llama-3.1-8b`; no local candidate viable — ADR-001) | 0 |
-| Time to first audible syllable | < 1.5 s | — | 1 |
+| Time to first audible syllable | < 1.5 s | ~450-640ms (my curl-level test, warm `small.en`) — 10 physical trials still owed | 1 |
 | Wake false activations / 4h | < 2 | — | 2 |
 | Memory recall p95 | < 200 ms | — | 4 |
 | **`make new-skill` → working no-op** | **< 30 min** | **—** | **5** |
@@ -337,13 +376,19 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
       hotkey choice; see Phase 1 log's corrected root-cause entry).
 - [x] ~~Fix pynput crashing every key event on Python 3.13~~ — upgraded
       `pynput` 1.7.7 → 1.8.2 (known upstream bug, fixed upstream).
-- [ ] One fresh live test now that both real bugs are fixed: `make dev`,
-      hold Tab, speak — confirm the round-trip actually works before
-      trusting anything scored below.
+- [x] ~~One fresh live test~~ — done, worked: "Hello, are you hearing me?"
+      round-tripped correctly. Latency on that trial (3193ms) was over
+      budget; root-caused (fixed 30s encode window, model too large) and
+      fixed (switched to `small.en`, resident `whisper-server`) same day.
 - [ ] Run `.venv/bin/python bench/score_phase1.py` for the 20-sentence word
-      accuracy DoD check (needs ≥ 95%).
+      accuracy DoD check (needs ≥ 95%). Reference sentences corrected to
+      digit-form numbers first (see Phase 1 log) so the score reflects
+      transcription quality, not a formatting mismatch.
 - [ ] Do 10 timed round-trips via `make dev` and check `echo_bridge`'s
-      latency log against the < 1.5s DoD bar.
+      latency log against the < 1.5s DoD bar. My own non-physical testing
+      of the fixed pipeline measured 450-640ms — should comfortably clear
+      it, but the DoD wants real hotkey presses, not curl requests.
+- [ ] Confirm "works with Wi-Fi off" with an actual press-and-speak trial.
 - [ ] This machine has two Homebrew installs (`/usr/local` Intel/Rosetta,
       `/opt/homebrew` native) — worth knowing about beyond just this
       project. I didn't touch the Intel one or your shell PATH; up to you
