@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 import uuid
 from pathlib import Path
 from typing import Protocol
@@ -18,6 +19,14 @@ from urllib.request import Request, urlopen
 from senses.ears.whisper_server import BASE_URL
 
 INFERENCE_PATH = "/inference"
+
+# whisper.cpp's own placeholder for "no discernible speech" — confirmed
+# live (Pedro's testing produced a literal "[BLANK_AUDIO]" transcription
+# for a wake-word-triggered capture with no real command in it). Without
+# this filter that string gets treated as a real utterance and spoken back
+# — never guessed at applies to whisper's own non-speech markers too, not
+# just to genuinely empty output.
+_NON_SPEECH_MARKER = re.compile(r"^[\[(].*[\])]$")
 
 
 class Transcriber(Protocol):
@@ -55,4 +64,8 @@ class WhisperServerTranscriber:
                 result = json.load(response)
         except OSError as exc:
             raise RuntimeError(f"whisper-server request failed: {exc}") from exc
-        return result.get("text", "").strip()
+
+        text = result.get("text", "").strip()
+        if _NON_SPEECH_MARKER.match(text):
+            return ""
+        return text

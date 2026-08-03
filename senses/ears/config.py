@@ -72,6 +72,13 @@ WAKE_WORD_MODEL = os.environ.get("JARVIS_WAKE_WORD_MODEL", "hey_jarvis")
 # Apple Silicon wheel — see PROGRESS.md's Phase 2 log).
 WAKE_WORD_THRESHOLD = float(os.environ.get("JARVIS_WAKE_WORD_THRESHOLD", "0.5"))
 
+# Safety cap for wake_word.watch()'s falling-edge trigger (see that
+# module): if the score somehow never drops back below threshold, fire
+# anyway after this many consecutive above-threshold frames rather than
+# never triggering at all. One real utterance sustains ~8 frames >= 0.9
+# (confirmed empirically) — 20 frames (1.6s) is a generous multiple of that.
+WAKE_WORD_MAX_FRAMES_ABOVE = 20
+
 # Auto-stop for wake-word-triggered recording (push-to-talk's end signal is
 # the key release; there's no key here). Energy-based, not a second VAD
 # pipeline — see ADR-014's reasoning, same logic applies. Frame = 80ms:

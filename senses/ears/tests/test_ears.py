@@ -125,10 +125,14 @@ def test_connection_holder_clears_on_send_failure() -> None:
     holder.emit({"type": "utterance", "text": "again"})
 
 
-def test_wake_word_watch_fires_once_per_crossing_not_per_sustained_frame() -> None:
-    """One utterance produces several consecutive high-score frames
-    (confirmed empirically: 8 frames >= 0.9 for one "hey jarvis") — must
-    fire once, not once per frame."""
+def test_wake_word_watch_fires_on_falling_edge_with_peak_score() -> None:
+    """Fires once the wake phrase has *finished* (score drops back below
+    threshold), not the instant it starts — arming the recorder on the
+    rising edge was capturing the tail of "jarvis" itself as the start of
+    the recorded command (confirmed via Pedro's live testing: "Hey Jarvis,
+    what's the weather" came back as "HRVs are you listening to me?").
+    Reports the peak score seen during the crossing, not the trailing
+    below-threshold score that triggered the fire."""
     scores = [0.0, 0.0, 0.6, 0.9, 0.95, 0.9, 0.0, 0.0, 0.7, 0.0]
     detector = FakeWakeWordDetector(scores=scores)
     fired: list[float] = []
@@ -137,4 +141,19 @@ def test_wake_word_watch_fires_once_per_crossing_not_per_sustained_frame() -> No
     for _ in scores:
         on_frame(np.zeros(1280, dtype="int16"))
 
-    assert fired == [0.6, 0.7]  # two separate crossings, not five high-score frames
+    assert fired == [0.95, 0.7]  # peak of each crossing, reported once it ends
+
+
+def test_wake_word_watch_fires_via_safety_cap_if_score_never_falls() -> None:
+    """Shouldn't happen in practice (one utterance sustains ~8 frames) but
+    a detector that can permanently stop triggering is worse than one that
+    fires a little late."""
+    scores = [0.9] * 25  # never drops below threshold on its own
+    detector = FakeWakeWordDetector(scores=scores)
+    fired: list[float] = []
+    on_frame = watch(detector, on_wake=fired.append, threshold=0.5, max_frames_above=20)
+
+    for _ in scores:
+        on_frame(np.zeros(1280, dtype="int16"))
+
+    assert fired == [0.9]  # fired once, at frame 20, not zero times

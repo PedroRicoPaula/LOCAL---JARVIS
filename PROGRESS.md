@@ -394,10 +394,11 @@ voz"). Not a closed question, a deferred one.
   on-demand recording plus energy-based (RMS) silence auto-stop for
   wake-word-triggered captures.
 - `senses/ears/wake_word.py` (new): `OpenWakeWordDetector` (ONNX,
-  lazy-imported so tests never pay for it), `watch()` — edge-triggered
-  detection (fires once per threshold crossing, not once per sustained
-  high-score frame; confirmed empirically that one utterance produces
-  ~8 consecutive frames ≥ 0.9).
+  lazy-imported so tests never pay for it), `watch()` — fires on the
+  **falling** edge (once the wake phrase finishes), reporting the peak
+  score seen, with a safety-cap fallback in case the score never drops.
+  Started as rising-edge (first crossing); Pedro's live testing found that
+  arming mid-word garbled the command transcription — see "Surprised me."
 - `senses/ears/ack.py` (new): `SystemAck` — `afplay` + `osascript`
   notification, reflex-lane speed, no new dependency.
 - `senses/ears/main.py` rewritten: two trigger sources (Tab hotkey,
@@ -411,8 +412,12 @@ voz"). Not a closed question, a deferred one.
 - `bench/score_phase1.py` updated for the new `ContinuousAudioSource`
   interface (`arm`/`disarm` instead of the old `MicAudioSource`'s
   `start`/`stop`) — still Phase 1's own tool, just kept in sync.
-- 4 new tests (15 total): connection-holder send/drop/failure behavior,
-  wake-word edge-triggering. `make check` green throughout.
+- `senses/ears/transcribe.py`: filters whisper.cpp's own non-speech
+  placeholder markers (`[BLANK_AUDIO]`, `[SILENCE]`, etc.) as empty —
+  found live (see "Surprised me"), was about to get spoken back verbatim.
+- 7 new tests (18 total): connection-holder send/drop/failure behavior,
+  wake-word falling-edge + safety-cap triggering, non-speech marker
+  filtering. `make check` green throughout.
 
 **Decided:**
 - ADR-015: ONNX over tflite for openWakeWord; real-time audio callback
@@ -482,6 +487,32 @@ voz"). Not a closed question, a deferred one.
   capture cycle finishes, discarding any stray re-trigger that happened
   while busy, rather than immediately chaining into a second spurious
   capture the moment the first one ends.
+- **Pedro's first live test round (varying distance/tone across ~9
+  activations) found two real bugs synthetic testing hadn't caught:**
+  1. Several transcriptions were garbled fragments of "jarvis" itself
+     merged with the command — `'HRVs.'`, `'HRVs are you listening to
+     me?'`, `'Charfis'`. Root cause: recording armed on the rising edge,
+     mid-word, so the command capture started with the tail end of "jarvis"
+     still being spoken. My synthetic tests never caught this because they
+     used TTS phrases with an explicit pause baked in between the wake
+     word and the command — real (and rushed) speech doesn't reliably have
+     that gap. Fixed by moving `wake_word.watch()` to fire on the falling
+     edge instead — confirmed with the exact phrase that had produced
+     "HRVs are you listening to me?" before: same wording, no pause,
+     came back clean as `'weather like today.'` after the fix (still
+     clips the first word or two without a real pause — expected, and
+     real usage naturally pauses slightly after a wake phrase in a way a
+     no-gap TTS test doesn't).
+  2. One capture transcribed to the literal string `'[BLANK_AUDIO]'` —
+     whisper.cpp's own placeholder for "no discernible speech," which my
+     code was treating as real text and would have spoken back verbatim.
+     Filtered in `transcribe.py`.
+  3. `"ears: wake word heard while already capturing, ignoring"` printed
+     often during his rapid-fire testing — expected, not a bug: he was
+     saying the phrase again before the previous ~1-2s cycle finished
+     processing. Worth remembering for the DoD's 30-activation test:
+     leave a couple of seconds between attempts, or the lock will
+     correctly (but confusingly) eat some of them.
 
 ---
 

@@ -17,7 +17,11 @@ from typing import Protocol
 
 import numpy as np
 
-from senses.ears.config import WAKE_WORD_MODEL, WAKE_WORD_THRESHOLD
+from senses.ears.config import (
+    WAKE_WORD_MAX_FRAMES_ABOVE,
+    WAKE_WORD_MODEL,
+    WAKE_WORD_THRESHOLD,
+)
 
 OnWake = Callable[[float], None]
 
@@ -47,22 +51,45 @@ def watch(
     detector: WakeWordDetector,
     on_wake: OnWake,
     threshold: float = WAKE_WORD_THRESHOLD,
+    max_frames_above: int = WAKE_WORD_MAX_FRAMES_ABOVE,
 ) -> Callable[[np.ndarray], None]:
     """Returns a frame listener to register with a ContinuousAudioSource.
-    Fires `on_wake(score)` once per crossing above `threshold`, not once
-    per frame — a single utterance produces several consecutive high-score
-    frames (confirmed empirically: 8 frames >= 0.9 for one "hey jarvis"),
-    and re-firing on every one of them would mean re-triggering mid-wake."""
+
+    Fires `on_wake(peak_score)` on the FALLING edge — once the wake phrase
+    has finished being said, not the instant it starts. Firing on the
+    rising edge (the first version of this function) was arming the
+    recorder mid-word, capturing the tail of "jarvis" itself as the start
+    of the recorded command — confirmed via Pedro's live testing, where
+    "Hey Jarvis, what's the weather" came back transcribed as things like
+    "HRVs are you listening to me?" and "Charfis". Waiting for the score to
+    drop back down means recording starts cleanly after the wake phrase
+    ends. `max_frames_above` is a safety net in case the score never drops
+    (shouldn't happen — one utterance sustains ~8 frames >= 0.9 empirically
+    — but a wake-word detector that can permanently stop triggering is a
+    worse failure mode than firing a little late)."""
     above_threshold = False
+    peak_score = 0.0
+    frames_above = 0
 
     def on_frame(frame: np.ndarray) -> None:
-        nonlocal above_threshold
+        nonlocal above_threshold, peak_score, frames_above
         score = detector.score(frame)
-        if score >= threshold:
-            if not above_threshold:
-                on_wake(score)
-            above_threshold = True
-        else:
+        above = score >= threshold
+
+        if above:
+            peak_score = max(peak_score, score)
+            frames_above += 1
+
+        fire = (above_threshold and not above) or (above and frames_above >= max_frames_above)
+        if fire:
+            on_wake(peak_score)
+            peak_score = 0.0
+            frames_above = 0
             above_threshold = False
+            return
+
+        above_threshold = above
+        if not above:
+            frames_above = 0
 
     return on_frame

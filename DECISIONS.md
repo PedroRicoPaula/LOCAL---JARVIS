@@ -434,6 +434,28 @@ only which library to call.
   `PROGRESS.md`'s Phase 2 log for the full diagnostic trail — this cost
   real debugging time and is worth remembering as a pattern (isolation
   testing can hide contention bugs) not just a one-off fix.
+- **Wake-word detection fires on the falling edge (phrase finished), not
+  the rising edge (phrase started) — amended after Pedro's first live test
+  round.** The original design armed the command recorder on the very
+  first frame crossing threshold. Live testing (not synthetic — see
+  `PROGRESS.md`'s Phase 2 log) showed this reliably captured the tail end
+  of "jarvis" itself as the start of the recorded command, producing
+  transcriptions like `"HRVs are you listening to me?"` instead of the
+  actual command. Synthetic TTS tests never caught this because they used
+  phrases with an artificial pause baked in between wake word and command.
+  Fixed by having `wake_word.watch()` track the peak score through the
+  above-threshold region and fire once it drops back down (with a
+  frame-count safety cap in case it never does) — recording now starts
+  after the wake phrase has acoustically finished, at the cost of the ack
+  firing slightly later (still sub-second).
+- **`whisper.cpp`'s non-speech placeholder output must be filtered, not
+  trusted as text.** Also found live: a wake-word capture with no real
+  speech in it transcribed to the literal string `"[BLANK_AUDIO]"`, which
+  would have been spoken back to the owner verbatim. `SPEC.md` § 0.5's "no
+  model ever produces a number that gets stored as fact" is about
+  quantities specifically, but the same instinct applies here — a model's
+  internal bookkeeping tokens are not utterances and must never be treated
+  as one just because they arrived as a non-empty string.
 - **Energy-based (RMS) silence detection for wake-word-triggered capture,
   not a second VAD pipeline.** Push-to-talk's end-of-speech signal is the
   key release; wake-word mode has none. A simple consecutive-low-RMS-frames
