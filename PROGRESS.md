@@ -7,13 +7,13 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 1 — Voice loop, push-to-talk
-**Status:** in progress — code complete and `make check` green, but the DoD's
-two measured checks (20-sentence word accuracy, 10-trial latency) need
-Pedro's actual voice, and the hotkey needs a one-time macOS permission grant
-neither of which I can do myself. See "Open questions for the owner" below.
-**Branch:** `phase/01-voice-loop`
+**Phase:** 2 — Wake word
+**Status:** not started
+**Branch:** —
 **Last updated:** 2026-08-03
+
+(Phase 1 complete — see Phase log below for the full record and what was
+owner-waived rather than formally measured.)
 
 ---
 
@@ -141,7 +141,33 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
   instruction-following-under-constrained-decoding are real and not
   smoothly predictable from parameter count alone.
 
-### Phase 1 — in progress, 2026-08-03
+### Phase 1 — complete, 2026-08-03
+
+**Closed by owner decision, not full literal DoD.** Pedro's call, made with
+the tradeoff stated plainly first: "o que importa é que funciona... o
+importante é o simples funcionar e irmos crescendo" (what matters is that
+it works, that the simple thing works and we keep growing). Recorded
+precisely so it isn't mistaken for silent scope-cutting later:
+
+- **Latency (< 1.5s, 10 trials):** 3/10 done with real hotkey presses —
+  657ms, 686ms, 1530ms (third was a deliberate ~45-word stress utterance,
+  not normal command-length speech). Owner accepted 3 as sufficient rather
+  than requiring the remaining 7.
+- **Word accuracy (≥ 95%, 20 sentences):** `bench/score_phase1.py` was
+  never run with Pedro's real voice. Owner accepted my synthetic
+  self-test (macOS `say -v Samantha`, several sentences including numbers
+  and technical terms, all transcribed correctly) as sufficient evidence
+  instead.
+- **Wi-Fi off:** confirmed — one of the three live trials was done with
+  Wi-Fi disabled.
+- **`make check` green:** met in full, not waived — see below.
+
+If voice/accent-specific accuracy problems show up in real use, that's the
+signal to circle back and actually run `score_phase1.py` — Pedro named
+this explicitly ("se for preciso mais tarde fazemos alteração ao tipo de
+voz"). Not a closed question, a deferred one.
+
+
 
 **Built:**
 - `.venv` on Homebrew Python 3.13 (not system 3.9.6 — see Phase 0's note).
@@ -369,41 +395,15 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
 
 ## Open questions for the owner
 
-- [x] ~~Grant Accessibility permission~~ — done (on **Cursor**). Microphone
-      also confirmed granted.
-- [x] ~~Grant Input Monitoring permission~~ — done (on **Cursor**, separate
-      category from Accessibility — this was the actual blocker, not the
-      hotkey choice; see Phase 1 log's corrected root-cause entry).
-- [x] ~~Fix pynput crashing every key event on Python 3.13~~ — upgraded
-      `pynput` 1.7.7 → 1.8.2 (known upstream bug, fixed upstream).
-- [x] ~~One fresh live test~~ — done, worked: "Hello, are you hearing me?"
-      round-tripped correctly. Latency on that trial (3193ms) was over
-      budget; root-caused (fixed 30s encode window, model too large) and
-      fixed (switched to `small.en`, resident `whisper-server`) same day.
-- [ ] Run `.venv/bin/python bench/score_phase1.py` for the 20-sentence word
-      accuracy DoD check (needs ≥ 95%). Reference sentences corrected to
-      digit-form numbers first (see Phase 1 log) so the score reflects
-      transcription quality, not a formatting mismatch.
-- [ ] 3/10 timed round-trips done (2026-08-03, real hotkey presses):
-      **657ms**, **686ms**, **1530ms**. The third was a deliberately long
-      ~45-word stress-test utterance ("I'm now sending the third message to
-      see if you are listening perfectly...") and landed 30ms over the
-      1.5s bar — consistent with encode being fixed-cost but decode scaling
-      with output length (more words → more autoregressive decode steps).
-      Normal command-length speech (the other two trials) clears the bar
-      with comfortable margin. 7 more trials still owed to actually close
-      the DoD's "10 trials" — ideally normal command-length phrasing,
-      matching how push-to-talk is actually used, unless Pedro wants the
-      long-utterance case in scope too (open question below).
-- [ ] Confirm "works with Wi-Fi off" — unclear if any of the 3 trials above
-      had Wi-Fi actually off (one utterance's *content* mentioned "without
-      internet connection," which may or may not mean Wi-Fi was off at the
-      OS level) or just a live hotkey+mic trial with the toggle deliberately
-      down. Asked Pedro to confirm.
 - [ ] This machine has two Homebrew installs (`/usr/local` Intel/Rosetta,
       `/opt/homebrew` native) — worth knowing about beyond just this
       project. I didn't touch the Intel one or your shell PATH; up to you
       whether that's worth cleaning up globally.
+- [ ] Phase 1's word-accuracy DoD was owner-waived, not measured with real
+      speech (see Phase 1 log). If STT accuracy ever feels off in real use
+      — wrong words, especially on names/accented speech/numbers — that's
+      the signal to actually run `.venv/bin/python bench/score_phase1.py`
+      rather than assume it's fine. Deferred, not closed.
 
 ---
 
