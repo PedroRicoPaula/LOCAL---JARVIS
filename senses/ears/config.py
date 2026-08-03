@@ -5,14 +5,20 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pynput.keyboard import Key
+from pynput.keyboard import KeyCode
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Hold to talk, release to stop. Right Option doesn't collide with normal
-# typing and is comfortable to hold. Change here if it fights something else
-# on your keyboard.
-HOTKEY = Key.alt_r
+# Hold to talk, release to stop. Deliberately NOT a bare modifier (Option/
+# Command/Control): macOS reports those via a separate flagsChanged event
+# stream that needs the "Input Monitoring" privacy permission (distinct from
+# Accessibility) and was unreliable in testing even once granted — see
+# PROGRESS.md's Phase 1 log. Backtick is a plain character key (confirmed
+# working via senses/ears's own manual key-listener test), doesn't collide
+# with any macOS system shortcut, and is the conventional low-conflict choice
+# for push-to-talk tools generally. Change here if it fights something else
+# on your keyboard/layout.
+HOTKEY = KeyCode.from_char("`")
 
 SAMPLE_RATE = 16_000
 CHANNELS = 1

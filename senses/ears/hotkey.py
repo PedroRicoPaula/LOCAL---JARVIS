@@ -26,7 +26,7 @@ class PynputHotkey:
     can't request that itself — the OS shows its own dialog the first time,
     or nothing fires silently if it was previously denied."""
 
-    def __init__(self, key: keyboard.Key = HOTKEY) -> None:
+    def __init__(self, key: keyboard.Key | keyboard.KeyCode = HOTKEY) -> None:
         self._key = key
         self._pressed = False
         self._press_event = threading.Event()

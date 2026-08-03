@@ -149,9 +149,9 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
 - `senses/ipc.py`: shared newline-JSON-over-`AF_UNIX` transport for
   `ears`/`voice`/the bridge. See ADR-014.
 - `senses/ears/`: `config.py`, `audio_capture.py` (mic → WAV, `sounddevice`),
-  `hotkey.py` (hold-to-talk via `pynput`, right Option), `transcribe.py`
-  (shells out to `whisper-cli` with native `--vad`), `main.py`, `fakes.py`,
-  `tests/test_ears.py`.
+  `hotkey.py` (hold-to-talk via `pynput`, **backtick** — see "Surprised me"
+  for why not a modifier key), `transcribe.py` (shells out to `whisper-cli`
+  with native `--vad`), `main.py`, `fakes.py`, `tests/test_ears.py`.
 - `senses/voice/`: `config.py`, `say_backend.py` (`say` subprocess),
   `sentences.py` (splits for streaming), `main.py`, `fakes.py`,
   `tests/test_voice.py`.
@@ -193,7 +193,7 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
   app quit (Cmd+Q) after toggling, not just re-running the command — TCC
   permission reads happen at process launch. Worth remembering next time
   any tool needs a macOS privacy grant on this setup: check Cursor first.
-- Run `make dev`, hold right Option, speak — confirm the round-trip actually
+- Run `make dev`, hold backtick, speak — confirm the round-trip actually
   works with a live mic before trusting the scored numbers below.
 - Run `bench/score_phase1.py` for the 20-sentence word-accuracy DoD check
   (needs ≥ 95%).
@@ -245,6 +245,22 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
   `make dev` here) — same root cause, Python block-buffers stdout whenever
   it isn't a TTY. Now fixed at the `Makefile` level with `PYTHONUNBUFFERED=1`
   for `dev`, and worth remembering as a pattern, not a one-off.
+- **Right Option as the hotkey was a mistake — not a permission problem, a
+  library-limitation problem.** Even with Accessibility granted (to
+  **Cursor**, Pedro's actual IDE — see above) and Microphone granted,
+  holding the key produced nothing at all: no error, no output, just
+  silence. A minimal standalone `pynput` listener script (diagnostic only,
+  not committed) confirmed regular keys fire `on_press`/`on_release`
+  reliably but bare modifiers (Option, Command, Control) never do — macOS
+  reports modifier-only changes through a separate `flagsChanged` event
+  stream that most likely needs the **Input Monitoring** privacy category
+  (distinct from both Accessibility and Microphone, a third permission gate
+  entirely) and appears unreliable in `pynput` on this macOS version even
+  when granted. Rather than chase a fourth permission category, switched
+  `HOTKEY` to a plain character key — **backtick**, `` ` `` — confirmed
+  working in the same diagnostic. Simpler and more robust than fighting the
+  modifier-key/TCC interaction, and it's one line in
+  `senses/ears/config.py` if it ever needs to change again.
 
 ---
 
@@ -263,11 +279,14 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
 
 ## Open questions for the owner
 
-- [ ] Grant Accessibility permission so the push-to-talk hotkey actually
-      receives key events (System Settings → Privacy & Security →
-      Accessibility). One-time, can't be scripted.
-- [ ] Run `make dev`, hold right Option, speak a few things — confirm the
-      live round-trip works before trusting anything scored below.
+- [x] ~~Grant Accessibility permission~~ — done (on **Cursor**, not
+      Terminal — see Phase 1 log). Microphone also confirmed granted.
+- [ ] Hotkey changed from right Option to **backtick** (`` ` ``) after
+      confirming modifier keys don't fire reliably in `pynput` on this
+      machine even with permissions granted — see Phase 1 "Surprised me."
+      Still needs one fresh live test with the new key: `make dev`, hold
+      backtick, speak — confirm the round-trip works before trusting
+      anything scored below.
 - [ ] Run `.venv/bin/python bench/score_phase1.py` for the 20-sentence word
       accuracy DoD check (needs ≥ 95%).
 - [ ] Do 10 timed round-trips via `make dev` and check `echo_bridge`'s

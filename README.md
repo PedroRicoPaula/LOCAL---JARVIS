@@ -114,7 +114,7 @@ the Python process, then re-run `make dev`.
 **3. Run it, and run the DoD checks**
 
 ```bash
-make dev                              # hold right Option, speak, listen back
+make dev                              # hold backtick (`), speak, listen back
 .venv/bin/python bench/score_phase1.py   # 20 sentences, needs >= 95% word accuracy
 ```
 
