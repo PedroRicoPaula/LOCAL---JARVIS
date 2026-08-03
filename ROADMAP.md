@@ -152,6 +152,12 @@ if it is ever wanted.
 
 ## Phase 7 — Dashboard · 2 weeks
 
+**Design reference:** the owner has a Figma-exported prototype at
+`~/Developer/Programação/JARVIS Desktop Interface Design` (one level above
+this repo, not inside it — nothing copied in ahead of time on purpose).
+Look there first for layout before inventing one. Reconcile against the
+functional list below rather than assuming full coverage.
+
 - [ ] Next.js + shadcn/ui, WebSocket to core
 - [ ] Approval queue: `humanSummary`, full payload on expand
 - [ ] Live thought stream, transcript, **camera indicator**
@@ -275,6 +281,17 @@ Arduino, assembly, repairs. Same contract as nutrition, applied to parts.
 - Unsigned webhook rejected and logged
 - Replayed webhook rejected
 - Stripe key proven read-only by attempting a write that fails
+
+---
+
+## After Phase 13
+
+Once every phase above (0–13) has actually met its Definition of Done — not
+before, and not on a partial subset — give the owner one summary: how JARVIS
+works, how to use it, what every feature does. Portuguese, concise, no
+implementation detail he didn't ask for. This is the one deliverable he
+wants held until the very end rather than phase by phase; everything else
+still follows the normal per-phase stop-and-report rhythm in `CLAUDE.md` § 1.
 
 ---
 
