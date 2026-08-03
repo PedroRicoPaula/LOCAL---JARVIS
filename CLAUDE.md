@@ -40,6 +40,17 @@ this system; the platform exists to host them.
 6. **No scope creep.** If you notice something that would be nice to add, write
    it in `docs/BACKLOG.md` and move on. Do not build it.
 
+7. **Learning lives in the project, not in chat.** When you discover something
+   that will matter later — a hardware constraint, a library quirk, a bug and
+   its root cause, a model that doesn't behave as expected, a dead end — write
+   it into `PROGRESS.md`, `DECISIONS.md` (as an ADR if it's a real decision),
+   or `docs/BACKLOG.md`, in the same work session, not just in the chat
+   transcript. Chat history is not durable context; these files are what the
+   next session (yours or another agent's) reads first. This is the same
+   reasoning as `docs/ARCHITECTURE.md`'s drift rule applied to knowledge in
+   general: if it only exists in conversation, it will be re-discovered the
+   hard way in three months.
+
 ---
 
 ## 1. Phase discipline
