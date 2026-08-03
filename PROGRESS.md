@@ -359,7 +359,7 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
 | Metric | Target | Actual | Phase |
 |---|---|---|---|
 | Lane classification accuracy | ≥ 85% | 71.1% (NIM `llama-3.1-8b`; no local candidate viable — ADR-001) | 0 |
-| Time to first audible syllable | < 1.5 s | ~450-640ms (my curl-level test, warm `small.en`) — 10 physical trials still owed | 1 |
+| Time to first audible syllable | < 1.5 s | 3/10 real trials: 657ms, 686ms, 1530ms (3rd was a ~45-word stress test) | 1 |
 | Wake false activations / 4h | < 2 | — | 2 |
 | Memory recall p95 | < 200 ms | — | 4 |
 | **`make new-skill` → working no-op** | **< 30 min** | **—** | **5** |
@@ -384,11 +384,22 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
       accuracy DoD check (needs ≥ 95%). Reference sentences corrected to
       digit-form numbers first (see Phase 1 log) so the score reflects
       transcription quality, not a formatting mismatch.
-- [ ] Do 10 timed round-trips via `make dev` and check `echo_bridge`'s
-      latency log against the < 1.5s DoD bar. My own non-physical testing
-      of the fixed pipeline measured 450-640ms — should comfortably clear
-      it, but the DoD wants real hotkey presses, not curl requests.
-- [ ] Confirm "works with Wi-Fi off" with an actual press-and-speak trial.
+- [ ] 3/10 timed round-trips done (2026-08-03, real hotkey presses):
+      **657ms**, **686ms**, **1530ms**. The third was a deliberately long
+      ~45-word stress-test utterance ("I'm now sending the third message to
+      see if you are listening perfectly...") and landed 30ms over the
+      1.5s bar — consistent with encode being fixed-cost but decode scaling
+      with output length (more words → more autoregressive decode steps).
+      Normal command-length speech (the other two trials) clears the bar
+      with comfortable margin. 7 more trials still owed to actually close
+      the DoD's "10 trials" — ideally normal command-length phrasing,
+      matching how push-to-talk is actually used, unless Pedro wants the
+      long-utterance case in scope too (open question below).
+- [ ] Confirm "works with Wi-Fi off" — unclear if any of the 3 trials above
+      had Wi-Fi actually off (one utterance's *content* mentioned "without
+      internet connection," which may or may not mean Wi-Fi was off at the
+      OS level) or just a live hotkey+mic trial with the toggle deliberately
+      down. Asked Pedro to confirm.
 - [ ] This machine has two Homebrew installs (`/usr/local` Intel/Rosetta,
       `/opt/homebrew` native) — worth knowing about beyond just this
       project. I didn't touch the Intel one or your shell PATH; up to you
