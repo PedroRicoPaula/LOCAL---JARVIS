@@ -1,0 +1,10 @@
+# Python deps for bench/ and senses/. Managed with a plain venv + pip —
+# no Poetry/uv, matches CLAUDE.md's "prefer boring" for a one-person project.
+#
+#   /opt/homebrew/bin/python3.13 -m venv .venv
+#   .venv/bin/pip install -r requirements.txt
+
+sounddevice==0.5.1
+numpy==2.1.3
+pynput==1.7.7
+pytest==8.3.3

@@ -335,3 +335,41 @@ answer, with timeout — is provided by the skill host, not by skills.
 **Consequences.** The confirmation loop in `docs/SKILLS.md` § 5 becomes the
 default shape of a skill. Interruption, timeout and cancellation are handled
 once, correctly, in one place.
+
+---
+
+## ADR-014 — Phase 1 IPC and VAD: native whisper.cpp VAD, plain Unix sockets
+**Status:** accepted
+
+**Context.** `SPEC.md` § 2 specifies `ears` and `voice` as separate processes
+talking over "a local Unix socket," without pinning the wire format. ROADMAP's
+Phase 1 checklist lists Silero VAD as a separate line item from whisper.cpp,
+which read as "two ML components" going in.
+
+**Decision.**
+- **IPC:** newline-delimited JSON over `AF_UNIX` `SOCK_STREAM`, shared helper
+  in `senses/ipc.py` (`listen`/`accept_one`/`connect`/`send_line`/`read_lines`).
+  Message shape mirrors `ServerEvent`/`ClientEvent` in `shared/types.ts` for
+  consistency, even though it's a different transport. `ears` and `voice` are
+  servers (they sit and wait, matching their `launchd, always on`/`idle`
+  description in `SPEC.md` § 2); whatever orchestrates them — the throwaway
+  `senses/echo_bridge.py` in Phase 1, `core/` from Phase 3 — is the client
+  that connects out to both.
+- **VAD:** `whisper-cli`'s built-in `--vad`/`--vad-model` flags (confirmed via
+  `whisper-cli --help`) run the same Silero VAD model ADR-003 already calls
+  for, natively inside the same binary that does STT. No second ML runtime
+  (`torch`/`onnxruntime`) in `senses/ears` at all.
+
+**Consequences.**
+- One fewer heavy Python dependency on a machine that Phase 0 already proved
+  has no headroom to spare (ADR-001). This wasn't a nice-to-have — see the
+  Phase 1 log in `PROGRESS.md` for what this machine does to a stray large
+  dependency.
+- `senses/ears/transcribe.py` shells out to `whisper-cli` rather than using a
+  Python binding — matches the project's existing preference for proven
+  native tools over C-extension wrappers (Aider/git in ADR-006 is the same
+  pattern applied to the `act` lane).
+- The IPC protocol is intentionally the simplest thing that could work
+  (blocking single-client accept, no reconnection state beyond "wait for the
+  next `accept()`"). Revisit if Phase 3's `core/` ever needs multiple
+  concurrent consumers of `ears`' output — not needed yet, not built yet.
