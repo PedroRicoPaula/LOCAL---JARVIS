@@ -45,6 +45,26 @@ def handle_one_utterance(
     return text
 
 
+def safe_handle_one_utterance(
+    hotkey: Hotkey,
+    audio_source: AudioSource,
+    transcriber: Transcriber,
+    emit: Emit,
+) -> None:
+    """handle_one_utterance, but a failure mid-cycle (whisper-cli crashes,
+    a corrupt WAV, anything) is logged and swallowed instead of killing the
+    daemon. `ears` is "launchd, always on" per SPEC.md § 2 — one bad
+    utterance shouldn't end the process. Connection failures still
+    propagate: those are main()'s signal to wait for a reconnect, not
+    something to swallow here."""
+    try:
+        handle_one_utterance(hotkey, audio_source, transcriber, emit)
+    except (BrokenPipeError, ConnectionResetError):
+        raise
+    except Exception as exc:  # broad on purpose — supervisor boundary, see docstring
+        print(f"ears: utterance failed, continuing ({exc!r})")
+
+
 def run_forever(
     hotkey: Hotkey,
     audio_source: AudioSource,
@@ -52,7 +72,7 @@ def run_forever(
     emit: Emit,
 ) -> None:
     while True:
-        handle_one_utterance(hotkey, audio_source, transcriber, emit)
+        safe_handle_one_utterance(hotkey, audio_source, transcriber, emit)
 
 
 def main() -> None:

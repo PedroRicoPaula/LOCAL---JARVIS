@@ -170,6 +170,13 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
   listens → bridge connects to ears → ears listens → bridge connects to
   voice → both accept. Confirmed `make check` green (tsc + ruff + 8 pytest
   cases, all fakes-based, no mic/model/network per CLAUDE.md § 3).
+- Hardening pass while waiting on Pedro's live testing: `ears`/`voice` are
+  "launchd, always on"/"idle" daemons per `SPEC.md` § 2, but a single failed
+  transcription or `say` call would previously crash the whole process —
+  neither `main.py` caught anything past connection errors. Added
+  `safe_handle_one_utterance` (ears) and a per-message try/except (voice):
+  log and continue on any failure, still re-raise connection errors so the
+  existing reconnect logic keeps working. 3 new tests (11 total).
 
 **Decided:**
 - ADR-014: native `whisper-cli --vad` instead of a separate Python Silero
@@ -178,12 +185,14 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
   servers, the orchestrator (bridge today, `core/` later) as client.
 
 **Left over — needs Pedro, not automatable:**
-- Grant Accessibility permission for the hotkey listener (System Settings →
-  Privacy & Security → Accessibility). `make dev` currently prints "This
-  process is not trusted!" from `pynput` — expected, not a bug. Whichever
-  app/binary is actually running the Python process needs the grant; if
-  it's not obvious which one from the System Settings picker, add it and
-  retry rather than guessing blind.
+- ~~Grant Accessibility permission for the hotkey listener~~ — **done
+  2026-08-03.** Took two tries: Pedro works through **Cursor** (a VSCode
+  fork), not Terminal.app or the Claude desktop app, so the permission
+  macOS actually needed was on **Cursor** in Privacy & Security →
+  Accessibility, not the more obvious-looking entries. Also needed a full
+  app quit (Cmd+Q) after toggling, not just re-running the command — TCC
+  permission reads happen at process launch. Worth remembering next time
+  any tool needs a macOS privacy grant on this setup: check Cursor first.
 - Run `make dev`, hold right Option, speak — confirm the round-trip actually
   works with a live mic before trusting the scored numbers below.
 - Run `bench/score_phase1.py` for the 20-sentence word-accuracy DoD check

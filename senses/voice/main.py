@@ -27,8 +27,17 @@ def speak_text(text: str, backend: SayBackend) -> None:
 
 def run_forever(backend: SayBackend, conn: socket.socket) -> None:
     for message in ipc.read_lines(conn):
-        if message.get("type") == "speak":
+        if message.get("type") != "speak":
+            continue
+        try:
             speak_text(message.get("text", ""), backend)
+        except (BrokenPipeError, ConnectionResetError):
+            raise
+        except Exception as exc:  # broad on purpose — supervisor boundary.
+            # `voice` is "launchd, idle" per SPEC.md § 2 but still expected
+            # to keep running; one bad `say` call (subprocess hiccup, an
+            # unsupported character) shouldn't end the process.
+            print(f"voice: failed to speak {message.get('text', '')!r}, continuing ({exc!r})")
 
 
 def main() -> None:

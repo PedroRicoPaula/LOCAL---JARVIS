@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from senses.ears.fakes import FakeAudioSource, FakeHotkey, FakeTranscriber
-from senses.ears.main import handle_one_utterance
+from senses.ears.main import handle_one_utterance, safe_handle_one_utterance
 
 
 def test_happy_path_emits_one_utterance() -> None:
@@ -40,3 +42,35 @@ def test_empty_transcription_emits_nothing() -> None:
 
     assert result == ""
     assert emitted == []
+
+
+class _RaisingTranscriber:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def transcribe(self, wav_path: Path) -> str:
+        raise self._exc
+
+
+def test_safe_handle_one_utterance_swallows_transcription_failure() -> None:
+    """whisper-cli crashing on one utterance must not kill the `ears`
+    daemon — it's `launchd, always on` per SPEC.md § 2."""
+    hotkey = FakeHotkey()
+    audio_source = FakeAudioSource()
+    transcriber = _RaisingTranscriber(RuntimeError("whisper-cli exploded"))
+    emitted: list[dict] = []
+
+    safe_handle_one_utterance(hotkey, audio_source, transcriber, emitted.append)  # must not raise
+
+    assert emitted == []
+
+
+def test_safe_handle_one_utterance_reraises_connection_errors() -> None:
+    """Connection failures are main()'s signal to wait for a reconnect —
+    those must still propagate, not be swallowed as a generic failure."""
+    hotkey = FakeHotkey()
+    audio_source = FakeAudioSource()
+    transcriber = _RaisingTranscriber(BrokenPipeError())
+
+    with pytest.raises(BrokenPipeError):
+        safe_handle_one_utterance(hotkey, audio_source, transcriber, lambda msg: None)
