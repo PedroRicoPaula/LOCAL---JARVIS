@@ -31,7 +31,6 @@ import json
 import statistics
 import sys
 import time
-import urllib.error
 import urllib.request
 
 OLLAMA = "http://localhost:11434/api/chat"
@@ -151,7 +150,7 @@ def bench(model: str) -> dict | None:
     for i, (prompt, expected) in enumerate(CASES, 1):
         try:
             raw, ms = ask(model, prompt)
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except OSError as exc:
             print(f"  [{i:2}/{n_cases}] ERROR  {exc}")
             failures.append(f"{prompt!r}: transport {exc}")
             continue
