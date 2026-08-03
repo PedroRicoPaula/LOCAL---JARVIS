@@ -24,6 +24,11 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 - Additional providers: Groq, Gemini, OpenRouter, Cerebras
 - `livekit-wakeword` if openWakeWord tuning proves unreliable
 - Piper voice cloning for a custom JARVIS voice
+- Smart glasses (camera-equipped) as a future JARVIS embodiment — owner is
+  considering buying a pair. Long-term only: after the desktop + camera-session
+  flow (Phase 8) is fully working and lived with. Would need its own capture/
+  display constraints revisited against `SPEC.md` § 6 (the camera-session
+  model), not assumed to carry over as-is. Not scheduled, not designed.
 
 ## Annoyances found during SOAK
 

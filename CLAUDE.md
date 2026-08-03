@@ -15,6 +15,11 @@ this system; the platform exists to host them.
    word. No exceptions. The owner is Portuguese but has chosen English as the
    system language for accuracy reasons. Do not "helpfully" add Portuguese.
 
+   This governs the *deliverable* only. The coding agent's chat replies in
+   this tool — summaries, mini-feedback while executing, questions — are in
+   Portuguese, by the owner's explicit request. Code blocks, commit messages,
+   and file contents inside those replies stay English regardless.
+
 2. **Free tier only. No paid provider is built.** Every dependency must be free
    and, where possible, offline. The `ModelProvider` interface is designed so a
    paid adapter could be added later, but none is written, stubbed or configured

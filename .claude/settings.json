@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit*)",
+            "command": "changed=$(git diff --name-only HEAD~1 HEAD 2>/dev/null); [ -z \"$changed\" ] && exit 0; echo \"$changed\" | grep -qE '^(core/|senses/|skills/|shared/|bench/|ui/|SPEC\\.md|ROADMAP\\.md)' || exit 0; echo \"$changed\" | grep -qE '^(PROGRESS\\.md|DECISIONS\\.md|docs/ARCHITECTURE\\.md)$' && exit 0; jq -n --arg m \"Commit touched core/senses/skills/shared/bench/ui or SPEC.md/ROADMAP.md but not PROGRESS.md, DECISIONS.md or docs/ARCHITECTURE.md. Update them if this was a phase-end or a real architectural decision; otherwise ignore.\" '{systemMessage:$m,hookSpecificOutput:{hookEventName:\"PostToolUse\",additionalContext:$m}}'",
+            "timeout": 15,
+            "statusMessage": "Checking whether docs need updating..."
+          }
+        ]
+      }
+    ]
+  }
+}
