@@ -81,7 +81,7 @@ def main() -> None:
     transcriber = WhisperCliTranscriber()
 
     server = ipc.listen(config.SOCKET_PATH)
-    print(f"ears: listening on {config.SOCKET_PATH}, hold backtick (`) to talk")
+    print(f"ears: listening on {config.SOCKET_PATH}, hold Tab to talk")
 
     while True:
         conn = ipc.accept_one(server)

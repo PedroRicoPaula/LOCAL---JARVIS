@@ -90,7 +90,7 @@ def main() -> int:
     transcriber = WhisperCliTranscriber()
 
     print(f"Phase 1 word-accuracy check — {len(SENTENCES)} sentences.")
-    print("Hold backtick (`), read the sentence aloud, release.\n")
+    print("Hold Tab, read the sentence aloud, release.\n")
 
     accuracies: list[float] = []
     for i, sentence in enumerate(SENTENCES, 1):

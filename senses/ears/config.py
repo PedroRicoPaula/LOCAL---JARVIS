@@ -5,20 +5,23 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pynput.keyboard import KeyCode
+from pynput.keyboard import Key
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Hold to talk, release to stop. Deliberately NOT a bare modifier (Option/
-# Command/Control): macOS reports those via a separate flagsChanged event
-# stream that needs the "Input Monitoring" privacy permission (distinct from
-# Accessibility) and was unreliable in testing even once granted — see
-# PROGRESS.md's Phase 1 log. Backtick is a plain character key (confirmed
-# working via senses/ears's own manual key-listener test), doesn't collide
-# with any macOS system shortcut, and is the conventional low-conflict choice
-# for push-to-talk tools generally. Change here if it fights something else
-# on your keyboard/layout.
-HOTKEY = KeyCode.from_char("`")
+# Hold to talk, release to stop. Two things ruled out empirically on this
+# machine (see PROGRESS.md's Phase 1 log) before landing here:
+#   - Bare modifiers (Option/Command/Control) never fired at all — macOS
+#     reports them via a separate flagsChanged stream, unreliable in pynput
+#     here even with every relevant permission granted.
+#   - A plain character key (backtick) *also* never fired — this machine's
+#     keyboard uses a Portuguese layout where that physical key is a
+#     dead-key (accent composition), which appears to interfere with how
+#     the OS delivers the raw event to a global listener.
+# Key.tab is neither: a fixed control key, identical across every keyboard
+# layout, not part of any accent-composition system. Confirmed working.
+# One line to change again if it ever needs to.
+HOTKEY = Key.tab
 
 SAMPLE_RATE = 16_000
 CHANNELS = 1

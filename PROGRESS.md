@@ -257,10 +257,24 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
   (distinct from both Accessibility and Microphone, a third permission gate
   entirely) and appears unreliable in `pynput` on this macOS version even
   when granted. Rather than chase a fourth permission category, switched
-  `HOTKEY` to a plain character key — **backtick**, `` ` `` — confirmed
-  working in the same diagnostic. Simpler and more robust than fighting the
-  modifier-key/TCC interaction, and it's one line in
-  `senses/ears/config.py` if it ever needs to change again.
+  `HOTKEY` to a plain character key — backtick — which the standalone
+  diagnostic *seemed* to confirm working.
+- **Backtick then failed too, differently.** Live in `make dev`: nothing
+  happened, and the raw character (`` ` ``/`´`, inconsistently — a giveaway
+  in itself) showed up typed into the terminal, meaning the key event
+  reached the focused app normally but never reached `pynput`'s callbacks.
+  Root cause: Pedro's keyboard uses a **Portuguese layout**, where the
+  physical key in that position is a **dead key** (accent composition, not
+  a plain character) — re-running the diagnostic with that key produced
+  *zero* `PRESS`/`RELEASE` lines despite repeated presses, confirming
+  dead-key composition doesn't reach a global listener the way a normal
+  character does either. Two different failure modes (modifier flagsChanged,
+  dead-key composition) converging on the same lesson: **anything
+  layout-sensitive or "special" is unreliable for this; use a plain,
+  universal control key instead.** Landed on **`Key.tab`** — not a
+  modifier, not a printable/composable character, identical on every
+  keyboard layout on Earth. One line in `senses/ears/config.py` if it ever
+  needs to change again.
 
 ---
 
@@ -281,11 +295,11 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
 
 - [x] ~~Grant Accessibility permission~~ — done (on **Cursor**, not
       Terminal — see Phase 1 log). Microphone also confirmed granted.
-- [ ] Hotkey changed from right Option to **backtick** (`` ` ``) after
-      confirming modifier keys don't fire reliably in `pynput` on this
-      machine even with permissions granted — see Phase 1 "Surprised me."
-      Still needs one fresh live test with the new key: `make dev`, hold
-      backtick, speak — confirm the round-trip works before trusting
+- [ ] Hotkey changed twice (right Option → backtick → **Tab**) after both
+      modifier keys and this machine's Portuguese-layout dead-key both
+      failed to fire reliably in `pynput` — see Phase 1 "Surprised me."
+      Still needs one fresh live test with Tab: `make dev`, hold Tab,
+      speak — confirm the round-trip works before trusting
       anything scored below.
 - [ ] Run `.venv/bin/python bench/score_phase1.py` for the 20-sentence word
       accuracy DoD check (needs ≥ 95%).
