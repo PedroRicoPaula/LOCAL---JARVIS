@@ -268,13 +268,50 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
   a plain character) — re-running the diagnostic with that key produced
   *zero* `PRESS`/`RELEASE` lines despite repeated presses, confirming
   dead-key composition doesn't reach a global listener the way a normal
-  character does either. Two different failure modes (modifier flagsChanged,
-  dead-key composition) converging on the same lesson: **anything
-  layout-sensitive or "special" is unreliable for this; use a plain,
-  universal control key instead.** Landed on **`Key.tab`** — not a
-  modifier, not a printable/composable character, identical on every
-  keyboard layout on Earth. One line in `senses/ears/config.py` if it ever
-  needs to change again.
+  character does either. At the time this read as two separate layout/key-
+  type problems. It wasn't — see below.
+
+- **The real root cause, found by reading pynput's source instead of
+  guessing keys further: two stacked bugs, neither about which key.**
+
+  1. **Wrong macOS permission checked.** `pynput`'s own "not trusted"
+     warning checks `AXIsProcessTrusted()` — **Accessibility** — but our
+     usage (`Listener` with no `suppress=True`) makes pynput create its
+     `CGEventTap` in **`ListenOnly`** mode, and per Apple's own docs that
+     mode is gated by a *different*, separate permission category:
+     **Input Monitoring**. Accessibility being granted (to Cursor) made the
+     warning disappear and looked like the fix — it wasn't the actual gate.
+     With Input Monitoring still closed, the tap existed but delivered
+     nothing, for *any* key, which is why every single key we tried
+     (Option, backtick, Tab) looked identical: total silence. Confirmed via
+     [Apple Developer Forums — "Problem with event tap permission in
+     Sequoia"](https://developer.apple.com/forums/thread/758554) and by
+     reading `pynput`'s installed source directly
+     (`_util/darwin.py`: `kCGEventTapOptionListenOnly if (not self.suppress
+     and self._intercept is None) else kCGEventTapOptionDefault`). Fixed by
+     granting **Input Monitoring** (not Accessibility) to Cursor, a
+     separate entry in Privacy & Security, and restarting the app.
+  2. **Once events actually started flowing, a real `pynput` 1.7.7 /
+     Python 3.13 incompatibility crashed every one of them:**
+     `TypeError: '_thread._ThreadHandle' object is not callable`. Python
+     3.13 added a `Thread._handle` attribute; `pynput` 1.7.7's `Listener`
+     (a `Thread` subclass) happened to define its own method also named
+     `_handle`, and the name collision breaks it. A known, reported
+     upstream bug — confirmed via
+     [python/cpython#132578](https://github.com/python/cpython/issues/132578)
+     and
+     [moses-palmer/pynput#625](https://github.com/moses-palmer/pynput/issues/625).
+     Fixed in `pynput` 1.8.2 (renamed to `_handle_message` — confirmed by
+     reading the installed source after upgrading). `requirements.txt`
+     pinned to `pynput==1.8.2`.
+
+  The backtick "dead key" theory from the entry above is probably not what
+  was actually happening — Input Monitoring being closed would have
+  produced identical silence regardless of key type. Left uncorrected above
+  rather than rewritten, since it was a reasonable inference from the
+  evidence available at the time; this entry is the corrected picture.
+  **`Key.tab` was never actually wrong and stayed the hotkey** — plain,
+  universal, no reason to revisit it now that the two real bugs are fixed.
 
 ---
 
@@ -293,14 +330,16 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
 
 ## Open questions for the owner
 
-- [x] ~~Grant Accessibility permission~~ — done (on **Cursor**, not
-      Terminal — see Phase 1 log). Microphone also confirmed granted.
-- [ ] Hotkey changed twice (right Option → backtick → **Tab**) after both
-      modifier keys and this machine's Portuguese-layout dead-key both
-      failed to fire reliably in `pynput` — see Phase 1 "Surprised me."
-      Still needs one fresh live test with Tab: `make dev`, hold Tab,
-      speak — confirm the round-trip works before trusting
-      anything scored below.
+- [x] ~~Grant Accessibility permission~~ — done (on **Cursor**). Microphone
+      also confirmed granted.
+- [x] ~~Grant Input Monitoring permission~~ — done (on **Cursor**, separate
+      category from Accessibility — this was the actual blocker, not the
+      hotkey choice; see Phase 1 log's corrected root-cause entry).
+- [x] ~~Fix pynput crashing every key event on Python 3.13~~ — upgraded
+      `pynput` 1.7.7 → 1.8.2 (known upstream bug, fixed upstream).
+- [ ] One fresh live test now that both real bugs are fixed: `make dev`,
+      hold Tab, speak — confirm the round-trip actually works before
+      trusting anything scored below.
 - [ ] Run `.venv/bin/python bench/score_phase1.py` for the 20-sentence word
       accuracy DoD check (needs ≥ 95%).
 - [ ] Do 10 timed round-trips via `make dev` and check `echo_bridge`'s
