@@ -8,8 +8,12 @@ after a break. Keep it factual and short.
 ## Current state
 
 **Phase:** 2 — Wake word
-**Status:** not started
-**Branch:** —
+**Status:** in progress — code complete, `make check` green, verified live
+with real acoustic detection end-to-end (speaker-to-mic loopback). The
+DoD's three measured checks (30 activations at ~2m, 4-hour false-activation
+run, reboot survival) all need Pedro over real time — see "Open questions
+for the owner."
+**Branch:** `phase/02-wake-word`
 **Last updated:** 2026-08-03
 
 (Phase 1 complete — see Phase log below for the full record and what was
@@ -86,7 +90,7 @@ the numbers). Serial number / hardware UUID intentionally not recorded here
 | Paid provider | none — deferred | ADR-009 |
 | STT | whisper.cpp (Metal), `small.en`, resident server | ADR-003 |
 | TTS | macOS `say` → Piper | ADR-004 |
-| Wake word | openWakeWord `hey_jarvis` | ADR-005 |
+| Wake word | openWakeWord `hey_jarvis`, ONNX, threshold 0.5 (default, untuned) | ADR-005, ADR-015 |
 | Code harness | Aider | ADR-006 |
 | Store | SQLite + sqlite-vec | ADR-007 |
 
@@ -380,6 +384,107 @@ voz"). Not a closed question, a deferred one.
 
 ---
 
+### Phase 2 — in progress, 2026-08-03
+
+**Built:**
+- `senses/ears/audio_capture.py` rewritten: one persistent `InputStream`
+  for the whole process (was: open/close per utterance), a real-time
+  callback that only enqueues (see "Surprised me"), a worker thread that
+  drains the queue and does the actual work, `arm()`/`disarm()` for
+  on-demand recording plus energy-based (RMS) silence auto-stop for
+  wake-word-triggered captures.
+- `senses/ears/wake_word.py` (new): `OpenWakeWordDetector` (ONNX,
+  lazy-imported so tests never pay for it), `watch()` — edge-triggered
+  detection (fires once per threshold crossing, not once per sustained
+  high-score frame; confirmed empirically that one utterance produces
+  ~8 consecutive frames ≥ 0.9).
+- `senses/ears/ack.py` (new): `SystemAck` — `afplay` + `osascript`
+  notification, reflex-lane speed, no new dependency.
+- `senses/ears/main.py` rewritten: two trigger sources (Tab hotkey,
+  "hey jarvis") into one shared `capture_and_transcribe` core, serialized
+  by a `threading.Lock`; `ConnectionHolder` decouples bridge/core
+  connection state from capture state (an utterance with nobody connected
+  is logged and dropped, not an error — `ears` keeps listening regardless).
+- `launchd/com.jarvis.ears.plist` (new, template) + `make install-daemon`
+  / `make uninstall-daemon` (`launchctl load`/`unload`, absolute-path
+  substitution via `sed`). Confirmed the install/uninstall mechanics work.
+- `bench/score_phase1.py` updated for the new `ContinuousAudioSource`
+  interface (`arm`/`disarm` instead of the old `MicAudioSource`'s
+  `start`/`stop`) — still Phase 1's own tool, just kept in sync.
+- 4 new tests (15 total): connection-holder send/drop/failure behavior,
+  wake-word edge-triggering. `make check` green throughout.
+
+**Decided:**
+- ADR-015: ONNX over tflite for openWakeWord; real-time audio callback
+  does nothing but enqueue (see "Surprised me" — this fixes a real bug,
+  not a style preference); energy-based silence detection, no second VAD
+  pipeline; system sound + notification for the reflex ack, not `say`;
+  `LaunchAgent` not `LaunchDaemon`.
+
+**Left over — needs Pedro, not automatable:**
+- Threshold tuning against his own voice/mic/room (`WAKE_WORD_THRESHOLD`
+  in `senses/ears/config.py`, currently the untuned default 0.5). ADR-005
+  already budgeted "half a day" for this.
+- 30 deliberate activations at ~2m for the ≥90% detection DoD number.
+- A 4-hour unattended background run for the <2 false-activations number.
+- `make install-daemon`, then an actual reboot, for "survives reboot
+  without manual intervention." The loaded daemon will almost certainly
+  need Microphone/Accessibility/Input Monitoring granted again — confirmed
+  this myself (see "Surprised me"): the daemon loaded and ran but sat with
+  zero output, consistent with waiting on a permission grant for the
+  launchd-invoked python binary, which macOS has never seen before (a
+  different identity than Cursor, the interactive dev-mode grant target).
+  I unloaded it again after confirming the install mechanics work, rather
+  than leave a silently-stuck process running.
+
+**Surprised me:**
+- **Running ONNX inference inside the real-time audio callback caused a
+  genuine, reproducible hang — but only under real load, not in
+  isolation.** First implementation scored every frame and did the
+  RMS/silence bookkeeping directly inside `sounddevice`'s callback. Live
+  testing (full `make dev` — whisper-server, voice, echo_bridge, the
+  hotkey listener thread, all running) showed wake-word detection firing
+  correctly but auto-stop never completing: no crash, no error, 15-20+
+  seconds past where an 8-second hard cap should have fired regardless of
+  silence. A standalone diagnostic script running *only* the audio source
+  and detector showed the identical logic working correctly and fast
+  (frames counted at the right ~80ms cadence, auto-stop firing in 4.6s via
+  the silence path). The difference was contention: real-time audio
+  callbacks are expected to return in low single-digit milliseconds, and
+  running ONNX inference plus float math inside one — with several other
+  Python threads competing for the GIL — is exactly the kind of thing that
+  works fine alone and misses its deadline under load. Fixed by making the
+  callback do a single `queue.put()` and nothing else, with a dedicated
+  worker thread draining it. Confirmed the fix with fine-grained timestamp
+  instrumentation live (not just re-running and hoping): a full
+  detect→ack→record→auto-stop→transcribe→emit cycle completed in ~1.2s.
+  Worth remembering as a general pattern: a bug that isolation testing
+  can't reproduce is a contention bug, not a logic bug — check what else
+  is running before concluding the logic itself is wrong.
+- Not every "no output" during testing was that bug, though — two of the
+  cases that looked like hangs during debugging were actually correct
+  behavior: saying "Hey Jarvis" with no follow-up command correctly
+  transcribes to empty (nothing to record after the wake word finished)
+  and correctly emits nothing, same principle as Phase 1's hotkey silence
+  handling. A combined single-utterance phrase ("Hey Jarvis, what is the
+  current time") sometimes didn't cross the detection threshold at all —
+  likely reduced prosodic separation in synthetic TTS speech between the
+  wake phrase and what follows, not a code bug. A version with a clear
+  pause ("Hey Jarvis... What is the current time?") detected reliably and
+  transcribed correctly. Real human speech will differ from synthetic
+  `say` output either way — exactly what Pedro's own threshold-tuning
+  session is for, not something to over-fit to synthetic test audio now.
+- A single spoken wake phrase can trigger the edge-detector twice (observed
+  scores 0.745 then 0.959 within about a second) — the scorer keeps
+  running on the tail of the recording it's currently capturing, and a
+  momentary dip-then-rise across the threshold mid-utterance reads as two
+  separate crossings. Fixed by clearing the wake event again after each
+  capture cycle finishes, discarding any stray re-trigger that happened
+  while busy, rather than immediately chaining into a second spurious
+  capture the moment the first one ends.
+
+---
+
 ## Key numbers to record as we go
 
 | Metric | Target | Actual | Phase |
@@ -387,6 +492,7 @@ voz"). Not a closed question, a deferred one.
 | Lane classification accuracy | ≥ 85% | 71.1% (NIM `llama-3.1-8b`; no local candidate viable — ADR-001) | 0 |
 | Time to first audible syllable | < 1.5 s | 3/10 real trials: 657ms, 686ms, 1530ms (3rd was a ~45-word stress test) | 1 |
 | Wake false activations / 4h | < 2 | — | 2 |
+| Wake detection rate (30 @ ~2m) | ≥ 90% | — | 2 |
 | Memory recall p95 | < 200 ms | — | 4 |
 | **`make new-skill` → working no-op** | **< 30 min** | **—** | **5** |
 | Intent routing accuracy | ≥ 90% | — | 5 |
@@ -404,6 +510,19 @@ voz"). Not a closed question, a deferred one.
       — wrong words, especially on names/accented speech/numbers — that's
       the signal to actually run `.venv/bin/python bench/score_phase1.py`
       rather than assume it's fine. Deferred, not closed.
+- [ ] Phase 2's three DoD numbers all need you, over real time — see the
+      Phase 2 "Left over" entry above for exactly what and why:
+      1. Threshold tuning (`WAKE_WORD_THRESHOLD` in
+         `senses/ears/config.py`, currently the untuned default 0.5).
+      2. 30 deliberate "hey jarvis" activations at ~2m (≥90% detection).
+      3. A 4-hour unattended background run (<2 false activations).
+      4. `make install-daemon`, then reboot, for "survives reboot." Expect
+         to grant Microphone/Accessibility/Input Monitoring again — I
+         confirmed the daemon loads but sits waiting on that, same
+         permission dance as Phase 1 but for a different binary identity.
+      `make dev` still works for all of this — no need to install the
+      daemon just to tune the threshold or count activations, only for the
+      final reboot check.
 
 ---
 

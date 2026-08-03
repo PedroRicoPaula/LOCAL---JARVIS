@@ -58,3 +58,32 @@ VAD_MODEL = Path(
     )
 )
 LANGUAGE = "en"
+
+# --- Phase 2: wake word --------------------------------------------------
+
+# 80ms frames (1280 samples at 16kHz) is openWakeWord's own recommended
+# chunk size — confirmed against the installed package, not assumed.
+WAKE_WORD_FRAME_SAMPLES = 1_280
+
+WAKE_WORD_MODEL = os.environ.get("JARVIS_WAKE_WORD_MODEL", "hey_jarvis")
+# ADR-005: pretrained default. Real starting point, not a guess — the DoD's
+# own 30-activation test is the tuning session; adjust from the scores it
+# logs, not blind. onnxruntime, not tflite (tflite-runtime has no solid
+# Apple Silicon wheel — see PROGRESS.md's Phase 2 log).
+WAKE_WORD_THRESHOLD = float(os.environ.get("JARVIS_WAKE_WORD_THRESHOLD", "0.5"))
+
+# Auto-stop for wake-word-triggered recording (push-to-talk's end signal is
+# the key release; there's no key here). Energy-based, not a second VAD
+# pipeline — see ADR-014's reasoning, same logic applies. Frame = 80ms:
+# ~320ms grace before silence counts (people pause right after "hey
+# jarvis"), ~800ms trailing silence to confirm they're actually done,
+# ~8s hard cap so a stuck mic can't record forever.
+MIN_SPEECH_FRAMES = 4
+SILENCE_FRAMES_TO_STOP = 10
+MAX_RECORDING_FRAMES = 100
+SILENCE_RMS_THRESHOLD = float(os.environ.get("JARVIS_SILENCE_RMS_THRESHOLD", "150"))
+
+# Reflex-lane ack (SPEC.md § 3: <300ms budget) — a system sound, not `say`;
+# see PROGRESS.md's Phase 2 log for why.
+ACK_SOUND = os.environ.get("JARVIS_ACK_SOUND", "/System/Library/Sounds/Tink.aiff")
+ACK_NOTIFICATION_TEXT = "Listening..."

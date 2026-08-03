@@ -397,3 +397,83 @@ which read as "two ML components" going in.
   (blocking single-client accept, no reconnection state beyond "wait for the
   next `accept()`"). Revisit if Phase 3's `core/` ever needs multiple
   concurrent consumers of `ears`' output — not needed yet, not built yet.
+
+---
+
+## ADR-015 — Phase 2 wake word: real-time audio, silence detection, ack
+**Status:** accepted
+
+**Context.** ROADMAP's Phase 2 checklist is three lines (openWakeWord,
+threshold tuning, ack) but making `ears` continuously listening — not just
+recording while a key is held — touches real-time audio architecture, not
+only which library to call.
+
+**Decisions.**
+- **ONNX, not openWakeWord's tflite default.** `tflite-runtime` has no
+  solid Apple Silicon wheel; `Model(inference_framework="onnx")` works
+  cleanly once the onnx model variants are fetched via
+  `openwakeword.utils.download_models(...)` (they aren't bundled — confirmed
+  by trying to load before downloading and getting a clean `NO_SUCHFILE`).
+- **The real-time audio callback does nothing but enqueue.** First
+  implementation ran wake-word scoring and RMS/silence bookkeeping directly
+  inside `sounddevice`'s `InputStream` callback. This produced a real,
+  reproducible bug: live testing (not just fakes) showed detection firing
+  correctly but the subsequent auto-stop silently never completing — no
+  error, no crash, just nothing, for 15-20+ seconds past where an 8-second
+  hard cap should have fired. Isolated single-purpose test scripts showed
+  the same logic working correctly and quickly (frames counted at the
+  correct ~80ms cadence, auto-stop firing in ~1.2s once actually
+  instrumented) — the difference was everything else running at once
+  (`whisper-server`, `voice`, `echo_bridge`, the hotkey listener thread).
+  Real-time audio callbacks are expected to return in a few milliseconds;
+  running ONNX inference and float math inside one, with several other
+  threads contending for the GIL, is exactly the kind of thing that misses
+  its deadline under load even when it works fine in isolation. Fixed by
+  making `_on_block` do a single `queue.put()` and nothing else; a
+  dedicated worker thread drains the queue and does all the real work. See
+  `PROGRESS.md`'s Phase 2 log for the full diagnostic trail — this cost
+  real debugging time and is worth remembering as a pattern (isolation
+  testing can hide contention bugs) not just a one-off fix.
+- **Energy-based (RMS) silence detection for wake-word-triggered capture,
+  not a second VAD pipeline.** Push-to-talk's end-of-speech signal is the
+  key release; wake-word mode has none. A simple consecutive-low-RMS-frames
+  counter (with a short grace period before it starts counting, and a hard
+  max-duration cap regardless) is "boring" and needs no new dependency —
+  same reasoning as ADR-014's "don't add a second ML runtime to `senses/
+  ears`" applied one level further.
+- **Reflex ack is a system sound + notification, not spoken TTS.**
+  `SPEC.md` § 3's reflex budget is <300ms; a played sound is faster than
+  waiting on `say` to synthesize anything, and ships with macOS
+  (`/System/Library/Sounds/*.aiff`, `afplay`, `osascript -e 'display
+  notification'`) — no new dependency. A persistent menu-bar indicator
+  (closer to "always visible" than a transient notification) was considered
+  and deferred to `docs/BACKLOG.md` — real additional scope (a small
+  menu-bar app) that nothing currently requires.
+- **`LaunchAgent`, not `LaunchDaemon`, for the "survives reboot" DoD item.**
+  Daemons run as root outside the user session and can't hold the
+  Microphone/Accessibility/Input Monitoring grants Phase 1 already needed —
+  matches the existing precedent at `~/Library/LaunchAgents/
+  homebrew.mxcl.ollama.plist`. Confirmed the install/uninstall mechanics
+  work (`make install-daemon` correctly substitutes the repo's absolute
+  path and `launchctl load`s it) but the loaded daemon itself sat with zero
+  output and an unusual process state — almost certainly waiting on a
+  Microphone permission grant for the launchd-invoked python binary, which
+  is a *different* binary identity than Cursor (the interactive dev-mode
+  grant target) and has never been granted anything before. Expected, not a
+  bug; flagged plainly rather than left for Pedro to discover blind — see
+  `PROGRESS.md`'s Open Questions.
+
+**Consequences.**
+- `senses/ears/audio_capture.py`'s `ContinuousAudioSource` is meaningfully
+  more complex than Phase 1's per-utterance `MicAudioSource` it replaced —
+  justified by being the only viable shape for "always listening," not
+  complexity for its own sake.
+- Two independent trigger sources (hotkey, wake word) now share one
+  capture pipeline behind a single `threading.Lock`; a trigger arriving
+  while the other is already capturing is logged and dropped, not queued —
+  simultaneous use is an edge case not worth solving now.
+- `ConnectionHolder` (in `senses/ears/main.py`) decouples "is bridge/core
+  connected" from "are we capturing": an utterance transcribed with nobody
+  connected is logged and dropped rather than erroring, since `ears` must
+  keep listening regardless of whether anything downstream exists yet to
+  receive it.
