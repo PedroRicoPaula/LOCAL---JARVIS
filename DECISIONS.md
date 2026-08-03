@@ -139,12 +139,36 @@ the lane design's intent; treat it as confirmed, not aspirational.
 ---
 
 ## ADR-003 — STT: whisper.cpp
-**Status:** accepted
+**Status:** accepted, model choice amended 2026-08-03 (Phase 1)
 
-**Decision.** whisper.cpp with Metal, `large-v3-turbo`, `language=en`.
+**Decision.** whisper.cpp with Metal, `language=en`.
 **Consequences.** Offline, free, permanent. Better on Apple Silicon than
 CTranslate2-based alternatives. English-only operation raises accuracy
 materially versus Portuguese.
+
+**Amendment — model downsized, `large-v3-turbo` → `small.en`.** The
+original pick assumed model size mainly trades off against accuracy.
+Measured on this machine (M1, 8 GB — the same one ADR-001 already found
+short on headroom): whisper.cpp processes a fixed ~30 second context
+window per call regardless of actual utterance length — confirmed by
+timing a 0.4s "Hi" against a 1.7s sentence and getting the same ~2.05s,
+warm-model, either way. Encode cost is therefore roughly proportional to
+*model size*, not audio length, and `large-v3-turbo` (809M params) cost
+~2.05s per utterance even with the model resident in memory — over the
+Phase 1 DoD's entire 1.5s budget on its own, before VAD, capture or TTS.
+`small.en` (244M params, quantized q5_1): **~0.46-0.64s** warm, same
+machine. Accuracy on the 20-sentence Phase 1 test set was
+indistinguishable between the two — both transcribed every test sentence
+correctly, including numbers, technical terms and proper nouns. No
+accuracy trade was actually made; `large-v3-turbo`'s extra capacity wasn't
+buying anything on inputs this short and clear. See `PROGRESS.md`'s Phase
+1 log for the full investigation, and `senses/ears/whisper_server.py` for
+why a resident server process (not one `whisper-cli` call per utterance)
+was also necessary — reloading the model cold added another ~1.15s on top
+of the fixed-window cost. `WHISPER_MODEL` in `senses/ears/config.py` is
+one line if a future phase's accuracy needs outgrow `small.en` — larger
+models remain a config change, not a rewrite, same pattern as ADR-008's
+provider fallback.
 
 ---
 
@@ -335,3 +359,41 @@ answer, with timeout — is provided by the skill host, not by skills.
 **Consequences.** The confirmation loop in `docs/SKILLS.md` § 5 becomes the
 default shape of a skill. Interruption, timeout and cancellation are handled
 once, correctly, in one place.
+
+---
+
+## ADR-014 — Phase 1 IPC and VAD: native whisper.cpp VAD, plain Unix sockets
+**Status:** accepted
+
+**Context.** `SPEC.md` § 2 specifies `ears` and `voice` as separate processes
+talking over "a local Unix socket," without pinning the wire format. ROADMAP's
+Phase 1 checklist lists Silero VAD as a separate line item from whisper.cpp,
+which read as "two ML components" going in.
+
+**Decision.**
+- **IPC:** newline-delimited JSON over `AF_UNIX` `SOCK_STREAM`, shared helper
+  in `senses/ipc.py` (`listen`/`accept_one`/`connect`/`send_line`/`read_lines`).
+  Message shape mirrors `ServerEvent`/`ClientEvent` in `shared/types.ts` for
+  consistency, even though it's a different transport. `ears` and `voice` are
+  servers (they sit and wait, matching their `launchd, always on`/`idle`
+  description in `SPEC.md` § 2); whatever orchestrates them — the throwaway
+  `senses/echo_bridge.py` in Phase 1, `core/` from Phase 3 — is the client
+  that connects out to both.
+- **VAD:** `whisper-cli`'s built-in `--vad`/`--vad-model` flags (confirmed via
+  `whisper-cli --help`) run the same Silero VAD model ADR-003 already calls
+  for, natively inside the same binary that does STT. No second ML runtime
+  (`torch`/`onnxruntime`) in `senses/ears` at all.
+
+**Consequences.**
+- One fewer heavy Python dependency on a machine that Phase 0 already proved
+  has no headroom to spare (ADR-001). This wasn't a nice-to-have — see the
+  Phase 1 log in `PROGRESS.md` for what this machine does to a stray large
+  dependency.
+- `senses/ears/transcribe.py` shells out to `whisper-cli` rather than using a
+  Python binding — matches the project's existing preference for proven
+  native tools over C-extension wrappers (Aider/git in ADR-006 is the same
+  pattern applied to the `act` lane).
+- The IPC protocol is intentionally the simplest thing that could work
+  (blocking single-client accept, no reconnection state beyond "wait for the
+  next `accept()`"). Revisit if Phase 3's `core/` ever needs multiple
+  concurrent consumers of `ears`' output — not needed yet, not built yet.

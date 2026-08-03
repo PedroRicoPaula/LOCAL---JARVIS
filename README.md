@@ -17,7 +17,7 @@ one.
 | `ROADMAP.md` | 14 phases with verifiable acceptance criteria |
 | `docs/SKILLS.md` | **How to write a skill.** Read before touching `skills/` |
 | `CLAUDE.md` | Conduct rules for the coding agent |
-| `DECISIONS.md` | Why things are the way they are (13 ADRs) |
+| `DECISIONS.md` | Why things are the way they are (14 ADRs) |
 | `PROGRESS.md` | Where we actually are |
 
 ---
@@ -81,6 +81,47 @@ update `PROGRESS.md`, commit, and stop.
 Pass bar for the local model: **≥ 90% valid JSON, ≥ 85% lane accuracy,
 p95 < 900 ms** across 45 cases. If nothing clears it, that is a real result — route lane
 classification to NIM and record why. Do not lower the bar.
+
+---
+
+## Phase 1 quickstart
+
+Code is done (`make check` is green). Two things only you can do:
+
+**1. One-time setup, if you haven't already**
+
+```bash
+/opt/homebrew/bin/python3.13 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+If `whisper-cli` isn't installed yet: `brew install whisper-cpp` — but check
+`which -a brew` first. This machine turned out to have two Homebrew installs
+(an Intel one at `/usr/local` shadowing the native arm64 one at
+`/opt/homebrew` in PATH); install with `/opt/homebrew/bin/brew` specifically,
+or you'll silently get an x86_64 binary running under Rosetta with no Metal
+acceleration. `senses/ears/config.py` already points at the native path
+explicitly, so the project works either way — but anything you run ad hoc
+outside it might not.
+
+**2. Grant Accessibility permission**
+
+`make dev` will print `This process is not trusted!` the first time — that's
+`pynput` telling you the hotkey listener needs approval. System Settings →
+Privacy & Security → Accessibility → add whichever app is actually running
+the Python process, then re-run `make dev`.
+
+**3. Run it, and run the DoD checks**
+
+```bash
+make dev                              # hold Tab, speak, listen back
+.venv/bin/python bench/score_phase1.py   # 20 sentences, needs >= 95% word accuracy
+```
+
+For the 10-trial latency check: do 10 round-trips via `make dev` and read
+`echo_bridge`'s printed latency per utterance — needs < 1.5s. See
+`PROGRESS.md`'s Phase 1 log for exactly what that number does and doesn't
+include.
 
 ---
 

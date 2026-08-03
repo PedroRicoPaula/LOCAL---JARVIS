@@ -1,0 +1,15 @@
+# Python deps for bench/ and senses/. Managed with a plain venv + pip —
+# no Poetry/uv, matches CLAUDE.md's "prefer boring" for a one-person project.
+#
+#   /opt/homebrew/bin/python3.13 -m venv .venv
+#   .venv/bin/pip install -r requirements.txt
+
+sounddevice==0.5.1
+numpy==2.1.3
+# >=1.8.2, not 1.7.7: that version's Listener defines a `_handle` method
+# that collides with Python 3.13's new Thread._handle attribute, crashing
+# every keyboard event with "TypeError: '_thread._ThreadHandle' object is
+# not callable". Fixed upstream by renaming to _handle_message. See
+# PROGRESS.md's Phase 1 log — this one cost real debugging time.
+pynput==1.8.2
+pytest==8.3.3

@@ -14,9 +14,8 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["shared/*"]
+      "@shared/*": ["./shared/*"]
     }
   },
   "include": ["shared/**/*.ts", "core/**/*.ts", "skills/**/*.ts"],
