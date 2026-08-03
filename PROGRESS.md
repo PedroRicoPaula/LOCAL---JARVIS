@@ -431,7 +431,19 @@ voz"). Not a closed question, a deferred one.
   in `senses/ears/config.py`, currently the untuned default 0.5). ADR-005
   already budgeted "half a day" for this.
 - 30 deliberate activations at ~2m for the ≥90% detection DoD number.
-- A 4-hour unattended background run for the <2 false-activations number.
+  Pedro's own voice is the real number; I can run a synthetic `say`-voice
+  proxy as a smoke test but openWakeWord's `hey_jarvis` was trained on
+  real speech, so a TTS pass/fail rate isn't the official one.
+- A 4-hour unattended background run for the <2 false-activations
+  number — **started** 2026-08-03 20:52 local, `senses.ears.main` running
+  standalone (not via `make dev`), logging to
+  `data/logs/false_activation_run.log` with a timestamp per line. A
+  background timer stops it and appends an end marker after 4h; a Monitor
+  watches the log for `wake word detected` / `4h run ended` lines. Count
+  the `wake word detected` lines in that window against the <2 bar once
+  it ends — anyone in the room who actually said "hey jarvis" during the
+  window is a real activation, not false, and should be excluded by
+  timestamp if that happens.
 - `make install-daemon`, then an actual reboot, for "survives reboot
   without manual intervention." The loaded daemon will almost certainly
   need Microphone/Accessibility/Input Monitoring granted again — confirmed
