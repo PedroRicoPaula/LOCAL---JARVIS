@@ -587,7 +587,16 @@ voz"). Not a closed question, a deferred one.
   sentences hit the next ceiling: `MAX_RECORDING_FRAMES` at 200 (16s) was
   cutting them right near the end — same sentence, cut in roughly the same
   place on repeated attempts, a hard ceiling rather than randomness.
-  Raised to 400 (32s). Not yet re-verified live.
+  Raised to 400 (32s).
+- **Fifth live round, confirmed fixed.** Two ~40-word (~16s) sentences —
+  the exact kind that hit the 16s cap before — came through complete, no
+  cutoff. A third, deliberately much longer stress-test sentence
+  (~95 words, ~38s, several test sentences chained together) did get cut
+  near the end — that's the 32s cap doing its job as a safety net against
+  an unbounded recording, not a bug; nobody issues a genuine 95-word
+  command in normal use. Closing this investigation thread: both the
+  silence-pause cutoff and the length-cap cutoff are fixed and verified
+  against realistic sentence lengths.
 
 ---
 
