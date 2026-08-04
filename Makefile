@@ -1,4 +1,4 @@
-.PHONY: check bench dev install-daemon uninstall-daemon
+.PHONY: check bench dev install-daemon uninstall-daemon new-skill
 
 # Requires: `npm install` (TypeScript), `ruff` on PATH (brew install ruff),
 # and .venv set up per requirements.txt (see README.md Phase 1 quickstart).
@@ -7,7 +7,8 @@ check:
 	npx tsc --noEmit
 	ruff check bench/ senses/
 	.venv/bin/pytest senses/ -q
-	node --test 'core/**/*.test.ts'
+	node --test 'core/**/*.test.ts' 'skills/**/*.test.ts'
+	npx eslint 'skills/**/*.ts' --ignore-pattern 'skills/__fixtures__/**'
 
 # nim_smoke.sh takes no arguments. bench_local.py needs model names that
 # depend on what you pulled in `ollama pull` — see README.md Phase 0
@@ -52,3 +53,8 @@ uninstall-daemon:
 	-launchctl unload ~/Library/LaunchAgents/com.jarvis.ears.plist
 	rm -f ~/Library/LaunchAgents/com.jarvis.ears.plist
 	@echo "Unloaded and removed."
+
+# Phase 5: docs/SKILLS.md SS8's 30-minute test. `id` is required.
+new-skill:
+	@if [ -z "$(id)" ]; then echo "Usage: make new-skill id=<name>"; exit 1; fi
+	node core/skills/scaffold.ts $(id)

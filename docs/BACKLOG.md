@@ -18,6 +18,15 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 
 ## Platform
 
+- **`core` <-> `senses/ears`/`senses/voice` IPC wiring — flagged during
+  Phase 5, not owned by any phase's checklist yet.** `senses/echo_bridge`
+  is still explicitly a Phase-1-only stand-in for `core`; Phase 5 built a
+  real `Conversation` interface (`ctx.say`/`ctx.ask`) with a genuine stdio
+  implementation, but nothing yet replaces `echo_bridge` with a real
+  connection from `core` (TypeScript) to the Python voice pipeline over
+  the existing Unix-socket `senses/ipc.py` transport. Needs a real phase
+  or an explicit decision about which phase absorbs it — raised with
+  Pedro rather than assumed.
 - Bounded continuous-vision sessions ("watch me solder this")
 - Mobile client for approvals away from the desk
 - Sandboxed `act` lane (OpenHands-style container)

@@ -838,3 +838,88 @@ already put in place.
   Both a reminder that a clean `tsc --noEmit` on a new dependency's import
   shape doesn't guarantee it actually runs — worth one real execution
   before trusting it.
+
+---
+
+## ADR-019 — Phase 5 skill host: routing thresholds, namespace enforcement, stubs
+
+**Status:** accepted
+
+**Context.** `docs/SKILLS.md` specifies the manifest format, two-stage
+routing (lane classifier → embedding match → disambiguation), the
+`SkillContext` surface, per-skill storage, and error isolation. Building it
+meant real decisions about where `Skill`/`SkillContext` live, how routing
+thresholds and lane-filtering interact, how storage isolation is actually
+enforced, and how to represent capabilities (`CAMERA`, the gate) that don't
+exist yet without either building them early or leaving `SkillContext`
+incomplete.
+
+**Decisions.**
+- **`Skill`/`SkillContext`/`Router`/`Conversation`/`SkillStore` live in
+  `core/skills/types.ts`, not `shared/types.ts`** — same reasoning as
+  `ModelProvider` (ADR-017) and `Memory`: skills run in the same process as
+  `core`, never across a real boundary.
+- **Embedding match is plain JS cosine similarity over an in-memory array,
+  not `sqlite-vec`.** The candidate set is every manifest example across
+  loaded skills — at most a few hundred short strings. Routing skill
+  dispatch through `core/memory`'s database would couple two things that
+  don't need to be coupled.
+- **A skill's candidate intents are filtered to those whose declared
+  `lanes` include the classified lane, *before* scoring.** Found live
+  (routing benchmark's first run, 80%) that this filter can silently make
+  an utterance completely unroutable if a manifest's declared lanes don't
+  match what the lane classifier actually produces for its real phrasings
+  — not a routing-quality problem, a hard miss with zero candidates. Kept
+  the filter (it's the right design — an intent genuinely shouldn't fire
+  outside its declared lanes) and instead fixed the two manifests that had
+  it wrong; see "Surprised me" in `PROGRESS.md`'s Phase 5 log.
+- **`ctx.store`'s namespace enforcement checks every literal `skill_`
+  marker against the calling skill's own id, not just the four shared
+  table names.** The first version only blocked `events`/`facts`/
+  `observations`/`memory_vec` explicitly — a skill could still reach
+  another skill's `skill_<other>_*` table. `store.test.ts`'s own
+  cross-skill test caught this immediately; fixed before it shipped
+  further than that one test run.
+- **`camera.ts` and `gate.ts` are throwing stubs, not omitted fields.**
+  Every field `docs/SKILLS.md` § 4 specifies for `SkillContext` is really
+  present on every context; what's missing is the real capability behind
+  `camera`/`propose` (Phase 8, Phase 6). Calling either before those
+  phases exist fails loudly with a clear message pointing at why, rather
+  than being `undefined` (a confusing crash somewhere else) or silently
+  doing nothing (worse — CLAUDE.md § 6: "if the system does not know, it
+  says so").
+- **`ctx.ask`/`ctx.say` are backed by a real (not fake) stdio
+  `Conversation` implementation (`conversation/cli.ts`) for now.** No
+  phase's checklist yet wires `core` to `senses/ears`/`senses/voice` over
+  IPC — see `docs/BACKLOG.md`'s new Platform entry. This is a real gap in
+  the roadmap, not a Phase 5 shortfall: nothing between Phase 1 (built the
+  Python voice pipeline with an explicit Phase-1-only stand-in bridge) and
+  now names replacing that bridge with a real `core` connection. The
+  `Conversation` interface is the seam a future integration phase plugs
+  a real implementation into without touching any skill code.
+- **`eslint.config.js`'s executor-import rule targets `core/executors/**`,
+  a directory that's empty until Phase 6.** Establishing the convention
+  and the guardrail now means Phase 6 has enforcement from its first
+  commit instead of retrofitting it once there's real code to protect.
+
+**Consequences.**
+- Intent routing measured at 100% (15/15) on a live benchmark
+  (`bench/bench_skill_routing.ts`) after two real fixes — both found by
+  running the benchmark, not by reviewing the manifests. `make new-skill`
+  timed at ~111 seconds end to end, including finding and fixing two real
+  scaffolder bugs (a URL-encoding bug in `REPO_ROOT` that broke on this
+  repo's own non-ASCII path, and a wrong relative-import depth in the
+  generated test) — both are exactly what the 30-minute timing exists to
+  catch, and did, on the first real run.
+- `brief`'s router-phrased output was subtly wrong on its first live run
+  (misinterpreted "verbosity is terse" as needing explanation rather than
+  relaying it) — via NIM, confirmed healthy at the time, not a degraded
+  fallback excuse. Fixed with a one-shot worked example in the phrasing
+  prompt, the same lesson Phase 3's lane classifier prompt already
+  established: a category description under-specifies the task; a worked
+  example closes gaps a description can't anticipate.
+- The `core` <-> `senses` IPC gap is now written down (`docs/BACKLOG.md`)
+  rather than silently assumed to be someone else's problem later —
+  whichever phase (a new one, or folded into an existing one) actually
+  makes voice-in-and-out real needs to know this wasn't secretly already
+  done.
