@@ -24,6 +24,9 @@
 import { connectWithRetry, readLines, sendLine } from "./ipc.ts";
 import { generalConversationReply } from "./converse.ts";
 import { extractAndRememberFacts } from "./factExtraction.ts";
+import { watchApprovalCommands } from "./gate/cli.ts";
+import { Gate } from "./gate/gate.ts";
+import { getSigningKey } from "./gate/hmac.ts";
 import { openDb } from "./memory/db.ts";
 import { Memory } from "./memory/memory.ts";
 import { OllamaProvider } from "./router/providers/ollama.ts";
@@ -53,6 +56,7 @@ async function main(): Promise<void> {
   const db = openDb(DB_PATH);
   const memory = new Memory(db, embedder);
   const routerRegistry = await buildRegistry();
+  const gate = new Gate(db, await getSigningKey());
 
   const skillRegistry = new SkillRegistry();
   const loadReport = await skillRegistry.loadAll(
@@ -62,6 +66,11 @@ async function main(): Promise<void> {
   console.log("core: skills loaded:", loadReport.loaded, "-- disabled:", loadReport.disabled);
 
   const conversation = createIpcConversation((text) => sendLine(voiceSock, { type: "speak", text }));
+
+  // Concurrent with the ears loop below, not before/after it -- until
+  // Phase 7's dashboard exists, typing into this same terminal is the
+  // only way to answer a pending approval (see gate/cli.ts's docstring).
+  watchApprovalCommands(gate).catch((err) => console.error("core: approval command reader failed", err));
 
   console.log("core: ready.");
   for await (const message of readLines(earsSock)) {
@@ -89,7 +98,7 @@ async function main(): Promise<void> {
         routerRegistry,
         text,
         SESSION_ID,
-        (skillId) => buildSkillContext({ db, memory, routerRegistry, conversation }, skillId, SESSION_ID),
+        (skillId) => buildSkillContext({ db, memory, routerRegistry, conversation, gate }, skillId, SESSION_ID),
       );
 
       let speech: string;

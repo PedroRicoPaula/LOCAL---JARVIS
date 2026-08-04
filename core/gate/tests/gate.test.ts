@@ -1,0 +1,211 @@
+import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import { test } from "node:test";
+import type { ProposedAction } from "../../../shared/types.ts";
+import { Gate } from "../gate.ts";
+
+const KEY = "test-signing-key";
+
+function freshGate(): Gate {
+  return new Gate(new DatabaseSync(":memory:"), KEY);
+}
+
+function auditRows(gate: Gate): { event: string; detail: unknown }[] {
+  // Reach into the private db via the public getApproval/listPending path
+  // isn't enough for audit rows -- test via a small helper query instead.
+  const db = (gate as unknown as { db: DatabaseSync }).db;
+  return (db.prepare("SELECT event, detail FROM audit_log ORDER BY ts").all() as { event: string; detail: string }[]).map(
+    (r) => ({ event: r.event, detail: JSON.parse(r.detail) }),
+  );
+}
+
+test("a green-tier action runs unprompted and is still logged", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "MEMORY_READ", humanSummary: "read something", payload: { x: 1 } };
+
+  const outcome = await gate.propose(action, "brief");
+
+  assert.deepEqual(outcome, { ok: true, result: { x: 1 } });
+  const audit = auditRows(gate);
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0]?.event, "green_auto_run");
+});
+
+test("a yellow-tier action blocks until answered", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "MEMORY_WRITE", humanSummary: "write something", payload: { x: 1 } };
+
+  let resolved = false;
+  const outcomePromise = gate.propose(action, "some-skill").then((o) => {
+    resolved = true;
+    return o;
+  });
+
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(resolved, false, "must not resolve before a decision or expiry");
+
+  const pending = gate.listPending();
+  assert.equal(pending.length, 1);
+  gate.decide({ requestId: pending[0]!.id, nonce: pending[0]!.nonce, decision: "approve", decidedAt: Date.now() });
+
+  const outcome = await outcomePromise;
+  assert.equal(outcome.ok, true);
+});
+
+test("approval yields a signed execution the caller can hand to an executor later", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "FS_WRITE", humanSummary: "write a file", payload: { path: "/tmp/x" } };
+
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
+  const outcome = await outcomePromise;
+
+  assert.equal(outcome.ok, true);
+  if (outcome.ok) {
+    const signed = outcome.result as { requestId: string; nonce: string; signature: string };
+    assert.equal(signed.requestId, request!.id);
+    assert.equal(signed.nonce, request!.nonce);
+    assert.ok(signed.signature.length > 0);
+  }
+});
+
+test("rejecting resolves ok:false with reason rejected, and is logged", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "SHELL_EXEC", humanSummary: "run a command", payload: {} };
+
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "reject", decidedAt: Date.now() });
+  const outcome = await outcomePromise;
+
+  assert.deepEqual(outcome, { ok: false, reason: "rejected" });
+  const audit = auditRows(gate);
+  assert.ok(audit.some((a) => a.event === "rejected"));
+});
+
+test("replaying a spent nonce fails and logs reason: replay -- SPEC.md SS8, verbatim", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "GIT_WRITE", humanSummary: "push a commit", payload: {} };
+
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+  const response = { requestId: request!.id, nonce: request!.nonce, decision: "approve" as const, decidedAt: Date.now() };
+
+  gate.decide(response); // first decision: consumes the nonce
+  await outcomePromise;
+
+  gate.decide(response); // replay: same nonce, already decided
+
+  const audit = auditRows(gate);
+  const replayEntries = audit.filter((a) => a.event === "rejected" && (a.detail as { reason?: string }).reason === "replay");
+  assert.equal(replayEntries.length, 1);
+});
+
+test("a decision with the right id but a wrong nonce is treated as replay, not honored", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "WEBHOOK", humanSummary: "call a webhook", payload: {} };
+
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+
+  gate.decide({ requestId: request!.id, nonce: "not-the-real-nonce", decision: "approve", decidedAt: Date.now() });
+
+  // Still pending -- the bogus decision must not have consumed it.
+  assert.equal(gate.listPending().length, 1);
+  const audit = auditRows(gate);
+  assert.ok(audit.some((a) => a.event === "rejected" && (a.detail as { reason?: string }).reason === "replay"));
+
+  // The real decision still works afterward.
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
+  const outcome = await outcomePromise;
+  assert.equal(outcome.ok, true);
+});
+
+test("an expired approval cannot be executed -- times out on its own and resolves expired", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "FS_WRITE", humanSummary: "write", payload: {}, expiresInMs: 10 };
+
+  const outcome = await gate.propose(action, "some-skill");
+
+  assert.deepEqual(outcome, { ok: false, reason: "expired" });
+  const audit = auditRows(gate);
+  assert.ok(audit.some((a) => a.event === "expired"));
+});
+
+test("a decision arriving after expiry (clock skew) is rejected as expired, not honored", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = {
+    capability: "SHELL_EXEC",
+    humanSummary: "run",
+    payload: {},
+    expiresInMs: 60_000, // long enough the real timer won't fire during this test
+  };
+
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+
+  // Simulate a decide() call that arrives after expiresAt, without
+  // actually waiting for the real timer.
+  gate.decide(
+    { requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() },
+    () => Date.now() + 61_000,
+  );
+
+  const outcome = await outcomePromise;
+  assert.deepEqual(outcome, { ok: false, reason: "expired" });
+});
+
+test("markExecuted only succeeds on an approved request, and logs it", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "FS_WRITE", humanSummary: "write", payload: {} };
+
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
+  await outcomePromise;
+
+  assert.equal(gate.markExecuted(request!.id), true);
+  const audit = auditRows(gate);
+  assert.ok(audit.some((a) => a.event === "executed"));
+
+  // Calling it again (already executed, not approved anymore) must fail.
+  assert.equal(gate.markExecuted(request!.id), false);
+});
+
+test("markExecuted refuses a request that was never approved", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "FS_WRITE", humanSummary: "write", payload: {} };
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "reject", decidedAt: Date.now() });
+  await outcomePromise;
+
+  assert.equal(gate.markExecuted(request!.id), false);
+});
+
+test("audit_log is genuinely append-only", () => {
+  const gate = freshGate();
+  const db = (gate as unknown as { db: DatabaseSync }).db;
+  db.prepare("INSERT INTO audit_log (id, ts, approval_id, event, detail) VALUES (?, ?, ?, ?, ?)").run(
+    "a1",
+    1,
+    null,
+    "created",
+    "{}",
+  );
+
+  assert.throws(() => db.prepare("UPDATE audit_log SET event = 'x' WHERE id = 'a1'").run(), /append-only/);
+  assert.throws(() => db.prepare("DELETE FROM audit_log WHERE id = 'a1'").run(), /append-only/);
+});
+
+test("listPending only returns pending approvals, not decided ones", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "FS_WRITE", humanSummary: "write", payload: {} };
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
+  await outcomePromise;
+
+  assert.deepEqual(gate.listPending(), []);
+});

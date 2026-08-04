@@ -1,11 +1,12 @@
 /**
- * core/skills/gate.ts — stub `propose()`. Real implementation is Phase 6
+ * core/skills/gate.ts — fallback `propose()` for when `context.ts` isn't
+ * given a real `core/gate/gate.ts` `Gate` instance (tests, or any caller
+ * that hasn't wired one up). The real implementation is Phase 6's `Gate`
  * (`ApprovalRequest` lifecycle, nonces, HMAC signing, the audit log —
- * CLAUDE.md § 5). No skill built before Phase 6 may declare a
- * side-effecting capability (anything but MEMORY_READ/FS_READ/CAMERA/
- * NET_READ); this stub exists only so `SkillContext.propose` is a real,
- * always-present function per docs/SKILLS.md § 4, and fails loudly if a
- * skill calls it before the gate exists to actually enforce approval.
+ * CLAUDE.md § 5); this stub exists only so `SkillContext.propose` is
+ * always a real, present function per docs/SKILLS.md § 4, and fails
+ * loudly rather than silently no-opping if something calls it without a
+ * gate behind it.
  */
 
 import type { ApprovalOutcome, ProposedAction } from "../../shared/types.ts";
@@ -14,6 +15,6 @@ export async function stubPropose(_action: ProposedAction): Promise<ApprovalOutc
   return {
     ok: false,
     reason: "error",
-    detail: "the approval gate does not exist until Phase 6 — see CLAUDE.md § 5",
+    detail: "no Gate was wired into this SkillContext — see core/skills/context.ts's `gate` option",
   };
 }
