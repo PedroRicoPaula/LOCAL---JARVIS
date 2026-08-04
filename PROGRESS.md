@@ -1796,6 +1796,54 @@ record in `docs/BACKLOG.md`.
 
 224 tests, `make check` green.
 
+**Same day, Pedro's own first real `make dev` session with the new
+dashboard, real voice via the wake word:** asked to dig into
+`data/jarvis.db` to see what needs improving. The new `routing_stats`
+table (shipped hours earlier) turned this from "guess from response
+phrasing" into "read exactly what dispatch decided" for the first
+time. Four real bugs found and fixed, all confirmed with real data, not
+assumed:
+
+1. `shopping_list`'s `remove_item`/`clear_list` were `converse`-only --
+   "delete milk sugar from the shopping list" classified as `act`,
+   "remove or delete milk sugar" classified as `see`, both silently
+   missed the skill (`routing_stats` confirmed `NO MATCH` for both).
+2. **The real, serious one:** when dispatch fell through from (1),
+   `converse`'s fallback *claimed to have deleted the item* -- twice,
+   with different phrasing each time. Neither deletion ever happened;
+   the garbage item was still sitting in the real DB. Same class of bug
+   as the earlier "converse hallucinated capabilities" fix, now shown
+   to extend to concrete, checkable claims about the owner's own data,
+   not just abstract capability claims. `core/persona.md` gained an
+   explicit rule against this, with a test confirming it reaches the
+   model.
+3. "Add milk and sugar to the shopping list" stored as one item with a
+   literal embedded newline -- the extraction prompt had no protocol
+   for more than one item. Pedro tried to correct it explicitly and
+   got the identical bug again. Fixed: one item per line, one row per
+   item.
+4. "Drive to Lagoa" transcribed as "Drive to La Goa" -- same root cause
+   and fix as the earlier "Ponta Delgada" bug, added to the same
+   Whisper vocabulary hint.
+
+`system_health` also given the same multi-lane backstop as a
+preventive measure (it already broke once, ADR-024, with no structural
+safety net of its own -- only a classifier prompt example, which
+ADR-026 already proved can regress from unrelated changes).
+`tasks`/`brief`/`weather` are still `converse`-only with no direct
+evidence of breakage -- left alone, flagged in `docs/BACKLOG.md` rather
+than guessed at.
+
+The real, corrupted production shopping list was repaired: the two
+garbage newline-merged rows deleted, replaced with clean "Milk" and
+"Sugar" (restoring what Pedro actually asked for), "water" untouched.
+Live-verified, not just unit-tested: replayed Pedro's exact failing
+phrasing against a fresh isolated instance and confirmed both now
+reach the real skill (honest "couldn't find X" responses, not
+hallucinated success). Full detail in DECISIONS.md's ADR-030.
+
+226 tests, `make check` green.
+
 ---
 
 ## Key numbers to record as we go
