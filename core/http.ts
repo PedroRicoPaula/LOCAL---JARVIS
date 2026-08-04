@@ -8,6 +8,7 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { DashboardHistory } from "./dashboardHistory.ts";
 import type { Gate } from "./gate/gate.ts";
 import type { Memory } from "./memory/memory.ts";
 import type { SkillRegistry } from "./skills/registry.ts";
@@ -28,7 +29,7 @@ function withCors(res: ServerResponse): void {
   res.setHeader("access-control-allow-origin", "*");
 }
 
-export function createHttpServer(memory: Memory, skillRegistry: SkillRegistry, gate: Gate): Server {
+export function createHttpServer(memory: Memory, skillRegistry: SkillRegistry, gate: Gate, history: DashboardHistory): Server {
   return createServer((req: IncomingMessage, res: ServerResponse) => {
     withCors(res);
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -51,6 +52,16 @@ export function createHttpServer(memory: Memory, skillRegistry: SkillRegistry, g
 
     if (url.pathname === "/api/system") {
       sendJson(res, 200, getSystemMetrics());
+      return;
+    }
+
+    if (url.pathname === "/api/thoughts") {
+      sendJson(res, 200, history.recentThoughts());
+      return;
+    }
+
+    if (url.pathname === "/api/errors") {
+      sendJson(res, 200, history.recentErrors());
       return;
     }
 

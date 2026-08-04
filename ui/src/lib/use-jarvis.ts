@@ -21,6 +21,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { ApprovalRequest, ClientEvent, JarvisState, MemoryEvent, ServerEvent, SkillHealth, SystemMetrics } from "./types";
 
+type ThoughtEvent = Extract<ServerEvent, { type: "thought" }>;
+type ErrorEvent = Extract<ServerEvent, { type: "error" }>;
+
 const CORE_URL = process.env["NEXT_PUBLIC_JARVIS_CORE_URL"] ?? "http://localhost:8787";
 const WS_URL = CORE_URL.replace(/^http/, "ws");
 const RECONNECT_DELAY_MS = 2000;
@@ -101,6 +104,16 @@ export function useJarvis(): JarvisDashboardState {
     fetchJson<MemoryEvent[]>("/api/events?limit=100").then((all) => {
       setEvents(all);
       setTranscript(all.map(eventToTranscriptLine).filter((l): l is TranscriptLine => l !== null));
+    }).catch(() => undefined);
+    // Same backfill reasoning as transcript/approvals above (this hook's
+    // own docstring, ADR-023): core/ws.ts is push-only, so a fresh tab
+    // needs these seeded from history or Thought Stream/Error Log show
+    // nothing until the next live event -- found live, SOAK 1.
+    fetchJson<ThoughtEvent[]>("/api/thoughts").then((all) => {
+      setThoughts(all.map((e) => ({ text: e.text, lane: e.lane, ts: e.ts })));
+    }).catch(() => undefined);
+    fetchJson<ErrorEvent[]>("/api/errors").then((all) => {
+      setErrors(all.map((e) => ({ message: e.message, detail: e.detail, ts: e.ts })));
     }).catch(() => undefined);
     refreshSkills();
   }, []);

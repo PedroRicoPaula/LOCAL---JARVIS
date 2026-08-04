@@ -23,6 +23,7 @@
 
 import { connectWithRetry, readLines, sendLine } from "./ipc.ts";
 import { generalConversationReply } from "./converse.ts";
+import { createDashboardHistory } from "./dashboardHistory.ts";
 import { createWriteFactExecutor } from "./executors/memory.ts";
 import { runShellAction } from "./executors/shell.ts";
 import { extractAndRememberFacts } from "./factExtraction.ts";
@@ -83,7 +84,8 @@ async function main(): Promise<void> {
   // for the live channel, so both share one port. `wsHub` is also how
   // `Gate`'s "approval.new"/"approval.resolved" events (SPEC.md § 8: "the
   // dashboard is a view, never an authority") reach a browser.
-  const httpServer = createHttpServer(memory, skillRegistry, gate);
+  const history = createDashboardHistory();
+  const httpServer = createHttpServer(memory, skillRegistry, gate, history);
   const wsHub = createWsHub(httpServer, gate);
   await new Promise<void>((resolve) => httpServer.listen(DASHBOARD_PORT, resolve));
   console.log(`core: dashboard listening on :${DASHBOARD_PORT}`);
@@ -134,14 +136,16 @@ async function main(): Promise<void> {
         SESSION_ID,
         (skillId) => buildSkillContext({ db, memory, routerRegistry, conversation, gate }, skillId, SESSION_ID),
       );
-      wsHub.broadcast({
-        type: "thought",
+      const thoughtEvent = {
+        type: "thought" as const,
         lane: trace.lane,
         ts: Date.now(),
         text: trace.chosen
           ? `${trace.lane}: dispatched ${trace.chosen.skillId}.${trace.chosen.intentId}${trace.disambiguated ? " (disambiguated)" : ""}`
           : `${trace.lane}: no skill matched, falling back to general conversation`,
-      });
+      };
+      wsHub.broadcast(thoughtEvent);
+      history.recordThought(thoughtEvent);
 
       let speech: string;
       if (outcome.outcome === "dispatched") {
@@ -169,7 +173,9 @@ async function main(): Promise<void> {
       // the dashboard, not just the terminal.
       console.error("core: failed to handle utterance, continuing", err);
       const message = err instanceof Error ? err.message : String(err);
-      wsHub.broadcast({ type: "error", message: "Something went wrong handling that.", detail: message, ts: Date.now() });
+      const errorEvent = { type: "error" as const, message: "Something went wrong handling that.", detail: message, ts: Date.now() };
+      wsHub.broadcast(errorEvent);
+      history.recordError(errorEvent);
       const fallback = "Something went wrong handling that. I've logged the error.";
       conversation.say(fallback);
       wsHub.broadcast({ type: "transcript", text: fallback, final: true, speaker: "jarvis" });
