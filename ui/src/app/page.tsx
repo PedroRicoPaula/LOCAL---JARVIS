@@ -1,15 +1,29 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { ApprovalQueue } from "@/components/approval-queue";
 import { Clock } from "@/components/clock";
 import { ErrorLog } from "@/components/error-log";
-import { Orb } from "@/components/orb";
 import { SkillHealthPanel } from "@/components/skill-health";
 import { StatusBar } from "@/components/status-bar";
 import { ThoughtStream } from "@/components/thought-stream";
 import { Timeline } from "@/components/timeline";
 import { Transcript } from "@/components/transcript";
 import { useJarvis } from "@/lib/use-jarvis";
+
+// SSR'd, the Orb's SVG dot-ring positions (Math.cos/Math.sin over ~130
+// circles) came back from the server with values differing from the
+// client's own computation in the last float digit -- a real, if tiny,
+// cross-runtime floating-point discrepancy (Node's V8 vs the browser's),
+// not a bug in the trig itself. React's hydration is byte-exact, so even
+// a last-bit `cy` mismatch fails it. The Orb's actual state only exists
+// client-side anyway (driven by the WebSocket, unavailable during SSR),
+// so there's nothing SSR was giving us here worth chasing float-rounding
+// tricks to keep -- render it client-only instead.
+const Orb = dynamic(() => import("@/components/orb").then((m) => m.Orb), {
+  ssr: false,
+  loading: () => <div style={{ width: 240, height: 240 + 40 }} />,
+});
 
 export default function Home() {
   const { connection, connectedSince, orbState, approvals, transcript, thoughts, events, skills, errors, decide } = useJarvis();
