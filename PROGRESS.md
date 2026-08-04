@@ -7,17 +7,24 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 3 — Router — **built, DoD mostly met, not yet merged**
-**Status:** `ModelProvider` interface, `ollama`/`nim`/`rules`/`offline-fallback`
-providers, ordered per-lane fallback chains, and the lane classifier are all
-built and tested (33 new TS tests, `node --test`, zero network — plus the
-existing 20 Python tests). Lane classification measured live at **93.3%**
-against the real router (bar: ≥85%). See the Phase 3 log below for full
-detail, including two real bugs a live NIM call caught that no fake could
-have (an HTTP-200-with-embedded-error response, and a too-tight classifier
-timeout) — both fixed and now covered by injectable-`fetch` unit tests so
-they can't regress silently again.
-**Branch:** `phase/03-router`
+**Phase:** 3 — Router — **closed, merged to `main`**
+**Status:** closed by owner decision on the last open item, same pattern as
+Phases 1 and 2. `ModelProvider` interface, `ollama`/`nim`/`rules`/
+`offline-fallback` providers, ordered per-lane fallback chains, and the
+lane classifier are all built and tested (33 new TS tests, `node --test`,
+zero network — plus the existing 20 Python tests). Lane classification
+measured live at **93.3%** against the real router (bar: ≥85%) — PASS.
+"Pull the network" and RouterTrace-shape DoD items — PASS, live. "Kill
+Ollama → reason via nim" is structurally guaranteed and proven safe live,
+but a clean nim-succeeds happy-path call for the `reason` model wasn't
+captured this session (NIM's account visibly degraded under this phase's
+own heavy benchmark load) — owner accepted the failure-path proof as
+sufficient rather than waiting for a quieter retry. See the Phase 3 log
+below for full detail, including two real bugs a live NIM call caught that
+no fake could have (an HTTP-200-with-embedded-error response, and a
+too-tight classifier timeout) — both fixed and now covered by
+injectable-`fetch` unit tests so they can't regress silently again.
+**Branch:** `main`
 **Last updated:** 2026-08-04
 
 (Phase 1 complete — see Phase log below for the full record and what was
@@ -653,7 +660,14 @@ revisit once `core` (Phase 5) replaces `echo_bridge`.
 
 ---
 
-### Phase 3 — built, 2026-08-04
+### Phase 3 — closed, 2026-08-04
+
+**Closed by owner decision on the last open item, same pattern as Phases 1
+and 2.** Three of four DoD checks met in full, live; the fourth has its
+failure-path proven twice live plus a full fake-based unit test, but not a
+clean happy-path run — see "Left over" below. Asked the owner: close now
+on the failure-path proof, or wait for a quieter NIM window to confirm the
+happy path first. **Owner chose to close now.**
 
 **Built:**
 - `core/router/provider.ts`: the `ModelProvider` interface (SPEC.md § 3)
