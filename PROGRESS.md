@@ -1612,6 +1612,15 @@ the Figma reference. Full detail in DECISIONS.md's ADR-023. Verified
 live end to end on an isolated instance: real timestamps, all four
 states, screenshotted. 139 TS + 22 Python tests, `make check` green.
 
+**Found immediately after, real use again:** the new `Orb` hydration-
+mismatched on every load (server/client float rounding differing in the
+last digit across ~130 SVG circles' `cos`/`sin` positions -- a real
+cross-runtime discrepancy, not a math bug). Fixed by rendering it
+client-only (`next/dynamic`, `ssr: false`) rather than rounding the
+coordinates -- its state only exists client-side anyway (WebSocket-
+driven), so SSR wasn't preserving anything real. Verified: zero console
+errors/warnings on a fresh `next dev` load.
+
 ---
 
 ## Key numbers to record as we go
