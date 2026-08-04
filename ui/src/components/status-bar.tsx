@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import type { ConnectionState } from "@/lib/use-jarvis";
 
 const CONNECTION_LABEL: Record<ConnectionState, { text: string; color: string }> = {
@@ -6,8 +9,24 @@ const CONNECTION_LABEL: Record<ConnectionState, { text: string; color: string }>
   closed: { text: "DISCONNECTED", color: "#FF5D5D" },
 };
 
-export function StatusBar({ connection }: { connection: ConnectionState }) {
+function sessionUptime(connectedSince: number | null, now: number): string {
+  if (connectedSince === null) return "--:--:--";
+  const secs = Math.max(0, Math.floor((now - connectedSince) / 1000));
+  const h = String(Math.floor(secs / 3600)).padStart(2, "0");
+  const m = String(Math.floor((secs % 3600) / 60)).padStart(2, "0");
+  const s = String(secs % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+
+export function StatusBar({ connection, connectedSince }: { connection: ConnectionState; connectedSince: number | null }) {
   const { text, color } = CONNECTION_LABEL[connection];
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <div
       className="flex items-center justify-between px-4 shrink-0"
@@ -19,8 +38,10 @@ export function StatusBar({ connection }: { connection: ConnectionState }) {
           <span style={{ color }}>CORE: {text}</span>
         </span>
         <span className="text-jarvis-dim">·</span>
+        <span className="text-jarvis-dim">CAMERA: IDLE</span>
+        <span className="text-jarvis-dim">·</span>
         <span className="text-jarvis-dim">
-          CAMERA: <span className="text-jarvis-dim">IDLE</span>
+          SESSION <span className="text-jarvis-text">{sessionUptime(connectedSince, now)}</span>
         </span>
       </div>
       <div className="flex items-center gap-4 text-[9px] font-mono text-jarvis-dim tracking-widest">

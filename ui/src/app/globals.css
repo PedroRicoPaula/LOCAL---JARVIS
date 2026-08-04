@@ -196,6 +196,18 @@ body {
   }
 }
 
+@keyframes orb-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 0.85;
+  }
+}
+
 .status-dot-active {
   animation: status-pulse 2s ease-in-out infinite;
 }
@@ -206,4 +218,26 @@ body {
 
 .fade-in-up {
   animation: fade-in-up 0.3s ease-out both;
+}
+
+/* Faint background grid, matching the Figma reference. */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(0, 212, 255, 0.5) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.5) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.035;
+}
+
+/* Scanning line sweeping top to bottom, matching the Figma reference. */
+.scan-line {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 212, 255, 0.15) 30%,
+    rgba(0, 212, 255, 0.3) 50%,
+    rgba(0, 212, 255, 0.15) 70%,
+    transparent 100%
+  );
+  animation: scan-line 8s linear infinite;
 }

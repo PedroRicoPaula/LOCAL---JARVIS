@@ -67,14 +67,18 @@ export interface SkillHealth {
   loadedAt?: number;
 }
 
+export type JarvisState = "idle" | "listening" | "thinking";
+
 export type ServerEvent =
   | { type: "thought"; text: string; lane: Lane; ts: number }
   | { type: "approval.new"; request: ApprovalRequest }
   | { type: "approval.resolved"; requestId: string; state: ApprovalState }
   | { type: "transcript"; text: string; final: boolean; speaker: "owner" | "jarvis" }
+  | { type: "state"; value: JarvisState }
   | { type: "speaking"; active: boolean }
   | { type: "camera"; active: boolean }
-  | { type: "health"; providers: Record<string, boolean> };
+  | { type: "health"; providers: Record<string, boolean> }
+  | { type: "error"; message: string; detail?: string; ts: number };
 
 export type ClientEvent =
   | { type: "approval.decide"; response: ApprovalResponse }

@@ -41,7 +41,15 @@ def capture_and_transcribe(
     signals the command is over (key release, or auto-stop silence),
     disarm, transcribe, emit if non-empty. Returns the transcribed text
     ("" if nothing was heard — never guessed at, per CLAUDE.md § 0.5's
-    spirit applied to speech, not just numbers)."""
+    spirit applied to speech, not just numbers).
+
+    Emits {"type": "listening"} right as capture actually starts -- a
+    real state transition (the mic is recording now), not a guess at
+    content, so it's emitted even when nothing ends up transcribed.
+    core/main.ts relays this to the dashboard so the owner can watch a
+    request move through the system live rather than take "it's working
+    on it" on faith."""
+    emit({"type": "listening", "ts": time.time()})
     arm()
     wait_for_end()
     end_of_speech_ts = time.time()  # DoD's "time to first audible syllable"

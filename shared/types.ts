@@ -264,15 +264,28 @@ export interface SkillResult {
 // Live channel: core -> ui
 // ---------------------------------------------------------------------------
 
+/** What JARVIS is doing right now, independent of `speaking` -- so the
+ * owner can watch a request actually move (listening -> thinking ->
+ * speaking) instead of taking "it's working on it" on faith. Each value
+ * traces to a real signal, not a guess: `listening` from `senses/ears`
+ * arming the mic, `thinking` from an utterance landing in `core`'s
+ * dispatch loop, back to `idle` once that turn is fully handled. */
+export type JarvisState = "idle" | "listening" | "thinking";
+
 export type ServerEvent =
   | { type: "thought"; text: string; lane: Lane; ts: number }
   | { type: "trace"; trace: RouterTrace }
   | { type: "approval.new"; request: ApprovalRequest }
   | { type: "approval.resolved"; requestId: string; state: ApprovalState }
   | { type: "transcript"; text: string; final: boolean; speaker: "owner" | "jarvis" }
+  | { type: "state"; value: JarvisState }
   | { type: "speaking"; active: boolean }
   | { type: "camera"; active: boolean }
-  | { type: "health"; providers: Record<string, boolean> };
+  | { type: "health"; providers: Record<string, boolean> }
+  /** A turn failed. Spoken to the owner too (persona.md) -- this is the
+   * dashboard-visible half of the same honesty rule, not a replacement
+   * for it. `detail` is a plain message, never a raw stack trace. */
+  | { type: "error"; message: string; detail?: string; ts: number };
 
 export type ClientEvent =
   | { type: "approval.decide"; response: ApprovalResponse }

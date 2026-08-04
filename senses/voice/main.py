@@ -29,6 +29,12 @@ def run_forever(backend: SayBackend, conn: socket.socket) -> None:
     for message in ipc.read_lines(conn):
         if message.get("type") != "speak":
             continue
+        # `SayBackend.speak` blocks until the audio actually finishes
+        # playing (see say_backend.py's own docstring) -- so unlike
+        # `ears`'s "listening" signal, `active: false` here is a genuine
+        # "done," not a guess. Mirrors shared/types.ts's ServerEvent
+        # `speaking` shape directly so core/main.ts can relay it as-is.
+        ipc.send_line(conn, {"type": "speaking", "active": True})
         try:
             speak_text(message.get("text", ""), backend)
         except (BrokenPipeError, ConnectionResetError):
@@ -38,6 +44,8 @@ def run_forever(backend: SayBackend, conn: socket.socket) -> None:
             # to keep running; one bad `say` call (subprocess hiccup, an
             # unsupported character) shouldn't end the process.
             print(f"voice: failed to speak {message.get('text', '')!r}, continuing ({exc!r})")
+        finally:
+            ipc.send_line(conn, {"type": "speaking", "active": False})
 
 
 def main() -> None:

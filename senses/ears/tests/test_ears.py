@@ -38,12 +38,16 @@ def test_handle_hotkey_utterance_happy_path() -> None:
     assert audio_source.armed and not audio_source.last_auto_stop
     assert audio_source.disarmed
     assert transcriber.received_paths == [Path("/fake/utterance.wav")]
-    assert emitted == [{"type": "utterance", "text": "turn on the lights", "ts": emitted[0]["ts"]}]
+    assert emitted == [
+        {"type": "listening", "ts": emitted[0]["ts"]},
+        {"type": "utterance", "text": "turn on the lights", "ts": emitted[1]["ts"]},
+    ]
 
 
 def test_handle_hotkey_utterance_empty_transcription_emits_nothing() -> None:
-    """Hotkey pressed but nothing was heard — never guessed at, nothing
-    sent. Silence isn't a message."""
+    """Hotkey pressed but nothing was heard — never guessed at, no
+    utterance sent. Silence isn't a message, but "the mic was armed" is a
+    real, separate fact and is still emitted."""
     hotkey = FakeHotkey()
     audio_source = FakeAudioSource()
     transcriber = FakeTranscriber(text="")
@@ -52,7 +56,7 @@ def test_handle_hotkey_utterance_empty_transcription_emits_nothing() -> None:
     result = handle_hotkey_utterance(hotkey, audio_source, transcriber, emitted.append)
 
     assert result == ""
-    assert emitted == []
+    assert emitted == [{"type": "listening", "ts": emitted[0]["ts"]}]
 
 
 def test_handle_wakeword_utterance_fires_ack_and_uses_auto_stop() -> None:
@@ -68,7 +72,8 @@ def test_handle_wakeword_utterance_fires_ack_and_uses_auto_stop() -> None:
     assert audio_source.armed and audio_source.last_auto_stop  # auto_stop=True, unlike hotkey path
     assert audio_source.auto_stop_waited
     assert audio_source.disarmed
-    assert emitted[0]["text"] == "what's the weather"
+    assert emitted[0] == {"type": "listening", "ts": emitted[0]["ts"]}
+    assert emitted[1]["text"] == "what's the weather"
 
 
 class _Raising:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import socket
 
 from senses import ipc
@@ -64,10 +65,44 @@ def test_run_forever_continues_after_one_bad_message() -> None:
         ipc.send_line(a, {"type": "speak", "text": "Good sentence."})
         ipc.send_line(a, {"type": "speak", "text": "boom"})
         ipc.send_line(a, {"type": "speak", "text": "Still works."})
-        a.close()
+        # Half-close: signals EOF to b's reads (ending run_forever's loop
+        # after the 3rd message) without fully closing a, so b's own
+        # "speaking" status sends back to a -- real behavior now that
+        # run_forever reports speaking start/stop -- don't hit a broken
+        # pipe. A full a.close() would close both directions and make
+        # those sends fail immediately, which isn't what a live core
+        # disconnect looks like mid-message.
+        a.shutdown(socket.SHUT_WR)
 
         run_forever(backend, b)  # must not raise
     finally:
+        a.close()
         b.close()
 
     assert backend.spoken == ["Good sentence.", "Still works."]
+
+
+def test_run_forever_reports_speaking_active_around_each_message() -> None:
+    """SPEC.md's dashboard needs to show real progress, not take "it's
+    working on it" on faith -- `speaking: {active}` must bracket every
+    message actually spoken, true start to true end (SayBackend.speak
+    blocks for the real audio duration)."""
+    a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    backend = FakeSayBackend()
+    try:
+        ipc.send_line(a, {"type": "speak", "text": "Hello."})
+        a.shutdown(socket.SHUT_WR)
+
+        run_forever(backend, b)
+
+        a.settimeout(1)
+        raw = a.recv(65536).decode("utf-8")
+    finally:
+        a.close()
+        b.close()
+
+    received = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    assert received == [
+        {"type": "speaking", "active": True},
+        {"type": "speaking", "active": False},
+    ]

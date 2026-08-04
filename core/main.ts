@@ -85,8 +85,17 @@ async function main(): Promise<void> {
   // only way to answer a pending approval (see gate/cli.ts's docstring).
   watchApprovalCommands(gate).catch((err) => console.error("core: approval command reader failed", err));
 
+  // `voice` now reports real speaking start/stop (SayBackend.speak blocks
+  // for the actual audio duration -- see senses/voice/main.py) -- relayed
+  // as-is so the dashboard shows genuine progress, not a guess.
+  relayVoiceStatus(voiceSock, wsHub).catch((err) => console.error("core: voice status relay failed", err));
+
   console.log("core: ready.");
   for await (const message of readLines(earsSock)) {
+    if (message["type"] === "listening") {
+      wsHub.broadcast({ type: "state", value: "listening" });
+      continue;
+    }
     if (message["type"] !== "utterance") continue;
     const text = String(message["text"] ?? "").trim();
     if (!text) continue;
@@ -96,6 +105,7 @@ async function main(): Promise<void> {
 
     console.log(`core: heard ${JSON.stringify(text)}`);
     wsHub.broadcast({ type: "transcript", text, final: true, speaker: "owner" });
+    wsHub.broadcast({ type: "state", value: "thinking" });
     try {
       const utteranceEvent = memory.appendEvent({ kind: "utterance", actor: "owner", content: text, sessionId: SESSION_ID });
 
@@ -143,9 +153,29 @@ async function main(): Promise<void> {
     } catch (err) {
       // One bad utterance (a skill bug, a model failure) must not take
       // the whole process down -- same "supervisor boundary" reasoning
-      // as senses/ears/main.py's safe_run().
+      // as senses/ears/main.py's safe_run(). But CLAUDE.md § 6's honesty
+      // rule doesn't stop at logs: silence here would be its own kind of
+      // lie ("everything's fine") -- the owner gets told, spoken and on
+      // the dashboard, not just the terminal.
       console.error("core: failed to handle utterance, continuing", err);
+      const message = err instanceof Error ? err.message : String(err);
+      wsHub.broadcast({ type: "error", message: "Something went wrong handling that.", detail: message, ts: Date.now() });
+      const fallback = "Something went wrong handling that. I've logged the error.";
+      conversation.say(fallback);
+      wsHub.broadcast({ type: "transcript", text: fallback, final: true, speaker: "jarvis" });
+    } finally {
+      wsHub.broadcast({ type: "state", value: "idle" });
     }
+  }
+}
+
+/** Relays `voice`'s real `{"type": "speaking", "active": bool}` reports
+ * to the dashboard -- runs concurrently with the ears loop, same pattern
+ * as `watchApprovalCommands`. */
+async function relayVoiceStatus(voiceSock: Parameters<typeof readLines>[0], wsHub: ReturnType<typeof createWsHub>): Promise<void> {
+  for await (const message of readLines(voiceSock)) {
+    if (message["type"] !== "speaking") continue;
+    wsHub.broadcast({ type: "speaking", active: Boolean(message["active"]) });
   }
 }
 
