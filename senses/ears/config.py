@@ -76,7 +76,7 @@ LANGUAGE = "en"
 # conversations surface them; this is a vocabulary hint, not a language
 # switch.
 WHISPER_INITIAL_PROMPT = os.environ.get(
-    "JARVIS_WHISPER_PROMPT", "Ponta Delgada, Açores, Portugal"
+    "JARVIS_WHISPER_PROMPT", "Ponta Delgada, Açores, Portugal, Lagoa"
 )
 
 # --- Phase 2: wake word --------------------------------------------------

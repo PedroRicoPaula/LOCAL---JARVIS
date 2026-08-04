@@ -13,34 +13,52 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS skill_shopping_list_items (
   created_at INTEGER NOT NULL
 )`;
 
-const EXTRACT_SYSTEM = `Extract just the grocery/household item from what the owner said --
-the thing to buy, nothing else. Respond with the item name only: no
-quotes, no leading "buy" or "some". If no clear item is stated, respond
-with exactly: NONE`;
+// Was single-item only -- found live (SOAK 1): "add Milk and Sugar to
+// the shopping list" came back as one literal string containing an
+// embedded newline ("Milk\nSugar"), stored as a single garbage item,
+// and repeating the request more explicitly ("it's two items") produced
+// the exact same bug again. The owner's phrasing was never ambiguous --
+// the extraction contract just never had a way to say "more than one."
+// Now explicitly asks for one item per line and every line becomes its
+// own row.
+const EXTRACT_SYSTEM = `Extract each distinct grocery/household item from what the owner said
+-- the things to buy, nothing else. If more than one item was
+mentioned, respond with each item on its own line, in the order
+mentioned. No quotes, no leading "buy" or "some", no numbering, no
+bullets. If no clear item is stated, respond with exactly: NONE`;
 
 interface ItemRow {
   id: string;
   text: string;
 }
 
-async function extractItemText(ctx: SkillContext, utterance: string): Promise<string | null> {
-  const raw = await ctx.router.complete("converse", EXTRACT_SYSTEM, utterance, { maxTokens: 40 });
-  // Same trailing-punctuation cosmetic fix as skills/tasks -- found live.
-  const trimmed = raw.trim().replace(/[.!?]+$/, "");
-  if (!trimmed || trimmed.toUpperCase() === "NONE") return null;
-  return trimmed;
+async function extractItems(ctx: SkillContext, utterance: string): Promise<string[]> {
+  const raw = await ctx.router.complete("converse", EXTRACT_SYSTEM, utterance, { maxTokens: 60 });
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.toUpperCase() === "NONE") return [];
+  return trimmed
+    .split("\n")
+    // Same trailing-punctuation cosmetic fix as skills/tasks -- found live.
+    .map((line) => line.trim().replace(/[.!?]+$/, ""))
+    .filter((line) => line.length > 0 && line.toUpperCase() !== "NONE");
 }
 
 async function addItem(input: { utterance: string }, ctx: SkillContext): Promise<{ speech: string }> {
-  let text = await extractItemText(ctx, input.utterance).catch(() => null);
-  if (!text) text = (await ctx.ask("What should I add?")).trim();
-  if (!text) {
+  let items = await extractItems(ctx, input.utterance).catch(() => []);
+  if (items.length === 0) {
+    const answer = (await ctx.ask("What should I add?")).trim().replace(/[.!?]+$/, "");
+    items = answer ? [answer] : [];
+  }
+  if (items.length === 0) {
     const speech = "I didn't catch an item to add.";
     ctx.say(speech);
     return { speech };
   }
-  ctx.store.run("INSERT INTO skill_shopping_list_items (id, text, created_at) VALUES (?, ?, ?)", ulid(), text, ctx.now());
-  const speech = `Added ${text} to the shopping list.`;
+  const now = ctx.now();
+  for (const item of items) {
+    ctx.store.run("INSERT INTO skill_shopping_list_items (id, text, created_at) VALUES (?, ?, ?)", ulid(), item, now);
+  }
+  const speech = `Added ${items.join(", ")} to the shopping list.`;
   ctx.say(speech);
   return { speech };
 }
@@ -53,7 +71,11 @@ function listItems(ctx: SkillContext): { speech: string } {
 }
 
 async function removeItem(input: { utterance: string }, ctx: SkillContext): Promise<{ speech: string }> {
-  const query = (await extractItemText(ctx, input.utterance).catch(() => null)) ?? input.utterance;
+  // remove_item targets one item -- if the model somehow extracted more
+  // than one (e.g. "remove milk and sugar"), match against the first;
+  // multi-item removal isn't asked for by any real utterance seen yet.
+  const extracted = await extractItems(ctx, input.utterance).catch(() => []);
+  const query = extracted[0] ?? input.utterance;
   const items = ctx.store.all<ItemRow>("SELECT id, text FROM skill_shopping_list_items");
   const q = query.toLowerCase();
   const matches = items.filter((i) => i.text.toLowerCase().includes(q) || q.includes(i.text.toLowerCase()));

@@ -52,6 +52,19 @@ health panel). Nothing more.
 - A capability claim is exactly as serious as a factual claim -- CLAUDE.md
   § 6's "a confidently wrong father is worse than no father" applies to
   "yes I can do that" the same way it applies to a made-up number.
+- **This voice speaks only when no loaded skill handled the request --
+  it never mutated anything itself.** Found live (SOAK 1): asked to
+  delete a shopping-list item, this fallback said "I've deleted milk
+  sugar from the shopping list" when no skill ever ran and the item was
+  never touched -- a plausible-sounding lie built from conversation
+  history, not a report of something real. If the owner's request
+  sounds like it should change something (add/remove/delete/clear/
+  update/complete/mark anything), and this text is being generated at
+  all, that already means no skill claimed it -- say plainly that
+  nothing was changed and the request wasn't understood, never describe
+  a change as done. The dashboard's Live Data panel and a direct "what's
+  on my list" are the honest way to check state; this voice reporting
+  success is not evidence anything happened.
 
 ## Mechanics
 

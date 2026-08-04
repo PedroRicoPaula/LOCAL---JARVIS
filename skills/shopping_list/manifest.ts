@@ -17,9 +17,23 @@
  * task-add into a shopping-list intent. "Coffee" isn't special --
  * whatever word an example uses becomes a magnet for anything else that
  * happens to mention it.
+ *
+ * Every intent declares `converse`, `act`, and `see` -- found live in a
+ * real conversation (SOAK 1): "Can you delete milk sugar from the
+ * shopping list?" classified as `act`, "Remove or delete Milk Sugar
+ * from Shopping List" classified as `see` -- neither matched this
+ * skill's `converse`-only intents, so both silently fell through to
+ * `converse`'s general-conversation fallback, which then *claimed* to
+ * have deleted the item (never did -- see `core/persona.md`'s new rule
+ * against this). Same root pattern ADR-026 already fixed for
+ * `launcher`/`media` (multi-lane over fighting the classifier prompt),
+ * just never applied here. Not `reflex` -- list edits aren't the
+ * "trivial, instant" class that lane is defined for.
  */
 
 import type { SkillManifest } from "../../shared/types.ts";
+
+const LIST_LANES = ["converse", "act", "see"] as const;
 
 export const manifest: SkillManifest = {
   id: "shopping_list",
@@ -38,7 +52,7 @@ export const manifest: SkillManifest = {
         "we're out of butter",
         "buy more paper towels",
       ],
-      lanes: ["converse"],
+      lanes: [...LIST_LANES],
     },
     {
       id: "list_items",
@@ -49,7 +63,7 @@ export const manifest: SkillManifest = {
         "what do I need to buy",
         "what are we out of",
       ],
-      lanes: ["converse"],
+      lanes: [...LIST_LANES],
     },
     {
       id: "remove_item",
@@ -60,7 +74,7 @@ export const manifest: SkillManifest = {
         "remove bread from the shopping list",
         "got the butter",
       ],
-      lanes: ["converse"],
+      lanes: [...LIST_LANES],
     },
     {
       id: "clear_list",
@@ -71,7 +85,7 @@ export const manifest: SkillManifest = {
         "empty the shopping list",
         "start a fresh shopping list",
       ],
-      lanes: ["converse"],
+      lanes: [...LIST_LANES],
     },
   ],
 

@@ -66,3 +66,15 @@ test("an empty skill list says so plainly rather than omitting the section", asy
   assert.match(provider.receivedRequests[0]!.system, /No skills are loaded right now\./);
   memory.close();
 });
+
+test("the persona's rule against claiming an unactioned change actually reaches the model -- found live, SOAK 1", async () => {
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
+  const registry = new Registry();
+  const provider = new FakeProvider({ id: "fake", lanes: ["converse"], text: "ok" });
+  registry.register(provider);
+
+  await generalConversationReply(registry, memory, "delete milk from the shopping list", "s1", ["shopping_list"]);
+
+  assert.match(provider.receivedRequests[0]!.system, /it never mutated anything itself/);
+  memory.close();
+});

@@ -259,6 +259,31 @@ useful as a negative example, not a source of ideas to adopt):
 
 ## Annoyances found during SOAK
 
+- **2026-08-04 — four real bugs from Pedro's first live `make dev`
+  session with the new dashboard (fixed same day).** `shopping_list`'s
+  `remove_item`/`clear_list` were `converse`-only, same gap ADR-026
+  already fixed for `launcher`/`media` -- "delete X from the shopping
+  list" classified as `act`/`see`, silently missed the skill, and
+  `converse`'s fallback then **claimed to have deleted the item when it
+  never did** (confirmed: the garbage item was still in the real DB).
+  `core/persona.md` gained an explicit rule against ever describing an
+  unactioned request as done. Also fixed: "add milk and sugar" stored
+  as one item with a literal embedded newline (no multi-item protocol
+  existed); "Lagoa" mistranscribed the same way "Ponta Delgada" was
+  (added to `WHISPER_INITIAL_PROMPT`). Real corrupted production data
+  repaired (two garbage rows replaced with clean "Milk"/"Sugar").
+  `system_health` also given the same multi-lane backstop preemptively
+  (already broke once, ADR-024, with zero structural safety net). See
+  ADR-030.
+- **Open, not fixed -- `tasks`, `brief`, `weather` are still
+  `converse`-only, same pattern class as the three skills above that
+  have now broken live at least once each.** No direct evidence yet
+  that `complete_task`/`morning_brief`/`current_weather` misroute (this
+  audit found `launcher`/`media`/`shopping_list`/`system_health` broke,
+  didn't find evidence these three have), so left alone rather than
+  guessed at -- but worth a look the moment any of them goes quiet in
+  real use, rather than rediscovering the same root cause a fourth
+  time. See ADR-030's closing note.
 - **2026-08-04 — `converse` hallucinated capabilities (fixed same day).**
   Real conversation: asked "can you create a skill?", JARVIS said yes and
   kept claiming to be building one, that it would show up on Skill

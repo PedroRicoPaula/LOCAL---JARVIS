@@ -86,6 +86,23 @@ test("extraction failure falls back to asking", async () => {
   assert.equal(result.speech, "Added paper towels to the shopping list.");
 });
 
+test("multiple items in one utterance become separate rows, not one merged item -- found live, SOAK 1", async () => {
+  const store = freshStore();
+  await initialized(store);
+
+  const result = await skill.handle(
+    { utterance: "add milk and sugar to the shopping list", intent: "add_item", sessionId: "s1" },
+    fakeSkillContext({ store, router: fakeRouter({ completeReturns: "milk\nsugar" }) }),
+  );
+  assert.equal(result.speech, "Added milk, sugar to the shopping list.");
+
+  const rows = store.all<{ text: string }>("SELECT text FROM skill_shopping_list_items ORDER BY created_at");
+  assert.deepEqual(
+    rows.map((r) => r.text),
+    ["milk", "sugar"],
+  );
+});
+
 test("removing something not on the list is honest, not a guess", async () => {
   const store = freshStore();
   await initialized(store);
