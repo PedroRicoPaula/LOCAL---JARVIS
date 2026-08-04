@@ -17,6 +17,13 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 - LeadHunter / HoqueiManager read-only widgets
 
 ## Platform
+- `make types` codegen from `shared/types.ts` (its own docstring already
+  names this for the Python side, never built). Phase 7 added a second
+  hand-kept mirror (`ui/src/lib/types.ts`, the wire subset `ServerEvent`/
+  `ClientEvent`/`ApprovalRequest`/etc. need, since `ui/` is a separate
+  Next.js project and can't just import `core`'s `.ts` files across the
+  process boundary) — now two manual mirrors to keep in sync by hand
+  instead of one. Worth it once a drift bug actually happens, not before.
 - Bounded continuous-vision sessions ("watch me solder this")
 - Mobile client for approvals away from the desk
 - Sandboxed `act` lane (OpenHands-style container)

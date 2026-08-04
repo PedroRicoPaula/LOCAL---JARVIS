@@ -17,9 +17,11 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { ulid } from "ulid";
 import type {
   ApprovalOutcome,
+  ApprovalRequest,
   ApprovalResponse,
   ApprovalState,
   Capability,
@@ -59,12 +61,34 @@ interface PendingEntry {
   timeoutHandle: ReturnType<typeof setTimeout>;
 }
 
-export class Gate {
+function rowToRequest(row: ApprovalRow): ApprovalRequest {
+  const request: ApprovalRequest = {
+    id: row.id,
+    nonce: row.nonce,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    capability: row.capability as Capability,
+    skillId: row.skill_id,
+    humanSummary: row.human_summary,
+    payload: JSON.parse(row.payload),
+    state: row.state,
+  };
+  if (row.diff !== null) request.diff = row.diff;
+  return request;
+}
+
+/** Emits `"approval.new"` (full `ApprovalRequest`, wire-shaped) and
+ * `"approval.resolved"` (`{requestId, state}`) — `core/ws.ts` (Phase 7)
+ * subscribes to these to broadcast `ServerEvent`s to the dashboard. The
+ * dashboard is a *view*: it hears about state changes here, it never
+ * causes one except through `decide()` (SPEC.md § 8). */
+export class Gate extends EventEmitter {
   private readonly db: DatabaseSync;
   private readonly signingKey: string;
   private readonly pending = new Map<string, PendingEntry>();
 
   constructor(db: DatabaseSync, signingKey: string) {
+    super();
     this.db = db;
     this.signingKey = signingKey;
     ensureGateSchema(db);
@@ -83,7 +107,7 @@ export class Gate {
     const createdAt = now();
     const expiresAt = createdAt + (action.expiresInMs ?? DEFAULT_EXPIRY_MS);
 
-    this.insertApproval({
+    const row: ApprovalRow = {
       id,
       nonce,
       created_at: createdAt,
@@ -94,14 +118,17 @@ export class Gate {
       payload: JSON.stringify(action.payload),
       diff: action.diff ?? null,
       state: "pending",
-    });
+    };
+    this.insertApproval(row);
     this.logAudit(id, "created", { capability: action.capability, skillId, humanSummary: action.humanSummary });
+    this.emit("approval.new", rowToRequest(row));
 
     return new Promise<ApprovalOutcome>((resolve) => {
       const timeoutHandle = setTimeout(() => {
         this.pending.delete(id);
         this.setState(id, "expired");
         this.logAudit(id, "expired", {});
+        this.emit("approval.resolved", { requestId: id, state: "expired" });
         resolve({ ok: false, reason: "expired" });
       }, Math.max(0, expiresAt - createdAt));
       this.pending.set(id, { resolve, timeoutHandle });
@@ -157,6 +184,14 @@ export class Gate {
     );
   }
 
+  /** Wire-shaped, for a freshly opened dashboard tab to backfill —
+   * `"approval.new"` is a live broadcast, not a replay log (SPEC.md § 8:
+   * "close the browser mid-approval, request survives, still pending"
+   * means this endpoint, not WS history). */
+  listPendingRequests(): ApprovalRequest[] {
+    return this.listPending().map(rowToRequest);
+  }
+
   private settlePending(id: string, state: ApprovalState, outcome: ApprovalOutcome): void {
     const entry = this.pending.get(id);
     if (entry) {
@@ -165,6 +200,7 @@ export class Gate {
     }
     this.setState(id, state);
     this.logAudit(id, state === "approved" ? "approved" : state, {});
+    this.emit("approval.resolved", { requestId: id, state });
     entry?.resolve(outcome);
   }
 

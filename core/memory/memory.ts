@@ -10,7 +10,7 @@ import type { Fact, MemoryEvent, Observation } from "../../shared/types.ts";
 import { openDb } from "./db.ts";
 import type { Embedder } from "./embeddings.ts";
 import { indexText } from "./embeddings.ts";
-import { appendEvent, getEvent, recentEventsForSession } from "./events.ts";
+import { appendEvent, getEvent, recentEvents, recentEventsForSession } from "./events.ts";
 import { factsAboveConfidence, getFact, upsertFact } from "./facts.ts";
 import { addObservation, getObservation } from "./observations.ts";
 import type { AssembledContext, RecallOptions } from "./recall.ts";
@@ -53,6 +53,10 @@ export class Memory {
 
   recentEventsForSession(sessionId: string, limit: number): MemoryEvent[] {
     return recentEventsForSession(this.db, sessionId, limit);
+  }
+
+  recentEvents(limit: number): MemoryEvent[] {
+    return recentEvents(this.db, limit);
   }
 
   upsertFact(input: { key: string; value: string; confidence: number; sourceEventId?: string }): Fact {

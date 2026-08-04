@@ -269,7 +269,7 @@ export type ServerEvent =
   | { type: "trace"; trace: RouterTrace }
   | { type: "approval.new"; request: ApprovalRequest }
   | { type: "approval.resolved"; requestId: string; state: ApprovalState }
-  | { type: "transcript"; text: string; final: boolean }
+  | { type: "transcript"; text: string; final: boolean; speaker: "owner" | "jarvis" }
   | { type: "speaking"; active: boolean }
   | { type: "camera"; active: boolean }
   | { type: "health"; providers: Record<string, boolean> };
