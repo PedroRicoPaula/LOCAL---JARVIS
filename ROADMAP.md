@@ -1,8 +1,9 @@
 # ROADMAP.md
 
 Budget assumption: **4–8 hours per week.** Estimates are in weeks at that pace.
-Total: roughly 32 weeks including mandatory soaks. This is a two-season project.
-That is the honest number, and it is fine.
+Total: roughly 30 weeks including the one mandatory soak (see v0.3 changelog
+note below). This is a two-season project. That is the honest number, and it
+is fine.
 
 A phase is done when its checks pass with pasted output. Not when it "works".
 
@@ -12,6 +13,23 @@ that hosts them gets proven early with a zero-risk skill before anything is
 built on top of it. Camera became a session lifecycle (Phase 8). Nutrition
 became owner-declared (Phase 9). `workbench` was promoted from backlog to
 Phase 10. No paid provider is built anywhere.
+
+**Changed in v0.3 (2026-08-04):** removed the soak that originally sat
+between Phase 2 and Phase 3. Owner's call, made after Phase 2: a soak tests
+whether *daily use* is pleasant, and through Phase 2 there's nothing to
+daily-use yet beyond a wake word that echoes back what it heard — no
+responses, no actions, no UI. That's a weak test of "is this worth living
+with," and the two weeks are better spent once there's a gated assistant
+with memory and a working skill system to actually live with — which is
+what the remaining soak (now the only one, renumbered SOAK 1) already
+existed for, right after Phase 7. See `DECISIONS.md` for the full ADR.
+Phases 0–2 still got real verification — see each phase's own log in
+`PROGRESS.md` for what was self-run vs. owner-run — just not a mandatory
+multi-week pause on top of it. See `CLAUDE.md` § 1 for how each phase's
+Definition of Done now splits into a self-run tier (run by the agent, no
+owner involvement) and an owner-required tier (needs the owner's voice,
+body, or elapsed time) — that split replaces the early soak as the thing
+that catches problems before they compound across phases.
 
 ---
 
@@ -60,15 +78,6 @@ No wake word. No AI. No UI. Just: key → speech → text → speech.
 - 4-hour background run in normal conditions: **< 2 false activations**
 - 30 deliberate activations at ~2 m: **≥ 90% detection**
 - Survives reboot without manual intervention
-
----
-
-## 🛑 SOAK 1 — two weeks
-
-Use it daily. Do not build. Log every annoyance in `docs/BACKLOG.md`.
-
-Most projects that die, die here — because people build Phase 3 instead of
-finding out whether Phases 1–2 are pleasant to use.
 
 ---
 
@@ -172,11 +181,18 @@ functional list below rather than assuming full coverage.
 
 ---
 
-## 🛑 SOAK 2 — two weeks
+## 🛑 SOAK 1 — two weeks
 
-You now have a gated assistant with memory and a working skill system. Live
-with it. Write the skills you actually want into `docs/BACKLOG.md`, in priority
-order. That list, written from real use, is worth more than any plan made now.
+You now have a gated assistant with memory and a working skill system, with
+a UI to actually use it from — real responses, real actions, not just an
+echo. Live with it. Do not build. Write the skills you actually want into
+`docs/BACKLOG.md`, in priority order. That list, written from real use, is
+worth more than any plan made now.
+
+Most projects that die, die here — because people keep building instead of
+finding out whether what exists so far is pleasant to use. This is the one
+mandatory pause in the whole roadmap; see the v0.3 changelog note above for
+why it moved here instead of sitting right after Phase 2.
 
 ---
 

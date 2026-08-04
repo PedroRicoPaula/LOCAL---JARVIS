@@ -7,13 +7,15 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 2 — Wake word — **closed**
+**Phase:** 2 — Wake word — **closed**, merged to `main`
 **Status:** closed by owner decision — 4-hour false-activation run and
 reboot survival both met in full; the 30-activation count was owner-waived
 on strong functional evidence rather than formally tallied. See the
-Phase 2 closing note in the log below. Now in **🛑 SOAK 1** (ROADMAP.md):
-two weeks of daily use, no new building, before Phase 3.
-**Branch:** `phase/02-wake-word` (not yet merged to `main`)
+Phase 2 closing note in the log below. **Phase 3 starts next** — the soak
+originally scheduled here was removed by owner decision on 2026-08-04; see
+ROADMAP.md's v0.3 changelog note and DECISIONS.md's ADR-016. The one
+remaining soak now sits after Phase 7 (Dashboard).
+**Branch:** `main`
 **Last updated:** 2026-08-04
 
 (Phase 1 complete — see Phase log below for the full record and what was

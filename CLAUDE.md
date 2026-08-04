@@ -74,7 +74,40 @@ boundary costs a weekend.
 
 Phases marked 🛑 **SOAK** in the roadmap are mandatory two-week pauses where the
 owner uses what exists before more is built. Do not offer to "get ahead" during
-a soak.
+a soak. As of 2026-08-04 there is one SOAK, placed after Phase 7 (Dashboard) —
+see `ROADMAP.md`'s changelog note and `DECISIONS.md`'s ADR for why the earlier
+post-Phase-2 soak was removed: a soak's value is testing whether daily use is
+*pleasant*, and that needs something worth using daily (real responses, real
+actions) — not just a wake word that echoes.
+
+### Verification within a phase, without a soak gate
+
+Removing the early soak doesn't remove verification — it moves the burden
+onto doing more of it *during* the phase, myself, before ever asking the
+owner to test anything. Split every phase's Definition of Done into two
+tiers before starting work on it:
+
+- **Self-run.** Anything a fake, a synthetic input, a scripted CLI/HTTP
+  call, or a browser automation tool can exercise without the owner's body
+  (voice, hands, a physical reboot) in the loop. This is not just
+  `make check` — it includes live smoke tests against the real
+  components when a fake can't stand in for them (a real model, a real
+  mic loopback via `say`, a real HTTP call to a locally-running server).
+  From Phase 7 (Dashboard) onward, this includes **Playwright** driving
+  the actual running UI — click the approval button, confirm the request
+  executes, close the tab mid-approval and confirm it survives, etc. Run
+  everything in this tier before reporting a phase done; fix what it
+  finds like any other bug per § 2.
+- **Owner-required.** Genuinely needs Pedro's real voice, real body,
+  or real elapsed time — multi-day usage patterns, a physical reboot,
+  judging whether an interaction *feels* right. Ask for this explicitly
+  and say why a self-run check can't cover it. When the owner chooses to
+  waive part of this tier (as happened in Phases 1 and 2), record exactly
+  what was waived and why in `PROGRESS.md` — waived is not the same as
+  passed, and both must be discoverable later.
+
+A phase's DoD is not "done" until the self-run tier has actually been run,
+not just written down as a plan.
 
 ---
 
