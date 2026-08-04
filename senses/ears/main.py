@@ -208,7 +208,19 @@ def _on_sigterm(signum: int, frame: object) -> None:
     `finally: whisper_server.stop(...)` below would never run, leaking the
     whisper-server child on every daemon restart. Routing it through the
     same KeyboardInterrupt path Ctrl+C already uses keeps cleanup in one
-    place instead of duplicating it in a signal handler."""
+    place instead of duplicating it in a signal handler.
+
+    Ignores further SIGTERM once this fires — the Makefile's `trap 'kill 0'
+    EXIT INT TERM` sends a second one moments later (the INT trap's `kill 0`
+    triggers shell exit, which fires the EXIT trap's `kill 0` again). That
+    second delivery used to land mid-cleanup — often right inside
+    `whisper_server.stop()`'s `process.wait()` — raising a second
+    KeyboardInterrupt that aborted cleanup before it could confirm
+    whisper-server had actually died, orphaning it. Confirmed live: found
+    a whisper-server + ears.main pair still running, mic still open, a
+    full CPU-minute after the terminal showed a clean-looking shutdown
+    traceback."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
     raise KeyboardInterrupt
 
 
