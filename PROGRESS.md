@@ -548,6 +548,36 @@ voz"). Not a closed question, a deferred one.
      processing. Worth remembering for the DoD's 30-activation test:
      leave a couple of seconds between attempts, or the lock will
      correctly (but confusingly) eat some of them.
+- **Pedro's second live round found a real bug in that same "already
+  capturing" area:** saying "hey jarvis" deliberately mid-sentence made
+  the daemon "stop recording and listen again" right on the heels of the
+  first capture, producing duplicated/fragmented transcripts (part of one
+  continuous sentence captured once as the tail of utterance #1, then
+  again as the entirety of a spurious utterance #2). The item above
+  (clearing `wake_event` in `finally`) only discards a stray re-trigger
+  that's already set *before* that `finally` runs — a detection landing
+  in the gap between `wake_event.clear()` and `busy_lock.release()`, or
+  just after, survives and fires a new capture immediately. Fixed by
+  moving the check earlier: `on_wake` (now `make_wake_handler()`, and
+  actually unit-testable for the first time) checks `busy_lock.locked()`
+  before ever setting the event, closing the race at the source instead
+  of racing to clean it up after. This test run also surfaced a separate,
+  much simpler bug while stopping it: `kill <pid>` (SIGTERM) left
+  `whisper-server` orphaned because Python's default SIGTERM disposition
+  skips `finally` blocks entirely — fixed with a SIGTERM handler that
+  raises `KeyboardInterrupt`, reusing the same cleanup path Ctrl+C always
+  used. Both fixes verified: 20 tests green, and a live SIGTERM check
+  (`kill` + `ps`) shows both processes now exit together.
+- Separately reported: longer sentences sometimes "give a break" (stop
+  short). Not yet root-caused — plausibly the same mid-utterance-retrigger
+  bug misattributed to length (longer sentences give more opportunities
+  for a stray mid-utterance detection), or genuinely hitting
+  `SILENCE_FRAMES_TO_STOP` (800ms) on a natural inter-clause pause, or the
+  `MAX_RECORDING_FRAMES` (8s) safety cap. Deliberately not tuning either
+  constant yet — no log evidence pins down which one, and guessing at a
+  fix without reading the actual failure is exactly what CLAUDE.md § 2
+  says not to do. Needs a retest after the retrigger fix above, on long
+  sentences *without* repeating the wake word, to isolate it.
 
 ---
 
@@ -557,8 +587,8 @@ voz"). Not a closed question, a deferred one.
 |---|---|---|---|
 | Lane classification accuracy | ≥ 85% | 71.1% (NIM `llama-3.1-8b`; no local candidate viable — ADR-001) | 0 |
 | Time to first audible syllable | < 1.5 s | 3/10 real trials: 657ms, 686ms, 1530ms (3rd was a ~45-word stress test) | 1 |
-| Wake false activations / 4h | < 2 | — | 2 |
-| Wake detection rate (30 @ ~2m) | ≥ 90% | — | 2 |
+| Wake false activations / 4h | < 2 | 1 (score=0.565) | 2 |
+| Wake detection rate (30 @ ~2m) | ≥ 90% | 30/30 synthetic TTS proxy (not the official number — see Phase 2 log); real-voice run pending retest after retrigger-race fix | 2 |
 | Memory recall p95 | < 200 ms | — | 4 |
 | **`make new-skill` → working no-op** | **< 30 min** | **—** | **5** |
 | Intent routing accuracy | ≥ 90% | — | 5 |

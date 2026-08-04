@@ -497,6 +497,22 @@ only which library to call.
   `whisper-server` process on every single restart cycle — directly in the
   path of the reboot DoD test. Verified fixed by starting the daemon,
   sending SIGTERM, and checking `ps`: both processes now exit together.
+- **`on_wake` checks `busy_lock.locked()` before setting `wake_event`,
+  rather than relying on `finally: wake_event.clear()` to discard stray
+  re-triggers after the fact.** Found in Pedro's second live round: saying
+  "hey jarvis" deliberately mid-sentence made the daemon stop and start a
+  new capture right on the heels of the first, duplicating/fragmenting the
+  transcript. The existing `finally`-clear (see the falling-edge bullet
+  above) only discards a re-trigger that's already set *before* that
+  `finally` runs; a detection landing in the gap between
+  `wake_event.clear()` and `busy_lock.release()`, or immediately after,
+  survives and fires a spurious capture instantly. Moving the check to the
+  point of detection instead of the point of cleanup closes the window
+  rather than racing to sweep up after it. Also extracted the previously
+  inline `on_wake` closure into `make_wake_handler()` so this logic — the
+  second real bug the fakes-based test suite couldn't have caught, both
+  found only through Pedro's own live usage — is unit-testable going
+  forward instead of living only in `main()`.
 
 **Consequences.**
 - `senses/ears/audio_capture.py`'s `ContinuousAudioSource` is meaningfully
