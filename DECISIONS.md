@@ -1865,3 +1865,105 @@ deliverable (CLAUDE.md § 0.1).
   Worth a genuine audit of every skill's manifest against this pattern
   rather than fixing one skill at a time as real conversations happen
   to surface it -- logged in `docs/BACKLOG.md`.
+
+## ADR-031 — SOAK 1: four more free-tier providers (Groq, Mistral, Google/Gemini, OpenRouter), `ollama` demoted to true last resort
+
+**Status:** accepted
+
+**Context.** The owner offered five free-tier API keys (Cerebras,
+OpenRouter, Groq, Google AI Studio, then Mistral mid-conversation) and
+asked for them to be tested directly, with explicit instructions: wire
+in whichever ones actually work, ahead of `ollama` (`ollama` only as a
+true last resort when every API is down), and remove any that don't
+work rather than leave dead code pretending to be a real fallback.
+
+**Testing, not assuming.** Every model name/endpoint used below was
+verified live against the real API before being written into code --
+this project already hit three separate "guessed a model name, got a
+404" failures earlier the same day (Cerebras, OpenRouter, Google all
+had different real catalogues than a reasonable guess would produce).
+Results:
+- **Cerebras** -- key authenticates, but the account returns HTTP 402
+  "Payment required" on every model in its own catalogue (`gpt-oss-
+  120b`, `gemma-4-31b`, `zai-glm-4.7`). No usable free quota. **No
+  provider written for it** -- a config entry for a key that cannot
+  serve a request would be dead code, not a real fallback option, per
+  the owner's own instruction.
+- **Groq** -- works, fastest of the four: ~200ms for
+  `llama-3.1-8b-instant`, ~220ms for the 70B `llama-3.3-70b-versatile`.
+  Real dedicated inference, not a shared pool.
+- **Mistral** -- works, ~380ms for `mistral-small-latest`, OpenAI-style
+  JSON mode confirmed working (the lane classifier's hard requirement).
+- **Google AI Studio (Gemini)** -- works, but ~1.6s observed for
+  `gemini-flash-latest` (the model "thinks" before answering on this
+  API version; no request-level way found to fully disable it for this
+  model). `gemini-1.5-flash` and `gemini-2.5-flash` both 404'd as "no
+  longer available to new users" during testing -- real models churn
+  fast here, so `wiring.ts` points at rolling aliases
+  (`gemini-flash-latest`/`gemini-pro-latest`), not dated snapshots.
+- **OpenRouter** -- works, but the currently-free (`:free`-suffixed)
+  catalogue skews toward reasoning models that spend real token budget
+  "thinking" before any visible content, and at least one call hit a
+  429 relayed from a *shared upstream pool* (Google's own free capacity
+  via OpenRouter, not a dedicated allocation) -- confirmed via the
+  error body, not assumed. Real, not a one-off.
+
+**Decisions.**
+- **A new shared base, `core/router/providers/openaiCompatible.ts`,**
+  for the three providers that turned out to speak the exact same
+  OpenAI-compatible shape `nim.ts` already implements (`groq`,
+  `mistral`, `openrouter`). `nim.ts` itself was deliberately **not**
+  refactored onto this base -- it already works, is already tested, and
+  is the primary provider on two lanes; risking a regression there for
+  a cosmetic DRY win wasn't worth it. `google.ts` stays its own file --
+  Gemini's request/response shape (`contents`/`parts`, a real
+  `systemInstruction` field, `?key=` query-param auth, its own SSE
+  payload shape) is genuinely different, confirmed by testing its
+  streaming endpoint live before writing any code for it.
+- **Fallback order is `nim` → `groq` → `mistral` → `google` →
+  `openrouter` → `ollama` (converse) / → `offline-fallback` (reason),**
+  ordered by measured latency/reliability from the testing above, not
+  reputation -- the same "data not reputation" rule ADR-001 already
+  used once for the original local-model choice. `ollama` moved to the
+  very end of `converse`'s chain (was second, right after `nim`) per
+  the owner's explicit instruction: `qwen2.5:0.5b`'s quality (ADR-001's
+  accepted "even degraded" fallback) is worse than any of these four
+  real remote models, so it should only be reached when every one of
+  them is unreachable. `reason` gained a real fallback chain for the
+  first time -- it previously went straight from `nim` to an honest
+  "can't reach it" static message with nothing in between.
+- **Every new key is optional at boot**, via a new `tryKeychainSecret`
+  that returns `null` instead of throwing on a missing Keychain entry
+  (unlike `jarvis-nim-key`, which stays required setup). A machine with
+  only `nim` configured still starts and runs correctly with a shorter
+  chain -- adding a free provider is additive, never a new hard
+  requirement to boot at all.
+- **Cerebras's key stays in Keychain but no provider was written for
+  it** -- explicitly not code, matching the owner's own reasoning
+  ("para não termos falsa api no código"). Revisit only if the account
+  gets free quota later.
+
+**Consequences.**
+- 241 tests (up from 226 -- 15 new: a full suite against the shared
+  `OpenAiCompatibleProvider` base mirroring `nim.test.ts`'s own cases,
+  one wiring-confirmation test each for `groq`/`mistral`/`openrouter`,
+  and a fuller suite for `google.ts` covering what's actually different
+  there). `make check` green.
+- **Live-verified end to end against the real `Registry`, not just unit
+  tests:** `buildRegistry()` produces the exact chain order above for
+  both lanes; a real `converse` request (with `nim` unreachable at the
+  time, the same live flakiness ADR-026/028/030 already documented)
+  correctly fell through and was answered by `groq`; a real strict-
+  JSON-mode request (the lane classifier's exact shape) returned valid
+  JSON via `groq`; a real `reason`-lane request was answered by `groq`'s
+  70B model. The fallback chain isn't theoretical -- it already saved a
+  real request during this same testing session.
+- `README.md` gained a setup section for the four optional keys,
+  mirroring the existing NIM Keychain-setup convention. `docs/
+  BACKLOG.md`'s "Additional providers" line marked done.
+- Rate limits for all four are provisional, conservative defaults, not
+  independently confirmed ceilings the way ADR-002 confirmed NIM's
+  ~40 rpm -- each provider's own docstring says so plainly. A 429 from
+  any of them still maps to `ProviderUnavailableError` and falls
+  through regardless, so an imprecise client-side bucket costs at most
+  one wasted attempt per burst, never a hard failure.

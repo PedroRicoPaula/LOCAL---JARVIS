@@ -1844,6 +1844,33 @@ hallucinated success). Full detail in DECISIONS.md's ADR-030.
 
 226 tests, `make check` green.
 
+**Same day, the owner offered five free-tier API keys (Cerebras,
+OpenRouter, Groq, Google AI Studio, Mistral) and asked for them to be
+tested live and wired in ahead of `ollama`:** all five tested directly
+against their real endpoints before any code was written (this session
+had already been burned three times guessing model names that turned
+out deprecated). Cerebras authenticates but has no usable free quota
+(HTTP 402 on every model) -- no provider written for it, kept out of
+the codebase entirely rather than left as dead config. The other four
+all work: `groq` (~200ms, fastest), `mistral` (~380ms), `google`/Gemini
+(~1.6s, thinks before answering), `openrouter` (slowest, free models
+route through a shared upstream pool). New fallback order for both
+`converse` and `reason`: `nim` → `groq` → `mistral` → `google` →
+`openrouter` → `ollama`/`offline-fallback` -- `ollama` moved from
+second to last per the owner's explicit call (its `qwen2.5:0.5b` is
+worse than any of the four real remote models). `reason` gained a real
+fallback chain for the first time; it previously went straight from
+`nim` to a static "can't reach it" message.
+
+15 new tests (241 total), `make check` green. Live-verified against the
+real `Registry`, not just unit tests: with `nim` unreachable at the
+time (same live flakiness already documented in ADR-026/028/030), a
+real `converse` request, a real strict-JSON-mode request (the lane
+classifier's exact shape), and a real `reason` request were all
+correctly answered by `groq` after falling through -- the new chain
+already saved a real request during this same session. Full detail in
+DECISIONS.md's ADR-031.
+
 ---
 
 ## Key numbers to record as we go
