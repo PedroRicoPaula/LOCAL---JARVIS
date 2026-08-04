@@ -39,6 +39,12 @@ const EXTRACT_PROJECT_SYSTEM = `Extract just the project name the owner wants op
 project name only, nothing else. If no project is named, respond with
 exactly: NONE`;
 
+const EXTRACT_URL_SYSTEM = `Extract a website the owner wants opened, from what they said. Respond
+with a full URL only (https://example.com), guessing the standard domain
+for well-known sites/companies (e.g. "GitHub" -> https://github.com). No
+quotes, no extra words. If nothing resembling a website is stated,
+respond with exactly: NONE`;
+
 async function extractName(ctx: SkillContext, system: string, utterance: string): Promise<string | null> {
   const raw = await ctx.router.complete("converse", system, utterance, { maxTokens: 20 }).catch(() => "");
   const trimmed = raw.trim();
@@ -57,6 +63,17 @@ async function proposeOpen(ctx: SkillContext, app: string, path: string | undefi
   const payload = path ? { action: "open_app" as const, app, path } : { action: "open_app" as const, app };
   const outcome = await ctx.propose({ capability: "SHELL_EXEC", humanSummary, payload });
   const speech = speechForOutcome(app, outcome);
+  ctx.say(speech);
+  return { speech };
+}
+
+async function proposeOpenUrl(ctx: SkillContext, url: string): Promise<{ speech: string }> {
+  const outcome = await ctx.propose({
+    capability: "SHELL_EXEC",
+    humanSummary: `Open ${url}`,
+    payload: { action: "open_url" as const, url },
+  });
+  const speech = speechForOutcome(url, outcome);
   ctx.say(speech);
   return { speech };
 }
@@ -114,6 +131,17 @@ export function createLauncherSkill(deps: LauncherDeps = { listProjectDirs: real
           const projectName = matches[0]!;
           const path = join(PROJECTS_ROOT, projectName);
           return proposeOpen(ctx, "Cursor", path, `Open project "${projectName}" in Cursor`);
+        }
+
+        case "open_url": {
+          const url = (await extractName(ctx, EXTRACT_URL_SYSTEM, input.utterance)) ?? (await ctx.ask("Which website?"));
+          const trimmed = url.trim();
+          if (!trimmed) {
+            const speech = "I didn't catch which website.";
+            ctx.say(speech);
+            return { speech };
+          }
+          return proposeOpenUrl(ctx, trimmed);
         }
 
         default: {

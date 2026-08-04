@@ -22,13 +22,16 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   (2026-08-04) deliberately started with `ctx.store` instead — no gate
   design work needed to prove the voice UX first. Worth revisiting once
   the private list feels limiting.
-- Music control (play/pause/skip/what's playing) via Music.app/Spotify
-  AppleScript — same `execFile`-no-shell pattern as `core/executors/
-  apps.ts`, SHELL_EXEC, small and bounded.
-- Open a URL in the browser ("open GitHub", "look up X") — `open <url>`,
-  same executor as opening apps, SHELL_EXEC.
-- System controls: volume, brightness, Do Not Disturb toggle via
-  `osascript` — small, bounded, same executor pattern.
+- ~~Music control (play/pause/skip/what's playing)~~ — **built
+  2026-08-04**, `skills/media`. Spotify not covered, Music.app only
+  (see ADR-025).
+- ~~Open a URL in the browser~~ — **built 2026-08-04**, folded into
+  `skills/launcher`'s `open_url`.
+- ~~System controls: volume, brightness~~ — **built 2026-08-04**,
+  `skills/media`. Volume is real (built-in AppleScript); brightness
+  needs `brew install brightness` (not installed on this machine, not
+  installed automatically — reports the gap plainly instead). Do Not
+  Disturb toggle still open, not built.
 - **Voice-authored Cursor/Claude Code prompts, with the owner still
   pressing send** — asked about directly (2026-08-04): JARVIS types a
   drafted prompt into Cursor's Claude Code panel via macOS UI scripting,

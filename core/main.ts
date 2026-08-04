@@ -23,8 +23,8 @@
 
 import { connectWithRetry, readLines, sendLine } from "./ipc.ts";
 import { generalConversationReply } from "./converse.ts";
-import { openApp } from "./executors/apps.ts";
 import { createWriteFactExecutor } from "./executors/memory.ts";
+import { runShellAction } from "./executors/shell.ts";
 import { extractAndRememberFacts } from "./factExtraction.ts";
 import { watchApprovalCommands } from "./gate/cli.ts";
 import { Gate } from "./gate/gate.ts";
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   const memory = new Memory(db, embedder);
   const routerRegistry = await buildRegistry();
   const gate = new Gate(db, await getSigningKey(), {
-    SHELL_EXEC: openApp,
+    SHELL_EXEC: runShellAction,
     MEMORY_WRITE: createWriteFactExecutor(memory),
   });
 

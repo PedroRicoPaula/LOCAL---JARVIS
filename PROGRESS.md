@@ -1650,6 +1650,25 @@ closed); real Open-Meteo weather calls; real system metrics (memory at
 99% used on this machine -- a genuinely useful number surfaced, not
 just a demo). 183 TS tests (up from 139), `make check` green end to end.
 
+**Same session, three more backlog ideas built:** `SHELL_EXEC` became a
+real dispatcher (`core/executors/shell.ts`) instead of one executor per
+capability -- music control, opening URLs, and volume/brightness all
+route through it by `payload.action`, no new capability per action.
+Volume uses a real built-in AppleScript command; brightness needs the
+free `brightness` CLI (not installed on this machine -- reports that
+plainly rather than guessing at an unverified hardware-key hack).
+`open_url` joined `launcher`; `media` is a new skill (play/pause/skip,
+`now_playing` as an ungated read, volume, brightness). Full detail in
+DECISIONS.md's ADR-025.
+
+Verified live: a real system volume change (63 → 40, restored after)
+through the full propose → approve → executor path; a real browser tab
+opened the same way; `now_playing` honestly reported nothing playing
+against the real, not-running Music.app. Deliberately skipped a live
+`play` test -- unlike a Calculator window, unexpected audio is a more
+intrusive surprise than needed for this round; unit coverage stands in.
+210 TS tests total, `make check` green end to end.
+
 ---
 
 ## Key numbers to record as we go

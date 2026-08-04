@@ -3,7 +3,7 @@
  * listing project directory names only, never contents; `SHELL_EXEC`
  * (yellow) for actually opening anything -- every open goes through
  * `ctx.propose` and the owner's approval, executed by
- * `core/executors/apps.ts`.
+ * `core/executors/shell.ts`.
  */
 
 import type { SkillManifest } from "../../shared/types.ts";
@@ -46,6 +46,18 @@ export const manifest: SkillManifest = {
         "open Jarvis in Cursor",
         "open my Jarvis project",
         "load the Jarvis project",
+      ],
+      lanes: ["converse"],
+    },
+    {
+      id: "open_url",
+      description: "Open a web address in the default browser.",
+      examples: [
+        "open github.com",
+        "open GitHub",
+        "look up the weather forecast online",
+        "go to google.com",
+        "open the NVIDIA build website",
       ],
       lanes: ["converse"],
     },

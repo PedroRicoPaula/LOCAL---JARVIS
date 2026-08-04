@@ -135,3 +135,34 @@ test("open_project with an unknown name is honest, no crash", async () => {
 
   assert.match(result.speech, /couldn't find a project/i);
 });
+
+test("open_url proposes SHELL_EXEC with the extracted URL", async () => {
+  const proposals: ProposedAction[] = [];
+  const ctx = fakeSkillContext({
+    router: fakeRouter({ completeReturns: "https://github.com" }),
+    propose: async (action) => {
+      proposals.push(action);
+      return { ok: true, result: null };
+    },
+  });
+  const skill = createLauncherSkill({ listProjectDirs: () => [] });
+
+  const result = await skill.handle({ utterance: "open GitHub", intent: "open_url", sessionId: "s1" }, ctx);
+
+  assert.equal(result.speech, "Opened https://github.com.");
+  assert.deepEqual(proposals[0]?.payload, { action: "open_url", url: "https://github.com" });
+});
+
+test("open_url with nothing extracted falls back to asking which website", async () => {
+  const conversation = fakeConversation(["https://example.com"]);
+  const ctx = fakeSkillContext({
+    router: fakeRouter({ completeReturns: "NONE" }),
+    conversation,
+    propose: async () => ({ ok: true, result: null }),
+  });
+  const skill = createLauncherSkill({ listProjectDirs: () => [] });
+
+  const result = await skill.handle({ utterance: "open a website", intent: "open_url", sessionId: "s1" }, ctx);
+
+  assert.equal(result.speech, "Opened https://example.com.");
+});
