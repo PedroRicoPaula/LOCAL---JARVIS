@@ -7,16 +7,16 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 6 — Gate and audit — **built, all DoD checks pass, not yet merged**
+**Phase:** 6 — Gate and audit — **closed, merged to `main`**
 **Status:** `core/gate/` — the full `ApprovalRequest` lifecycle
 (`pending -> approved -> executed` / `rejected` / `expired`),
 server-authoritative, single-use nonces, HMAC-SHA256 signing (key
 self-provisioned into Keychain), an append-only audit log, capability-tier
 enforcement (green auto-runs and logs; yellow blocks), and `ctx.propose`
 wired for real into the skill host. All five DoD checks verified — most
-live, against a real Keychain-backed signing key, not just fakes. See the
-Phase 6 log below.
-**Branch:** `phase/06-gate`
+live, against a real Keychain-backed signing key, not just fakes. 156
+tests, `make check` green on `main`. Next: Phase 7 (Dashboard).
+**Branch:** `main`
 **Last updated:** 2026-08-04
 
 (Phase 5 — skill host + `brief`, plus real `core` integration — closed
