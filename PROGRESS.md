@@ -1586,6 +1586,26 @@ coverage, stray temp files — was already consistent; nothing else changed.
 
 ---
 
+### SOAK 1 — in progress, 2026-08-04
+
+**Fixed same day, found via real use:** `data/jarvis.db`'s first real
+conversation log showed `converse` confidently claiming to create a
+skill, "work on it," and eventually appear on Skill Health — none of it
+real or possible at runtime. Same pattern on "see my current location."
+Root cause: `persona.md` had honesty rules for numeric claims (SPEC.md
+§ 7) but none for capability claims, and `generalConversationReply()`
+never told the model what's actually loaded. Fixed in both places;
+verified live against real NIM — "can you create a skill?" now gets an
+honest refusal. Full detail in the commit and `docs/BACKLOG.md`.
+
+Also found and logged in `docs/BACKLOG.md` (not fixed yet, owner's
+call): `Transcript` doesn't backfill on open the way `Timeline` does;
+`make dev`'s `ears` can silently fight the installed LaunchAgent for the
+same socket; the dashboard's visual match to the Figma reference is
+palette/type/panel-style only, not layout or the animated Orb centerpiece.
+
+---
+
 ## Key numbers to record as we go
 
 | Metric | Target | Actual | Phase |

@@ -45,6 +45,33 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 
 ## Annoyances found during SOAK
 
+- **2026-08-04 — `converse` hallucinated capabilities (fixed same day).**
+  Real conversation: asked "can you create a skill?", JARVIS said yes and
+  kept claiming to be building one, that it would show up on Skill
+  Health once done — none of it real. Same for "see my current
+  location." Root cause and fix in `persona.md` + `core/converse.ts` —
+  see the commit. Logged here for the record; not open anymore.
+- **Transcript panel only shows conversation from the moment a tab
+  opens** — it's push-only by design (`core/ws.ts` has no replay), but
+  unlike the Timeline (which backfills from `/api/events`), reopening
+  the dashboard after talking to JARVIS shows "Waiting for the first
+  utterance" even though the conversation is sitting right there in
+  `/api/events`. Worth a small backfill fix: filter that same endpoint
+  to `utterance`/`response` kinds on `Transcript`'s mount, same pattern
+  `Timeline` already uses.
+- **`make install-daemon`'s `ears` LaunchAgent and `make dev`'s own
+  `senses.ears.main` both bind the same socket if run at the same
+  time** — one silently loses. Hit this directly while testing `make
+  dev` for the SOAK. `make dev`'s own doc comment should say to
+  `make uninstall-daemon` (or `launchctl unload`) first; not yet fixed.
+- **The dashboard doesn't visually match the Figma reference beyond
+  palette/font/panel-bracket style** — no animated Orb (the design's
+  centerpiece), no background grid, no scanline, no live state
+  (idle/listening/thinking/speaking — `ServerEvent`'s `speaking` variant
+  is typed but `core/main.ts` never emits it). ADR-022 deliberately
+  scoped Phase 7 to function over decoration; whether to close this gap
+  is the owner's call, not assumed.
+
 _(add as you find them — this section is the most valuable one)_
 
 - 
