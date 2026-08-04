@@ -466,16 +466,29 @@ voz"). Not a closed question, a deferred one.
   since both real tests above stayed inside budget without needing to).
 
 **Left over — needs Pedro, not automatable:**
-- 30 deliberate activations at ~2m, his real voice — see above.
-- `make install-daemon`, then an actual reboot, for "survives reboot
-  without manual intervention." The loaded daemon will almost certainly
-  need Microphone/Accessibility/Input Monitoring granted again — confirmed
-  this myself (see "Surprised me"): the daemon loaded and ran but sat with
-  zero output, consistent with waiting on a permission grant for the
-  launchd-invoked python binary, which macOS has never seen before (a
-  different identity than Cursor, the interactive dev-mode grant target).
-  I unloaded it again after confirming the install mechanics work, rather
-  than leave a silently-stuck process running.
+- Formal 30-activation clean tally at ~2m — see above; strong functional
+  signal already exists from several live rounds (near-perfect scores,
+  zero missed wake-word detections reported) but not as an explicit
+  count-of-30. Owner call whether that's enough, same as Phase 1's
+  waived word-accuracy test.
+
+**Reboot DoD — PASSED.** Pedro ran `make install-daemon` and rebooted for
+real. `data/logs/ears.log` shows the daemon came up on its own, Microphone
+permission held across the reboot (no re-grant needed — better than the
+"almost certainly" prediction below), wake word fired reliably, and
+transcriptions were clean ("Are you listening to me?", "Can you hear what
+I'm saying to you?"). One expected, harmless warning on every start:
+`This process is not trusted! Input event monitoring will not be possible
+until it is added to accessibility clients` — Accessibility/Input
+Monitoring wasn't re-granted to the launchd-invoked binary, but that only
+affects the Tab hotkey (pynput), which isn't part of the daemon's job;
+wake-word capture needs Microphone only. He also noticed it "hears but
+doesn't respond" — expected, not a bug: `make install-daemon` only
+manages `ears`; `voice`/`echo_bridge` were never part of it (echo_bridge
+is explicitly a Phase-1 stand-in for `core`, not meant to be a daemon).
+Asked Pedro whether to extend the daemon to cover the full round-trip now
+or leave it — **he chose to leave it as-is**, matching CLAUDE.md § 0.6;
+revisit once `core` (Phase 5) replaces `echo_bridge`.
 
 **Surprised me:**
 - **Running ONNX inference inside the real-time audio callback caused a
@@ -621,7 +634,8 @@ voz"). Not a closed question, a deferred one.
 | Lane classification accuracy | ≥ 85% | 71.1% (NIM `llama-3.1-8b`; no local candidate viable — ADR-001) | 0 |
 | Time to first audible syllable | < 1.5 s | 3/10 real trials: 657ms, 686ms, 1530ms (3rd was a ~45-word stress test) | 1 |
 | Wake false activations / 4h | < 2 | 1 (score=0.565) | 2 |
-| Wake detection rate (30 @ ~2m) | ≥ 90% | 30/30 synthetic TTS proxy (not the official number — see Phase 2 log); real-voice run pending retest after retrigger-race fix | 2 |
+| Wake detection rate (30 @ ~2m) | ≥ 90% | 30/30 synthetic TTS proxy (not the official number — see Phase 2 log); strong real-voice signal across several live rounds, no formal count-of-30 | 2 |
+| Survives reboot, no manual intervention | pass/fail | **PASS** — daemon auto-started, mic permission held, wake word + transcription worked | 2 |
 | Memory recall p95 | < 200 ms | — | 4 |
 | **`make new-skill` → working no-op** | **< 30 min** | **—** | **5** |
 | Intent routing accuracy | ≥ 90% | — | 5 |
