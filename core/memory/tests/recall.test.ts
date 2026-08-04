@@ -96,3 +96,32 @@ test("under the cap, nothing is marked truncated", async () => {
 
   assert.equal(ctx.truncated, false);
 });
+
+test("a slow embedder degrades to empty semantic matches instead of blocking the response -- found live post Phase 5", async () => {
+  const db = openDb(":memory:");
+  appendEvent(db, { kind: "utterance", actor: "owner", content: "recent turn", sessionId: "s1" });
+  upsertFact(db, { key: "diet.avoids", value: "peanuts", confidence: 0.9 });
+
+  const neverResolvingEmbedder = { embed: () => new Promise<number[][]>(() => {}) };
+
+  const start = performance.now();
+  const ctx = await assembleContext(db, neverResolvingEmbedder, {
+    sessionId: "s1",
+    queryText: "q",
+    semanticTimeoutMs: 30,
+  });
+  const elapsed = performance.now() - start;
+
+  assert.ok(elapsed < 500, `took ${elapsed}ms, should have bailed out around 30ms`);
+  assert.equal(ctx.semanticTimedOut, true);
+  assert.deepEqual(ctx.semanticMatches, []);
+  // Everything that doesn't need the embedder still comes through.
+  assert.equal(ctx.recentTurns.length, 1);
+  assert.equal(ctx.facts.length, 1);
+});
+
+test("a fast embedder does not report a timeout", async () => {
+  const db = openDb(":memory:");
+  const ctx = await assembleContext(db, new FakeEmbedder(), { sessionId: "s1", queryText: "q" });
+  assert.equal(ctx.semanticTimedOut, false);
+});

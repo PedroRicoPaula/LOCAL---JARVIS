@@ -17,7 +17,6 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 - LeadHunter / HoqueiManager read-only widgets
 
 ## Platform
-
 - Bounded continuous-vision sessions ("watch me solder this")
 - Mobile client for approvals away from the desk
 - Sandboxed `act` lane (OpenHands-style container)

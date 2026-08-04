@@ -838,3 +838,178 @@ already put in place.
   Both a reminder that a clean `tsc --noEmit` on a new dependency's import
   shape doesn't guarantee it actually runs — worth one real execution
   before trusting it.
+
+---
+
+## ADR-019 — Phase 5 skill host: routing thresholds, namespace enforcement, stubs
+
+**Status:** accepted
+
+**Context.** `docs/SKILLS.md` specifies the manifest format, two-stage
+routing (lane classifier → embedding match → disambiguation), the
+`SkillContext` surface, per-skill storage, and error isolation. Building it
+meant real decisions about where `Skill`/`SkillContext` live, how routing
+thresholds and lane-filtering interact, how storage isolation is actually
+enforced, and how to represent capabilities (`CAMERA`, the gate) that don't
+exist yet without either building them early or leaving `SkillContext`
+incomplete.
+
+**Decisions.**
+- **`Skill`/`SkillContext`/`Router`/`Conversation`/`SkillStore` live in
+  `core/skills/types.ts`, not `shared/types.ts`** — same reasoning as
+  `ModelProvider` (ADR-017) and `Memory`: skills run in the same process as
+  `core`, never across a real boundary.
+- **Embedding match is plain JS cosine similarity over an in-memory array,
+  not `sqlite-vec`.** The candidate set is every manifest example across
+  loaded skills — at most a few hundred short strings. Routing skill
+  dispatch through `core/memory`'s database would couple two things that
+  don't need to be coupled.
+- **A skill's candidate intents are filtered to those whose declared
+  `lanes` include the classified lane, *before* scoring.** Found live
+  (routing benchmark's first run, 80%) that this filter can silently make
+  an utterance completely unroutable if a manifest's declared lanes don't
+  match what the lane classifier actually produces for its real phrasings
+  — not a routing-quality problem, a hard miss with zero candidates. Kept
+  the filter (it's the right design — an intent genuinely shouldn't fire
+  outside its declared lanes) and instead fixed the two manifests that had
+  it wrong; see "Surprised me" in `PROGRESS.md`'s Phase 5 log.
+- **`ctx.store`'s namespace enforcement checks every literal `skill_`
+  marker against the calling skill's own id, not just the four shared
+  table names.** The first version only blocked `events`/`facts`/
+  `observations`/`memory_vec` explicitly — a skill could still reach
+  another skill's `skill_<other>_*` table. `store.test.ts`'s own
+  cross-skill test caught this immediately; fixed before it shipped
+  further than that one test run.
+- **`camera.ts` and `gate.ts` are throwing stubs, not omitted fields.**
+  Every field `docs/SKILLS.md` § 4 specifies for `SkillContext` is really
+  present on every context; what's missing is the real capability behind
+  `camera`/`propose` (Phase 8, Phase 6). Calling either before those
+  phases exist fails loudly with a clear message pointing at why, rather
+  than being `undefined` (a confusing crash somewhere else) or silently
+  doing nothing (worse — CLAUDE.md § 6: "if the system does not know, it
+  says so").
+- **`ctx.ask`/`ctx.say` are backed by a real (not fake) stdio
+  `Conversation` implementation (`conversation/cli.ts`) for now.** No
+  phase's checklist yet wires `core` to `senses/ears`/`senses/voice` over
+  IPC — see `docs/BACKLOG.md`'s new Platform entry. This is a real gap in
+  the roadmap, not a Phase 5 shortfall: nothing between Phase 1 (built the
+  Python voice pipeline with an explicit Phase-1-only stand-in bridge) and
+  now names replacing that bridge with a real `core` connection. The
+  `Conversation` interface is the seam a future integration phase plugs
+  a real implementation into without touching any skill code.
+- **`eslint.config.js`'s executor-import rule targets `core/executors/**`,
+  a directory that's empty until Phase 6.** Establishing the convention
+  and the guardrail now means Phase 6 has enforcement from its first
+  commit instead of retrofitting it once there's real code to protect.
+
+**Consequences.**
+- Intent routing measured at 100% (15/15) on a live benchmark
+  (`bench/bench_skill_routing.ts`) after two real fixes — both found by
+  running the benchmark, not by reviewing the manifests. `make new-skill`
+  timed at ~111 seconds end to end, including finding and fixing two real
+  scaffolder bugs (a URL-encoding bug in `REPO_ROOT` that broke on this
+  repo's own non-ASCII path, and a wrong relative-import depth in the
+  generated test) — both are exactly what the 30-minute timing exists to
+  catch, and did, on the first real run.
+- `brief`'s router-phrased output was subtly wrong on its first live run
+  (misinterpreted "verbosity is terse" as needing explanation rather than
+  relaying it) — via NIM, confirmed healthy at the time, not a degraded
+  fallback excuse. Fixed with a one-shot worked example in the phrasing
+  prompt, the same lesson Phase 3's lane classifier prompt already
+  established: a category description under-specifies the task; a worked
+  example closes gaps a description can't anticipate.
+- The `core` <-> `senses` IPC gap is now written down (`docs/BACKLOG.md`)
+  rather than silently assumed to be someone else's problem later —
+  whichever phase (a new one, or folded into an existing one) actually
+  makes voice-in-and-out real needs to know this wasn't secretly already
+  done.
+
+---
+
+## ADR-020 — core ↔ senses integration, fallback conversation, fact extraction over a graph engine
+
+**Status:** accepted
+
+**Context.** Phase 5's close-out flagged a real gap: no phase's checklist
+ever connected `core` (TypeScript — router, memory, skills, Phases 3-5) to
+the Python voice pipeline (`senses/ears`, `senses/voice`, Phases 1-2).
+`senses/echo_bridge.py` — always documented as a Phase-1-only stand-in —
+was still the only thing sitting between them. The owner asked this be
+resolved before Phase 6, then, after seeing it run live, asked for a voice
+change, a latency investigation, and — the bigger question — whether
+JARVIS should "learn" from conversation over time, floating a graph-based
+memory engine as a possibility to research.
+
+**Decisions.**
+- **`core/main.ts` replaces `senses/echo_bridge.py` outright** (deleted).
+  `senses/ipc.py`'s own docstring named this the plan since Phase 1;
+  `ears`/`voice` are unaware of the difference — they only know "read from
+  my socket" / "write to my socket."
+- **`Conversation`'s real implementation (`conversation/ipc.ts`) is
+  decoupled from any actual `net.Socket`** — takes a plain
+  `sendToVoice(text)` function instead, so its `ask()`/`offerUtterance()`
+  queue-and-timeout logic is unit-tested without a real socket. `core/
+  main.ts` wires the real socket in; that wiring itself is proven live
+  (`make dev` + acoustic loopback), not unit-tested, matching how `senses/
+  ears/main.py`/`senses/voice/main.py` are already treated.
+- **`core/converse.ts` implements the general-conversation fallback
+  docs/SKILLS.md § 3's routing diagram names but Phase 5 never built.**
+  Without it, `no_skill_matched` was a dead end — grounded in
+  `Memory.recall()` (Phase 4, actually exercised in real use for the
+  first time) and voiced through `core/persona.md`, same as any skill.
+- **Declined a graph-based memory engine (Graphiti/Zep-style) for
+  learning-over-time, after researching it at the owner's explicit
+  request.** The production-validated approach (Graphiti, backing Zep)
+  requires Neo4j or FalkorDB running alongside it — "at least three
+  systems to provision, monitor, and maintain" by its own maintainers'
+  framing — plus its own LLM-based extraction pipeline. Real value for
+  multi-hop reasoning over large, densely interconnected, often
+  multi-user datasets (LongMemEval benchmark: Zep/Graphiti 63.8% vs
+  Mem0's 49%, a real gap). Not a good fit for one person's personal facts
+  (dozens to a few hundred, mostly flat — preferences, restrictions,
+  project details) on an already 8GB-constrained machine. Presented as
+  one of three explicit options (simple extraction / graph engine /
+  simple-now-graph-later); owner chose simple extraction onto the
+  existing Phase 4 `facts` table.
+- **`core/factExtraction.ts` runs on every utterance, fire-and-forget,
+  never blocking the spoken response** (CLAUDE.md § 7). Confidence is
+  deliberately conservative — the system prompt requires 0.8+ only for
+  something stated explicitly, and anything the model would score under
+  0.5 is instructed to be omitted entirely rather than included low. A
+  malformed model response or a provider failure both degrade to "nothing
+  learned this turn," never a crash — same "never guessed at" reasoning
+  CLAUDE.md § 0.5 already applies to quantities, extended here to facts
+  inferred from casual speech rather than explicitly declared.
+- **`core/memory/recall.ts`'s semantic search is now bounded
+  (`semanticTimeoutMs`, default 1500ms) and best-effort.** Found live: a
+  real embedding call took 46.6 seconds under real memory pressure on
+  this 8GB machine — confirmed via a raw `curl` to the same endpoint,
+  independent of any of this project's code, and confirmed independent of
+  embedding model size (`all-minilm`, 45MB, was affected too, ruling out
+  "use a smaller model" as the fix). Recall now degrades to recent-turns-
+  and-facts-only (both DB-only, no embedding call) rather than blocking
+  the whole response — the same "even a degraded one" reasoning SPEC.md
+  § 3 already applies to provider fallback, applied here to a single
+  slow dependency instead of a whole failed provider. This does not
+  cancel the underlying embedding request (`Embedder` has no
+  `AbortSignal` in its contract across Phases 3-5); it stops the caller
+  waiting on it, which is what actually mattered for the response.
+- **Voice changed from `Samantha` to `Daniel`** (male, British) —
+  `senses/voice/config.py`'s `SAY_VOICE` default — owner's explicit
+  choice after hearing the first live exchange.
+
+**Consequences.**
+- The system this project has been building toward — voice in, through a
+  real router/memory/skill host, voice out, durably remembered — worked
+  end to end for the first time this session, verified not just by a
+  planned test but by the owner spontaneously talking to it the moment it
+  came online.
+- This machine's 8GB ceiling (ADR-001) is now confirmed to affect more
+  than just the `converse`-lane provider choice — it can throttle a
+  *local* embedding call too, under real concurrent load. Nothing in this
+  ADR changes that ceiling; the timeout-based degradation manages its
+  symptom in the recall path specifically. Closing background
+  applications or a reboot before demanding live sessions remains the
+  owner's own lever, not something further code changes here can fix.
+- `docs/BACKLOG.md`'s IPC-gap entry (added at Phase 5's close-out) is
+  resolved and removed rather than left stale.

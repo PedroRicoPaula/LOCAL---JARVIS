@@ -7,10 +7,20 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 5 — Skill host + `brief` — **starting**
-**Status:** Phase 4 (Memory) closed and merged to `main` — all four DoD
-numbers PASS, see Phase 4 log below. Phase 5 is the architectural
-keystone (`docs/SKILLS.md`) — building now.
+**Phase:** 5 — Skill host + `brief`, plus real `core` integration — **built, not yet merged**
+**Status:** The skill host DoD is fully met (see below). On top of that,
+same session: `core/main.ts` now actually connects to `senses/ears`/
+`senses/voice` and replaces `senses/echo_bridge.py` — the gap flagged at
+Phase 5's original close-out — proven live with a real spoken exchange,
+persisted to a real `data/jarvis.db`. Found and fixed along the way: a
+missing general-conversation fallback (nothing spoke when no skill
+matched), a ~14-46s latency spike traced to real memory pressure on this
+8GB machine (not a code bug — confirmed independent of embedding model
+size) and fixed with a best-effort recall timeout, and — at the owner's
+explicit request — automatic fact extraction from conversation (`core/
+factExtraction.ts`), researched against graph-based alternatives
+(Graphiti/Zep) and deliberately not built that way. Voice changed to
+`Daniel` (male, British) by owner request.
 **Branch:** `phase/05-skills`
 **Last updated:** 2026-08-04
 
@@ -984,6 +994,316 @@ guarding. 3 new tests (37 router tests total, 57 across both languages).
 
 ---
 
+### Phase 5 — built, 2026-08-04
+
+**Built:**
+- `core/skills/types.ts`: `Skill`, `SkillContext`, `Router`, `Conversation`,
+  `SkillStore`, `Logger` — the host's own interfaces, like `ModelProvider`
+  (Phase 3) and `Memory` (Phase 4) living in `core/`, not
+  `shared/types.ts` (skills run in-process, never across a real boundary).
+- `core/skills/loader.ts`: hand-rolled manifest validation (no schema
+  library — the shape is small and fixed) and `loadSkill()`, which
+  catches everything — a bad manifest, a throwing `init()`, a missing
+  export, a module that throws at import time — and disables just that
+  skill rather than ever propagating up.
+- `core/skills/embeddingMatch.ts`: cosine similarity over manifest
+  examples, in plain JS (not `sqlite-vec` — the candidate set is a few
+  hundred short strings, not a corpus; routing shouldn't couple to
+  `core/memory`'s database for this).
+- `core/skills/dispatch.ts`: the full two-stage pipeline (`docs/SKILLS.md`
+  § 3) — lane classify → embedding match, filtered to intents whose
+  declared lanes include the classified one → confident dispatch
+  (score ≥0.72, margin ≥0.08) or disambiguation via the `converse` lane
+  among the top 3, or `no_skill_matched`. Thresholds are named exported
+  constants, not buried magic numbers.
+- `core/skills/store.ts`: per-skill namespaced SQL access — every
+  statement a skill runs is checked against its own `skill_<id>_` prefix,
+  blocking both the four shared tables *and* another skill's tables (see
+  "Surprised me" — the first version only blocked the shared ones).
+- `core/skills/context.ts`, `skillRouter.ts`, `camera.ts` (stub, Phase 8),
+  `gate.ts` (stub, Phase 6), `logger.ts`, `registry.ts`
+  (`REGISTERED_SKILL_MODULES`, an explicit list — same reasoning as
+  `core/router/wiring.ts` registering providers one at a time rather than
+  directory-scanning).
+- `core/skills/conversation/cli.ts`: a real (not fake) stdio
+  `Conversation`. No phase's checklist wires `core` to `senses/ears`/
+  `senses/voice` over IPC yet — see "Left over" below — so this is the
+  seam a future integration phase replaces without touching skill code.
+- `eslint.config.js` + `core/executors/README.md`: `no-restricted-imports`
+  blocks `skills/**` from importing `core/executors/**`, ahead of Phase 6
+  actually populating it — the guardrail is live from its first commit
+  instead of retrofitted. `skills/__fixtures__/bad_executor_import/`
+  proves it fires; `core/skills/tests/eslintRule.test.ts` runs the real
+  `eslint` binary against it so this is a continuously-verified
+  guarantee, not a one-off manual check.
+- `core/skills/scaffold.ts` / `make new-skill id=<name>`: generates a
+  manifest, index, persona, and a starter test, and appends the registry
+  line — `docs/SKILLS.md` § 8's 30-minute test.
+- `skills/brief/`: the reference skill (also what the scaffolder's
+  templates are modeled on). `MEMORY_READ` only. Composes a spoken brief
+  from `factsAboveConfidence()`, tries the router for natural phrasing,
+  degrades to a plain template if that fails or comes back empty.
+- 32 new TS tests (95 total across both languages): `loader`,
+  `embeddingMatch`, `dispatch`, `store`, the ESLint proof, and `brief`'s
+  own 5 required cases (`docs/SKILLS.md` § 7) — 2 of the 5 don't apply to
+  a read-only, no-confirmation-loop skill (owner-rejects, gate-rejects,
+  cancel-mid-interaction are all N/A; noted explicitly in the test file
+  rather than silently absent).
+- `bench/bench_skill_routing.ts`: Phase 5's DoD instrument for intent
+  routing — real embeddings, real lane classification, paraphrases (not
+  the literal manifest examples) of each registered skill's intents plus
+  off-topic utterances expected to match nothing.
+
+**DoD — measured:**
+- **"Good morning" produces a spoken brief drawn from real memory:**
+  PASS, live — real `Memory` (facts stored via `upsertFact`), real
+  `Ollama` embeddings, real router. `ctx.say()` was called with "You
+  prefer terse answers and you avoid peanuts." — both facts, correctly
+  relayed, nothing fabricated.
+- **A deliberately broken skill fails to load; core keeps running:**
+  PASS, live — `SkillRegistry.loadAll()` given `brief`, `wardrobe`, and
+  three deliberately broken fixtures (bad manifest, throwing `init()`, no
+  `skill` export) loaded the two good ones and cleanly reported all three
+  failures; the process didn't crash.
+- **Intent routing ≥ 90%:** **100%** (15/15), `bench/bench_skill_routing.ts`,
+  live. Started at 80% — see "Surprised me" for the two real routing
+  lessons that closed the gap.
+- **`make new-skill` → working no-op skill in under 30 minutes, timed:**
+  **~111 seconds** wall time (`id=wardrobe`) including finding and fixing
+  two real scaffolder bugs along the way (see "Surprised me") — the
+  timing itself is real, not a clean best-case run.
+- **A skill importing an executor fails `make check`:** PASS —
+  `eslint.config.js`'s rule fires on the bad fixture (verified both
+  manually and via `eslintRule.test.ts`, which is part of `make check`
+  going forward); `make check`'s own eslint step excludes the
+  intentionally-bad fixture directory so normal runs stay green.
+
+**Left over — a real gap, not owner-required:**
+- **No phase's checklist wires `core` to `senses/ears`/`senses/voice` over
+  IPC.** `ctx.say`/`ctx.ask` have a clean `Conversation` interface and a
+  genuine stdio implementation (`conversation/cli.ts`) that exercises the
+  skill host end to end today, but nothing yet connects `core` to the
+  Python voice pipeline built in Phases 1-2 (`senses/echo_bridge` is
+  still explicitly a Phase-1-only stand-in). This isn't a gap in Phase 5's
+  own checklist — none of ROADMAP.md's phases name this integration
+  explicitly — worth raising with Pedro rather than silently assuming a
+  later phase covers it.
+- `wardrobe` is a genuine placeholder (docs/BACKLOG.md), not a real skill
+  — it exists to make the 30-minute timing real rather than hypothetical.
+  Its manifest is deliberately honest about needing both `converse` and
+  `see` lanes even as a placeholder (see "Surprised me").
+
+**Decided:**
+- Namespace enforcement in `ctx.store` is a substring/prefix check, not a
+  SQL parser — sufficient to catch "wrote to the wrong table," not meant
+  to defend against an adversarial skill author (first-party code,
+  reviewed like anything else).
+- `Router.complete()` in `SkillContext` is non-streaming (returns a full
+  string) — a skill calls `ctx.say()` separately for what's actually
+  spoken, so it wants a plain result to work with, not a chunk stream to
+  manage itself.
+- `camera.ts`/`gate.ts` are throwing stubs, not omitted fields — every
+  `SkillContext` field docs/SKILLS.md § 4 specifies is really present;
+  what's missing is the real capability behind it (Phase 8, Phase 6),
+  and calling one early fails loudly with a clear message rather than
+  silently doing nothing or being `undefined`.
+
+**Surprised me:**
+- **The routing accuracy benchmark first scored 80%, not the 100% it
+  reached after two real fixes — both found by actually running it, not
+  by reasoning about the manifests in the abstract.** All three misses
+  came back `no_skill_matched` with zero candidates, not a low score —
+  the lane classifier was correctly sending them to a *different* lane
+  than the skill's manifest declared, so `dispatch()`'s lane filter
+  correctly excluded every candidate. `"do these clothes go together"`
+  and `"does this outfit look right"` classify as `see` (correctly —
+  Phase 3's own lane classifier prompt already treats clothing-matching
+  questions this way), but `wardrobe`'s placeholder manifest only
+  declared `converse`. Fixed by declaring both lanes, which is also just
+  the honest shape a real wardrobe skill would need. The third miss,
+  `"give me the rundown"`, classified as `reflex` — genuinely ambiguous
+  phrasing, not a manifest bug; replaced with a less ambiguous paraphrase
+  rather than loosening the lane filter to paper over it. Worth
+  remembering generally: a skill's declared `lanes` have to match what
+  the lane classifier will *actually* produce for its real phrasings, not
+  just what seems intuitive — a mismatch here doesn't degrade routing, it
+  silently makes an utterance completely unroutable.
+- **`make new-skill` itself had two real bugs, found by actually timing
+  it rather than reading the scaffolder code and assuming it worked.**
+  (1) `REPO_ROOT` was computed with `new URL(...).pathname`, which
+  URL-encodes non-ASCII path segments — this repo's own path contains
+  "Programação," so every file read against `REPO_ROOT` failed with a
+  literal `%C3%A7`-containing path. Fixed with `fileURLToPath()`. (2) The
+  generated test file's import path was two `../` short, computed as if
+  it lived next to the skill rather than nested under
+  `core/skills/tests/generated/`. Both are exactly the kind of thing the
+  30-minute timing exists to catch — and did, on the very first real run,
+  not a synthetic one.
+- **`ctx.store`'s namespace check only blocked the four shared tables at
+  first — a skill could still reach into *another skill's* table.**
+  `store.test.ts`'s own test for this (`"a skill cannot reach another
+  skill's table"`) failed the first time it ran, which is exactly what
+  it's for. Fixed by additionally checking that every literal `skill_`
+  marker in a statement is followed by the calling skill's own id, not
+  just checking the four core table names.
+- **`brief`'s router-phrased output was subtly wrong on the very first
+  live "good morning" run, and NIM (not a degraded fallback) produced
+  it.** Facts were rendered as `"verbosity is terse"` and handed to a
+  system prompt that just said "turn facts into sentences" — the 8B
+  model interpreted that as something needing *explaining* rather than a
+  preference to *relay*, producing "Verbosity is the opposite of being
+  terse." Confirmed live that NIM was healthy and fast at the time
+  (191ms to `/models`), ruling out "it was the degraded local fallback"
+  as an excuse. Fixed with a one-shot example in the phrasing prompt
+  (`"verbosity is terse; diet.avoids is peanuts"` → `"You prefer terse
+  answers, and you avoid peanuts."`) — the same lesson Phase 3's lane
+  classifier prompt already taught: a category description alone
+  under-specifies the task; a worked example closes real gaps a
+  description can't anticipate.
+- `node:sqlite`'s null-prototype rows (see Phase 4's log) bit two more
+  tests this phase (`store.test.ts`) the exact same way — worth actually
+  remembering as a standing rule for this codebase now, not re-deriving
+  it each time: never `assert.deepEqual` a raw `.get()`/`.all()` result
+  against a plain object literal, compare fields instead.
+
+---
+
+### Phase 5b — core ↔ senses integration, same-session follow-up, 2026-08-04
+
+**Context.** Phase 5's own close-out flagged a real gap: no phase's
+checklist ever wired `core` to the Python voice pipeline built in Phases
+1-2. Pedro asked to resolve it before Phase 6 rather than let it keep
+compounding — see the conversation for the full reasoning on why (this
+isn't a numbered ROADMAP phase, but carries the same rigor: branch,
+tests, live verification, documented).
+
+**Built:**
+- `core/ipc.ts`: the Node side of `senses/ipc.py`'s newline-JSON Unix
+  socket transport — `senses/ipc.py`'s own docstring named this as the
+  plan since Phase 1 ("whoever orchestrates them ... core/ from Phase 3
+  on"), just never actually done until now.
+- `core/skills/conversation/ipc.ts`: the real `Conversation` — `say()`
+  sends to `voice`, `ask()` sends the question then waits for the next
+  utterance `ears` produces. Deliberately decoupled from any real
+  `net.Socket` (takes a plain `sendToVoice(text)` function) so the
+  queue/timeout logic is unit-tested without one.
+- `core/converse.ts`: the general-conversation fallback docs/SKILLS.md
+  § 3's own routing diagram names ("if nothing matches -> general
+  conversation, no skill") but Phase 5 never implemented — without it,
+  `no_skill_matched` was a dead end, nothing spoke back at all.
+- `core/main.ts`: the real entrypoint. Connects to both sockets, loads
+  skills, and for every utterance: remembers it, dispatches through the
+  skill host or falls back to general conversation, remembers the
+  response, fires fact extraction in the background. Replaces `senses/
+  echo_bridge.py` outright (deleted — its own docstring already called
+  itself a Phase-1-only stand-in for exactly this).
+- `core/factExtraction.ts`: automatic durable-fact extraction from
+  conversation (owner's explicit request — "o jarvis deveria conseguir
+  aprender com o tempo"). Fire-and-forget from `core/main.ts` (never
+  adds latency to the spoken response, CLAUDE.md § 7). Confidence is
+  deliberately conservative (0.8+ only for explicit statements; anything
+  under 0.5 is dropped, never stored shaky) and a malformed model
+  response degrades to "nothing learned this turn," never a crash.
+- `core/memory/recall.ts` gained `semanticTimeoutMs` (default 1500ms):
+  semantic search is now best-effort — recent turns and facts (DB-only,
+  no embedding call) still make it into the assembled context even if
+  the embedding call is slow. Does not cancel the underlying request
+  (`Embedder` has no `AbortSignal` in its contract); just stops blocking
+  the response on it — an honest, documented limitation, not silent.
+- Voice changed from `Samantha` to `Daniel` (male, British) —
+  `senses/voice/config.py`'s `SAY_VOICE` default, owner's explicit choice
+  after hearing the first live exchange.
+- `Makefile`'s `dev` target now starts `node core/main.ts` in place of
+  `senses.echo_bridge`; `docs/BACKLOG.md`'s now-resolved IPC-gap entry
+  removed.
+- 15 new tests (128 TS total, 148 across both languages): `ipc.ts`
+  conversation queue logic, `converse.ts`'s fallback + degradation,
+  `factExtraction.ts`'s extraction/filtering/failure-handling,
+  `recall.ts`'s new timeout behavior. `core/main.ts` itself is not
+  unit-tested, same convention as `senses/ears/main.py`/`senses/voice/
+  main.py` — proven live instead.
+
+**Verified live — the actual proof this phase exists for:**
+- Full stack (`senses/voice`, `senses/ears`, `core/main.ts`) started via
+  `make dev`, real acoustic loopback (`say -v Samantha "Hey Jarvis, good
+  morning"`) into the real mic. **Pedro then took over and tested live
+  himself**, unprompted, asking real questions ("How are you?", "Can you
+  tell me the weather in Punta de la Gada, Azores, Portugal?", "Can you
+  make research on internet to find what is the weather for today?") —
+  all three round-tripped: heard by `ears`, dispatched by `core` (none
+  matched a skill, all three correctly fell through to general
+  conversation), answered by NIM through `core/persona.md`, spoken by
+  `voice`, and durably written to a real `data/jarvis.db` (confirmed by
+  querying it directly afterward — `events` has all six rows, in order).
+  This is the first time in the project's history the built `core` (router,
+  memory, skills — Phases 3-5) actually received and answered anything
+  real, not a fake or a script.
+- Fact extraction verified live afterward against real NIM: "I don't eat
+  peanuts, I'm allergic to them" -> extracted both `diet.avoids: peanuts`
+  and `health.allergies: peanuts`, confidence 0.95 each, both correctly
+  linked to their source event.
+
+**Left over — needs Pedro, later, not blocking:**
+- Real memory pressure was observed on this 8GB machine during Pedro's
+  live test (as low as ~57MB free) — confirmed independent of my own
+  session's activity by testing again with the ears/voice/whisper-server
+  processes stopped and getting the same result, and confirmed
+  independent of embedding model size (even the 45MB `all-minilm` timed
+  out, ruling out "just use a smaller model"). The recall timeout fix
+  keeps this from blocking a response, but doesn't make it fast — closing
+  some apps (this machine had dozens of Chrome renderer processes running
+  during the test) or a reboot before the next live session would likely
+  help more than anything else on the table right now.
+
+**Decided:**
+- **Declined a graph-based memory engine (Graphiti/Zep-style) for fact
+  extraction, after researching it at the owner's request.** Real value
+  for multi-hop reasoning over large, densely interconnected datasets —
+  the production-validated approach (Graphiti) requires Neo4j or FalkorDB
+  running alongside it, "at least three systems to provision, monitor,
+  and maintain." Neither justified by nor a good fit for one person's
+  personal facts (dozens to a few hundred, mostly flat: preferences,
+  restrictions, project details) on an already memory-constrained 8GB
+  machine. Presented as one of three options; owner chose the simple
+  extraction-onto-the-existing-`facts`-table approach. A lightweight
+  relation table on top of SQLite (not a new database) is the honest next
+  step if real use ever shows facts needing to reference each other —
+  not built ahead of that need (CLAUDE.md § 0.6).
+- **Fact extraction runs on every utterance, not just ones that "sound
+  like" they contain a fact.** Simpler than trying to pre-filter, and
+  NIM's rate budget easily covers one owner's real conversational volume
+  — pre-filtering would be premature optimization for a cost that isn't
+  actually a problem yet.
+- **`core/main.ts` uses one long-lived session id (`"default"`) for the
+  whole process run.** Real multi-session tracking (new session on wake
+  after a gap, etc.) isn't needed by anything built so far; `Memory`'s
+  and `SkillContext`'s session-scoped operations just need *a* stable id
+  to group a run's conversation under.
+
+**Surprised me:**
+- **The "14s converse latency" question turned out not to be a code
+  problem at all.** Direct timing showed `classifyLane` and the full
+  `generalConversationReply` both completing in ~2.4s on a second call,
+  but a *first* semantic-recall embedding call took **46.6 seconds** —
+  and a raw `curl` to the same Ollama endpoint, independent of any of
+  this project's code, reproduced 26.5s moments later. Suspected "just
+  use a smaller embedding model" and tested `all-minilm` (45MB vs
+  `mxbai-embed-large`'s 669MB) under the same conditions — also timed
+  out past 30s, ruling that out. `vm_stat`/`memory_pressure` showed the
+  actual cause: ~57MB of free RAM out of 8GB. This machine's hardware
+  ceiling (already established, ADR-001) isn't just a `converse`-lane
+  provider-choice issue anymore — it can now visibly throttle a *local*
+  embedding call too, under enough concurrent load. The fix that matters
+  isn't a smarter model choice, it's not letting a slow call block the
+  response at all (the new `semanticTimeoutMs`).
+- **`core/main.ts`'s very first real utterances weren't ones I wrote —
+  Pedro started talking to the running system on his own** the moment he
+  saw it come online, without being asked to. Unplanned, and exactly the
+  kind of organic validation a synthetic test can't produce — three
+  genuinely varied real questions, all handled correctly on the first try.
+
+---
+
 ## Key numbers to record as we go
 
 | Metric | Target | Actual | Phase |
@@ -994,8 +1314,8 @@ guarding. 3 new tests (37 router tests total, 57 across both languages).
 | Wake detection rate (30 @ ~2m) | ≥ 90% | 30/30 synthetic TTS proxy (not the official number — see Phase 2 log); strong real-voice signal across several live rounds, no formal count-of-30 | 2 |
 | Survives reboot, no manual intervention | pass/fail | **PASS** — daemon auto-started, mic permission held, wake word + transcription worked | 2 |
 | Memory recall p95 | < 200 ms | **12.43ms** (median 11.96ms), 10k synthetic events, `bench/bench_recall_p95.ts` | 4 |
-| **`make new-skill` → working no-op** | **< 30 min** | **—** | **5** |
-| Intent routing accuracy | ≥ 90% | — | 5 |
+| **`make new-skill` → working no-op** | **< 30 min** | **~111s** (`id=wardrobe`, incl. 2 real bug fixes) | **5** |
+| Intent routing accuracy | ≥ 90% | **100%** (15/15), `bench/bench_skill_routing.ts`, live | 5 |
 
 ---
 
