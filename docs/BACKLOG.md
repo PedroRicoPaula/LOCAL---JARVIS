@@ -45,8 +45,45 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   exists to prevent. Real UI-scripting research needed before this is
   buildable at all (macOS Accessibility API access to a specific text
   field inside Cursor) — not scoped yet.
+- **Screenshot -> clipboard/OCR** — `screencapture -c` is a built-in
+  macOS CLI (no AppleScript, no new dependency), pairs naturally with
+  the same `execFile`-no-shell pattern. "Read me the error on my
+  screen" needs actual OCR on top (macOS's own Vision framework can do
+  this via `shortcuts run` or a small native call — needs its own
+  research, not assumed easy).
+- **Clipboard read/write** — `pbpaste`/`pbcopy`, built-in, trivial.
+  "What's on my clipboard" (read, green) / "copy X for me" (write,
+  bounded SHELL_EXEC-style action).
+- **Focus Mode toggle** — research (2026-08-04) found direct AppleScript
+  control of macOS Focus modes has real limitations (no clean scriptable
+  property, unlike volume) — same honesty concern as brightness before
+  building it: verify what's actually reliable before promising it, not
+  after.
+- **Home Assistant integration (Wyoming protocol), if the owner has any
+  smart home devices** — Home Assistant + Wyoming is 2026's mature,
+  free, fully-local stack for exactly this (Whisper/Piper/openWakeWord
+  are the same tools already in `senses/ears`); JARVIS could speak to a
+  local Home Assistant instance instead of reinventing device control.
+  Conditional on owning smart-home devices in the first place — ask
+  before scoping further, don't assume.
 
 ## Platform
+
+- **MCP (Model Context Protocol) as JARVIS's tool layer — worth a real
+  look before hand-building many more one-off executors.** By 2026 MCP
+  is the de facto standard for agent-tool communication (Anthropic,
+  OpenAI, Google, Microsoft, Amazon all support it; 10,000+ public
+  servers — GitHub, Google Drive, Slack, Postgres, filesystem, and
+  specifically macOS-automation servers doing the same
+  AppleScript/window-control/clipboard things this project has been
+  hand-building one executor at a time). The gate/executor model this
+  project already has (propose -> approve -> verified execution) would
+  need to wrap MCP tool calls the same way it wraps `execFile` calls
+  now — real design work (an MCP tool call isn't automatically capability
+  -tiered or human-summarized the way `ProposedAction` is), but it turns
+  "write a new executor for every new integration" into "point at an
+  existing MCP server," which is a much bigger lever than any single
+  skill on this list. Worth its own design conversation, not a quick add.
 - `make types` codegen from `shared/types.ts` (its own docstring already
   names this for the Python side, never built). Phase 7 added a second
   hand-kept mirror (`ui/src/lib/types.ts`, the wire subset `ServerEvent`/
@@ -56,7 +93,14 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   instead of one. Worth it once a drift bug actually happens, not before.
 - Bounded continuous-vision sessions ("watch me solder this")
 - Mobile client for approvals away from the desk
-- Sandboxed `act` lane (OpenHands-style container)
+- Sandboxed `act` lane (OpenHands-style container) — this is also the
+  *real*, safe version of "JARVIS creates its own skills," which
+  `converse` falsely claimed to do live (2026-08-04, see the honesty
+  fix earlier this SOAK). Not a contradiction: the fix stopped JARVIS
+  from *lying* about it right now; building it for real still means a
+  sandboxed, reviewed pipeline where generated code goes through the
+  same capability/gate model everything else does, not raw model output
+  running unsupervised. Genuinely hard, genuinely later.
 - Additional providers: Groq, Gemini, OpenRouter, Cerebras
 - `livekit-wakeword` if openWakeWord tuning proves unreliable
 - Piper voice cloning for a custom JARVIS voice
