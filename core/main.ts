@@ -128,7 +128,13 @@ async function main(): Promise<void> {
         // The skill already called ctx.say() itself -- don't speak again.
         speech = outcome.result.speech;
       } else {
-        speech = await generalConversationReply(routerRegistry, memory, text, SESSION_ID);
+        speech = await generalConversationReply(
+          routerRegistry,
+          memory,
+          text,
+          SESSION_ID,
+          skillRegistry.list().map((s) => s.manifest.id),
+        );
         conversation.say(speech);
       }
       console.log(`core: said ${JSON.stringify(speech)}`);

@@ -26,9 +26,14 @@ export async function generalConversationReply(
   memory: Memory,
   utterance: string,
   sessionId: string,
+  loadedSkillIds: readonly string[],
 ): Promise<string> {
   const recalled = await memory.recall({ sessionId, queryText: utterance });
-  const system = `${loadPersona()}\n\n---\n\nRelevant memory (may be empty):\n${recalled.text || "(nothing relevant)"}`;
+  const capabilities =
+    loadedSkillIds.length > 0
+      ? `Skills actually loaded right now: ${loadedSkillIds.join(", ")}. Nothing else.`
+      : "No skills are loaded right now.";
+  const system = `${loadPersona()}\n\n---\n\n${capabilities}\n\n---\n\nRelevant memory (may be empty):\n${recalled.text || "(nothing relevant)"}`;
 
   const router = createSkillRouter(routerRegistry);
   const reply = await router.complete("converse", system, utterance);
