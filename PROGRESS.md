@@ -7,8 +7,7 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 7 — Dashboard — **built on `phase/07-dashboard`, awaiting
-merge approval**
+**Phase:** 7 — Dashboard — **closed, merged to `main`**
 **Status:** `core/ws.ts` + `core/http.ts` give `core` a live WebSocket
 channel and REST backfill (`/api/events`, `/api/skills`,
 `/api/approvals`) on one port (`JARVIS_DASHBOARD_PORT`, default 8787).
@@ -24,7 +23,7 @@ not the MCP tool (unavailable this session) and not fakes. 137 TS tests +
 20 Python tests, `make check` green, `next build`/`next lint` clean.
 Next: 🛑 **SOAK 1** (see ROADMAP.md — two weeks of daily use before Phase
 8).
-**Branch:** `phase/07-dashboard`
+**Branch:** `main`
 **Last updated:** 2026-08-04
 
 (Phase 6 — the gate: full `ApprovalRequest` lifecycle, HMAC signing,
@@ -1568,6 +1567,22 @@ process:**
 - `make types` codegen from `shared/types.ts` — now two hand-kept
   mirrors (Python's, never built either, and `ui/src/lib/types.ts`) —
   logged in `docs/BACKLOG.md`.
+
+**Pre-SOAK audit, 2026-08-04 (same day, before closing):** a full pass
+over the docs and repo state before starting SOAK 1 found one real gap —
+`make check` never touched `ui/` at all, so a broken dashboard could
+reach `main` undetected (contradicts CLAUDE.md § 8: "`main` is always in
+a state where `make check` passes"). Fixed: `check` now also runs `ui/`'s
+own lint + `next build` (which does its own full TypeScript check once
+`.next/types` exists — a separate standalone `tsc --noEmit` step was
+tried first and found to fail on a clean checkout / after `rm -rf .next`,
+since that types-only include doesn't exist until a build or dev run has
+happened once; dropped in favor of just trusting `next build`'s own
+check). `make dev` now also starts the dashboard dev server (`cd ui &&
+npm run dev`), so daily use during the soak is one command, not two
+terminals. Everything else checked — `SPEC.md`, `ROADMAP.md`, `DECISIONS.md`,
+`docs/BACKLOG.md`, repo layout, line-length guideline, `.gitignore`
+coverage, stray temp files — was already consistent; nothing else changed.
 
 ---
 
