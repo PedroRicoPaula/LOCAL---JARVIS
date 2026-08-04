@@ -7,7 +7,7 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 5 — Skill host + `brief`, plus real `core` integration — **built, not yet merged**
+**Phase:** 5 — Skill host + `brief`, plus real `core` integration — **closed, merged to `main`**
 **Status:** The skill host DoD is fully met (see below). On top of that,
 same session: `core/main.ts` now actually connects to `senses/ears`/
 `senses/voice` and replaces `senses/echo_bridge.py` — the gap flagged at
@@ -20,8 +20,9 @@ size) and fixed with a best-effort recall timeout, and — at the owner's
 explicit request — automatic fact extraction from conversation (`core/
 factExtraction.ts`), researched against graph-based alternatives
 (Graphiti/Zep) and deliberately not built that way. Voice changed to
-`Daniel` (male, British) by owner request.
-**Branch:** `phase/05-skills`
+`Daniel` (male, British) by owner request. 148 tests total, `make check`
+green on `main`. Next: Phase 6 (Gate).
+**Branch:** `main`
 **Last updated:** 2026-08-04
 
 (Phase 3 complete and merged to `main`; Phase 1 complete — see Phase log below for the full record and what was
