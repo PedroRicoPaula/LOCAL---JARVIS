@@ -35,6 +35,14 @@ export const DEFAULT_EXPIRY_MS = 5 * 60_000; // SPEC.md SS8: "expiresAt (default
 
 export type CapabilityTier = "green" | "yellow";
 
+/** What actually performs a side effect, invoked *by the gate* on
+ * approval (SPEC.md § 38: "Only executors invoked by the gate cause
+ * [side effects]") -- never by a skill directly, which is why skills
+ * can't import `core/executors/**` at all (ESLint-enforced). Takes the
+ * already-verified payload from the signed execution; returns whether
+ * the real action succeeded. */
+export type Executor = (payload: unknown) => Promise<{ ok: boolean; result?: unknown; error?: string }>;
+
 /** Red capabilities have no representation in the `Capability` type at
  * all (see shared/types.ts's own comment) -- nothing here can be asked to
  * classify one, by construction, matching CLAUDE.md § 5's "never
@@ -86,11 +94,13 @@ export class Gate extends EventEmitter {
   private readonly db: DatabaseSync;
   private readonly signingKey: string;
   private readonly pending = new Map<string, PendingEntry>();
+  private readonly executors: Partial<Record<Capability, Executor>>;
 
-  constructor(db: DatabaseSync, signingKey: string) {
+  constructor(db: DatabaseSync, signingKey: string, executors: Partial<Record<Capability, Executor>> = {}) {
     super();
     this.db = db;
     this.signingKey = signingKey;
+    this.executors = executors;
     ensureGateSchema(db);
   }
 
@@ -139,8 +149,18 @@ export class Gate extends EventEmitter {
    * decision. A response for anything not currently `pending` — already
    * decided, already expired, or a nonce that doesn't match — fails
    * closed and is logged as a rejection with `reason: "replay"`,
-   * verbatim SPEC.md § 8's own wording. */
-  decide(response: ApprovalResponse, now: () => number = Date.now): void {
+   * verbatim SPEC.md § 8's own wording.
+   *
+   * Approving a capability with no registered `Executor` resolves
+   * immediately with the signed execution and stops at `approved` —
+   * unchanged from before executors existed (still true for every
+   * capability nothing is registered for yet, e.g. `MEMORY_WRITE`).
+   * Approving one *with* a registered executor calls it, then settles
+   * `executed` on success or reports the failure honestly (`reason:
+   * "error"`) rather than pretending an approved request always
+   * happened -- CLAUDE.md § 6 applies to "it worked" the same way it
+   * applies to any other claim. */
+  async decide(response: ApprovalResponse, now: () => number = Date.now): Promise<void> {
     const row = this.getApprovalRow(response.requestId);
 
     if (!row || row.state !== "pending" || row.nonce !== response.nonce) {
@@ -153,19 +173,49 @@ export class Gate extends EventEmitter {
       return;
     }
 
-    if (response.decision === "approve") {
-      const signed = sign(this.signingKey, row.id, row.nonce, JSON.parse(row.payload), now());
-      this.settlePending(row.id, "approved", { ok: true, result: signed });
-    } else {
+    if (response.decision !== "approve") {
       this.settlePending(row.id, "rejected", { ok: false, reason: "rejected" });
+      return;
+    }
+
+    const signed = sign(this.signingKey, row.id, row.nonce, JSON.parse(row.payload), now());
+    const executor = this.executors[row.capability as Capability];
+    if (!executor) {
+      this.settlePending(row.id, "approved", { ok: true, result: signed });
+      return;
+    }
+
+    this.setState(row.id, "approved");
+    this.logAudit(row.id, "approved", {});
+    this.emit("approval.resolved", { requestId: row.id, state: "approved" });
+
+    let execResult: { ok: boolean; result?: unknown; error?: string };
+    try {
+      execResult = await executor(signed.payload);
+    } catch (cause) {
+      execResult = { ok: false, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+
+    if (execResult.ok) {
+      this.setState(row.id, "executed");
+      this.logAudit(row.id, "executed", { result: execResult.result ?? null });
+      this.emit("approval.resolved", { requestId: row.id, state: "executed" });
+      this.resolvePending(row.id, { ok: true, result: execResult.result ?? signed });
+    } else {
+      const errorDetail = execResult.error ?? "unknown";
+      this.logAudit(row.id, "execution_failed", { error: errorDetail });
+      // State stays "approved" -- the owner's decision was honored,
+      // only the executor itself failed, a distinct fact worth keeping
+      // separate in the audit trail.
+      this.resolvePending(row.id, { ok: false, reason: "error", detail: errorDetail });
     }
   }
 
-  /** Called by an executor (Phase 12+) once it has verified the signed
-   * execution and actually performed the action. Not exercised by any
-   * real caller yet -- `core/executors/` is still empty (README.md) —
-   * built now so the lifecycle SPEC.md § 8 describes is complete and
-   * tested, not half-implemented. */
+  /** Called by an executor once it has verified the signed execution and
+   * actually performed the action -- for a capability with no
+   * `Executor` registered on this `Gate` instance (nothing calls this
+   * automatically for those; `decide()` handles registered ones
+   * itself). Kept for that manual/external path. */
   markExecuted(id: string): boolean {
     const row = this.getApprovalRow(id);
     if (!row || row.state !== "approved") return false;
@@ -193,14 +243,24 @@ export class Gate extends EventEmitter {
   }
 
   private settlePending(id: string, state: ApprovalState, outcome: ApprovalOutcome): void {
+    this.setState(id, state);
+    this.logAudit(id, state === "approved" ? "approved" : state, {});
+    this.emit("approval.resolved", { requestId: id, state });
+    this.resolvePending(id, outcome);
+  }
+
+  /** Just the in-memory half of settling (clear the timer, resolve the
+   * `propose()` caller) -- split out from `settlePending` for the
+   * approved-with-executor path in `decide()`, which needs to update the
+   * DB/audit/emit *before* the executor runs (state becomes `approved`
+   * right away) but only resolve the caller's `Promise` after it
+   * finishes. */
+  private resolvePending(id: string, outcome: ApprovalOutcome): void {
     const entry = this.pending.get(id);
     if (entry) {
       clearTimeout(entry.timeoutHandle);
       this.pending.delete(id);
     }
-    this.setState(id, state);
-    this.logAudit(id, state === "approved" ? "approved" : state, {});
-    this.emit("approval.resolved", { requestId: id, state });
     entry?.resolve(outcome);
   }
 

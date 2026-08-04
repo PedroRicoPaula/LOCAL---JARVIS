@@ -1286,3 +1286,111 @@ Phase 7's function-over-decoration scope cut (ADR-022's own tradeoff).
 - The owner's already-running `make dev` session (started before this
   work) is on the old code and won't show any of this until restarted --
   flagged, not restarted automatically out from under a live session.
+
+---
+
+## ADR-024 — SOAK 1: the gate gets a real executor, five real skills, and two bugs the loading path never exercised before now
+
+**Status:** accepted
+
+**Context.** Asked directly (2026-08-04) to make JARVIS "actually do
+things," not just talk: task/shopping lists, real weather, real system
+metrics, and opening apps/projects hands-free. Building any of the
+write-capable ones exposed that `MEMORY_WRITE`'s whole approval pipeline
+was hollow -- SPEC.md already says "only executors invoked *by the gate*
+cause side effects," but `core/executors/` had never had a real one
+(ADR-021/022 both note this as Phase 12+). An approved `MEMORY_WRITE`
+proposal resolved with a signed execution and nothing ever consumed it.
+
+**Decisions.**
+- **`Gate` takes an `executors: Partial<Record<Capability, Executor>>`
+  map in its constructor and calls the matching one itself, inside
+  `decide()`, on approval** -- not the skill (can't, ESLint blocks the
+  import) and not a separate polling process (`markExecuted()`'s
+  original pull-model design, kept for capabilities with nothing
+  registered). `decide()` became `async` to allow awaiting the executor
+  before resolving `propose()`'s promise -- the docs' own nutrition
+  example already treated `outcome.ok` as "did it happen," which was
+  never actually true until now. A capability with nothing registered
+  behaves exactly as before (stops at `approved`) -- fully backward
+  compatible, all 13 pre-existing gate tests unchanged.
+- **A failed executor keeps the approval's state at `approved`, not
+  `rejected` or `expired`.** The owner's decision was real; only the
+  execution itself failed -- a different fact, logged separately
+  (`execution_failed` in the audit log) and reported honestly
+  (`{ok:false, reason:"error", detail}`) rather than a false success.
+- **`core/executors/apps.ts`: `open -a <App> [path]` via `execFile`,
+  never a shell.** `open` is a narrow macOS launcher, not an
+  interpreter -- no injection surface regardless of what the `app`/
+  `path` strings contain, since `execFile` never concatenates them into
+  a shell string. Verified live: proposing, approving, and watching a
+  real `Calculator.app` process actually launch (pid confirmed, then
+  closed).
+- **`core/executors/memory.ts`: `MEMORY_WRITE` finally has an
+  executor.** Closes the gap named above -- `skills/weather` is the
+  first real caller (remembering the owner's city).
+- **Skill-private, low-stakes, frequently-changing data (`tasks`,
+  `shopping_list`) uses `ctx.store`, not `ctx.propose({capability:
+  "MEMORY_WRITE"})`.** These aren't durable facts about the owner in the
+  `events`/`facts` sense (SPEC.md § 4) -- they're a skill's own list,
+  matching docs/SKILLS.md § 1's "a skill owns its tables" reasoning
+  directly. No gate, no approval friction for adding milk to a list.
+- **Skill ids must be underscore, not hyphen, if the skill uses
+  `ctx.store`.** Found live: `shopping-list` (as first written) broke
+  its own namespace check -- `skill_shopping-list_` isn't a valid
+  unquoted SQL identifier, so `assertNamespaced` could never match it
+  against itself. Renamed `shopping-list` → `shopping_list` and, for
+  consistency (not because it was broken yet), `system-health` →
+  `system_health` too, before either shipped.
+- **`SkillRegistry.loadAll` takes a `(skillId: string) => SkillInitContext`
+  factory, not one fixed `SkillInitContext`.** A skill's own id -- and
+  therefore its `ctx.store` namespace -- isn't known until *after* its
+  module is imported, inside `loadSkill`. The old fixed-object signature
+  structurally could not give two different skills two different
+  stores. Found live: `core/main.ts` had shipped `store: undefined as
+  never` since Phase 5 (an `as never` cast hiding exactly this gap) --
+  harmless while no skill's `init()` touched `ctx.store`, a hard crash
+  the moment one did (`tasks`, `shopping_list`, both disabled with
+  "Cannot read properties of undefined" on first real load). Fixed in
+  `loader.ts`, `registry.ts`, `core/main.ts`, and `bench/
+  bench_skill_routing.ts` (same bug, same fix).
+- **`laneClassifier.ts` gained a new few-shot example** after live
+  routing showed "how's my computer doing" landing on `see` (misread as
+  "look at a physical thing") and "check system health" landing on
+  `reason` -- `system_health`'s `converse`-lane candidates never entered
+  the pool regardless of embedding score, since dispatch filters by lane
+  first. One clarifying contrast ("check my wiring" needs eyes, "check
+  my cpu usage" needs none) fixed all five phrasings tested and *raised*
+  the full 45-case benchmark from 93.3% to 97.8% -- the fix generalized
+  rather than overfitting to the new skill's exact wording.
+- **`skills/weather` and `skills/launcher` export a `create*Skill(deps)`
+  factory alongside the plain `skill` the loader imports** -- the same
+  reasoning `core/router/providers/ollama.ts`'s injectable `fetchFn`
+  already established, applied one level up: tests construct an
+  isolated instance with fake `geocode`/`fetchCurrentWeather`/
+  `listProjectDirs` instead of a fragile attempt to mutate an ES module
+  namespace object (tried first, doesn't work -- namespace object
+  properties are read-only from the importer's side).
+
+**Consequences.**
+- Five new skills, all real, no placeholders: `system_health` (CPU/mem/
+  disk from `node:os`/`node:fs`, zero capabilities needed), `weather`
+  (Open-Meteo, free, no key), `tasks` and `shopping_list` (`ctx.store`
+  CRUD), `launcher` (list/open real project directories, open any app,
+  through the gate).
+- `core/http.ts` gained `/api/system`; the dashboard's LEFT column
+  gained a real `SystemStatus` panel (CPU/mem/disk bars, real numbers,
+  5s poll) -- the exact thing `converse` had previously hallucinated
+  being able to build, now actually built, closing that loop.
+- 183 TS tests (up from 139), all passing, `make check` green end to
+  end including `ui/`'s build. Verified live beyond unit tests: a real
+  `Calculator.app` launch through the full propose → approve → execute
+  path; real Open-Meteo calls; a real directory listing of the owner's
+  actual `~/Developer/Programação` projects; the lane-classifier fix
+  confirmed against the full 45-case benchmark, not just the new
+  phrasings that motivated it.
+- The "voice-authored Cursor prompt, owner still presses send" idea and
+  several smaller executor-backed skills (music, browser, system
+  controls) are logged in `docs/BACKLOG.md`, not built -- real future
+  scope, each needing its own small executor following the pattern this
+  ADR establishes, not built speculatively ahead of being asked for.

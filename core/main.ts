@@ -23,6 +23,8 @@
 
 import { connectWithRetry, readLines, sendLine } from "./ipc.ts";
 import { generalConversationReply } from "./converse.ts";
+import { openApp } from "./executors/apps.ts";
+import { createWriteFactExecutor } from "./executors/memory.ts";
 import { extractAndRememberFacts } from "./factExtraction.ts";
 import { watchApprovalCommands } from "./gate/cli.ts";
 import { Gate } from "./gate/gate.ts";
@@ -35,6 +37,7 @@ import { buildRegistry } from "./router/wiring.ts";
 import { buildSkillContext } from "./skills/context.ts";
 import { createIpcConversation } from "./skills/conversation/ipc.ts";
 import { SkillRegistry } from "./skills/registry.ts";
+import { createSkillStore } from "./skills/store.ts";
 import { createWsHub } from "./ws.ts";
 
 const EARS_SOCKET = process.env["JARVIS_EARS_SOCKET"] ?? "/tmp/jarvis-ears.sock";
@@ -59,11 +62,18 @@ async function main(): Promise<void> {
   const db = openDb(DB_PATH);
   const memory = new Memory(db, embedder);
   const routerRegistry = await buildRegistry();
-  const gate = new Gate(db, await getSigningKey());
+  const gate = new Gate(db, await getSigningKey(), {
+    SHELL_EXEC: openApp,
+    MEMORY_WRITE: createWriteFactExecutor(memory),
+  });
 
   const skillRegistry = new SkillRegistry();
   const loadReport = await skillRegistry.loadAll(
-    { memory, store: undefined as never, log: { info: console.log, warn: console.warn, error: console.error } },
+    (skillId) => ({
+      memory,
+      store: createSkillStore(db, skillId),
+      log: { info: console.log, warn: console.warn, error: console.error },
+    }),
     embedder,
   );
   console.log("core: skills loaded:", loadReport.loaded, "-- disabled:", loadReport.disabled);

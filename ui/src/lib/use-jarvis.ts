@@ -19,11 +19,12 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import type { ApprovalRequest, ClientEvent, JarvisState, MemoryEvent, ServerEvent, SkillHealth } from "./types";
+import type { ApprovalRequest, ClientEvent, JarvisState, MemoryEvent, ServerEvent, SkillHealth, SystemMetrics } from "./types";
 
 const CORE_URL = process.env["NEXT_PUBLIC_JARVIS_CORE_URL"] ?? "http://localhost:8787";
 const WS_URL = CORE_URL.replace(/^http/, "ws");
 const RECONNECT_DELAY_MS = 2000;
+const SYSTEM_POLL_MS = 5000;
 
 export type ConnectionState = "connecting" | "open" | "closed";
 
@@ -60,6 +61,7 @@ export interface JarvisDashboardState {
   events: MemoryEvent[];
   skills: SkillHealth[];
   errors: JarvisError[];
+  system: SystemMetrics | null;
   decide(request: ApprovalRequest, decision: "approve" | "reject"): void;
   refreshSkills(): void;
 }
@@ -87,6 +89,7 @@ export function useJarvis(): JarvisDashboardState {
   const [events, setEvents] = useState<MemoryEvent[]>([]);
   const [skills, setSkills] = useState<SkillHealth[]>([]);
   const [errors, setErrors] = useState<JarvisError[]>([]);
+  const [system, setSystem] = useState<SystemMetrics | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   const refreshSkills = () => {
@@ -100,6 +103,13 @@ export function useJarvis(): JarvisDashboardState {
       setTranscript(all.map(eventToTranscriptLine).filter((l): l is TranscriptLine => l !== null));
     }).catch(() => undefined);
     refreshSkills();
+  }, []);
+
+  useEffect(() => {
+    const poll = () => fetchJson<SystemMetrics>("/api/system").then(setSystem).catch(() => undefined);
+    poll();
+    const id = setInterval(poll, SYSTEM_POLL_MS);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -192,6 +202,7 @@ export function useJarvis(): JarvisDashboardState {
     events,
     skills,
     errors,
+    system,
     decide,
     refreshSkills,
   };

@@ -57,6 +57,17 @@ export interface MemoryEvent {
   sessionId?: string;
 }
 
+export interface SystemMetrics {
+  cpuLoadPct: number;
+  memUsedGB: number;
+  memTotalGB: number;
+  memUsedPct: number;
+  diskUsedGB: number;
+  diskTotalGB: number;
+  diskFreePct: number;
+  uptimeSec: number;
+}
+
 export type SkillStatus = "loaded" | "disabled";
 
 export interface SkillHealth {

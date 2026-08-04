@@ -14,6 +14,7 @@ import { Memory } from "../core/memory/memory.ts";
 import { OllamaProvider } from "../core/router/providers/ollama.ts";
 import { buildRegistry } from "../core/router/wiring.ts";
 import { SkillRegistry } from "../core/skills/registry.ts";
+import { createSkillStore } from "../core/skills/store.ts";
 import type { SkillContext } from "../core/skills/types.ts";
 
 interface Case {
@@ -46,13 +47,20 @@ async function main(): Promise<number> {
   const embedder = new OllamaProvider({ models: {}, embedModel: "mxbai-embed-large" });
   const routerRegistry = await buildRegistry();
   const skillRegistry = new SkillRegistry();
-  const initCtx = { memory: undefined as never, store: undefined as never, log: { info() {}, warn() {}, error() {} } };
-  const loadReport = await skillRegistry.loadAll(initCtx, embedder);
+  const db = openDb(":memory:");
+  // A per-skill store, not a shared undefined -- tasks/shopping_list's
+  // init() creates its own table, same real path core/main.ts uses.
+  const buildInitCtx = (skillId: string) => ({
+    memory: undefined as never,
+    store: createSkillStore(db, skillId),
+    log: { info() {}, warn() {}, error() {} },
+  });
+  const loadReport = await skillRegistry.loadAll(buildInitCtx, embedder);
   console.log("loaded:", loadReport.loaded, "disabled:", loadReport.disabled);
 
   // Real (empty) Memory -- any confidently-routed skill actually runs
   // handle() for real, and brief's would otherwise crash on undefined.
-  const memory = new Memory(openDb(":memory:"), embedder);
+  const memory = new Memory(db, embedder);
 
   const buildContext = (): SkillContext => ({
     router: { complete: async () => "", see: async () => { throw new Error("not used"); } },

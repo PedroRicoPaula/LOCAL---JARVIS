@@ -26,14 +26,14 @@ export class SkillRegistry {
   private health = new Map<string, SkillHealth>();
 
   async loadAll(
-    initCtx: SkillInitContext,
+    buildInitCtx: (skillId: string) => SkillInitContext,
     embedder: Embedder,
     modulePaths: readonly string[] = REGISTERED_SKILL_MODULES,
   ): Promise<SkillLoadReport> {
     const report: SkillLoadReport = { loaded: [], disabled: [] };
     const health = new Map<string, SkillHealth>();
     for (const path of modulePaths) {
-      const result = await loadSkill(path, initCtx);
+      const result = await loadSkill(path, buildInitCtx);
       if (result.status === "loaded") {
         const { id, version } = result.skill.manifest;
         this.skillsById.set(id, result.skill);

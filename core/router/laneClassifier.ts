@@ -50,6 +50,12 @@ Examples of easily-confused cases:
   (a planning/strategy judgment call, even without technical jargon)
 - "here's my lunch, help me log it" / "check my wiring" / "is this resistor
   the right one" -> see (needs to look at a real physical thing right now)
+- "how's my computer doing" / "check my cpu usage" / "how much memory am I
+  using" / "check disk space" / "check system health" -> converse, NOT see
+  and NOT reason — these ask about software/OS state the assistant reads
+  directly, no camera and no deep analysis involved. Contrast with "check
+  my wiring": that needs eyes on a real physical thing; "check my cpu
+  usage" needs no eyes at all, just a number.
 - "run the tests" / "rename that file to X" / "add a dark mode toggle" ->
   act, NOT reflex or converse — being short and imperative does not make
   something reflex; reflex is only the narrow named set above. Anything

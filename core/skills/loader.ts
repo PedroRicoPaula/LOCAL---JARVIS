@@ -86,7 +86,18 @@ export type SkillLoadResult =
  * `skill.init()` if present. Any failure at any of those steps — a syntax
  * error, a bad manifest, a throwing `init()` — disables just this skill
  * and reports why, never propagating up to take down the host. */
-export async function loadSkill(modulePath: string, ctx: SkillInitContext): Promise<SkillLoadResult> {
+/**
+ * `buildInitCtx` is a factory, not a fixed `SkillInitContext` — a skill's
+ * own id (and therefore its `ctx.store` namespace, `skill_<id>_*`) isn't
+ * known until *after* its module is imported, a few lines below. A single
+ * shared `ctx` object couldn't give every skill its own store; this is
+ * why `init()` calling `ctx.store` always failed with "Cannot read
+ * properties of undefined" until this factory replaced it — found live,
+ * loading the real skill registry, not caught by any existing test
+ * because no skill used `ctx.store` in `init()` before `tasks`/
+ * `shopping_list`.
+ */
+export async function loadSkill(modulePath: string, buildInitCtx: (skillId: string) => SkillInitContext): Promise<SkillLoadResult> {
   // Tracked outside the try block so a failure *after* the manifest is
   // known (e.g. a throwing init()) still reports the real skill id in the
   // disabled report, not just the module path — found live: an init()
@@ -108,7 +119,7 @@ export async function loadSkill(modulePath: string, ctx: SkillInitContext): Prom
     }
 
     if (skill.init) {
-      await skill.init(ctx);
+      await skill.init(buildInitCtx(resolvedId));
     }
 
     return { status: "loaded", skill };

@@ -15,6 +15,33 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 - `workbench` — Arduino / assembly step tracking with confirmation prompts
 - Calendar and email triage
 - LeadHunter / HoqueiManager read-only widgets
+- **Real macOS Reminders/Calendar instead of `tasks`'s own private
+  table** — `osascript` can read/write Reminders.app and Calendar.app
+  directly, so "add a task" would show up in the same list Siri/Reminders
+  already syncs across every device, not a JARVIS-only list. `tasks`
+  (2026-08-04) deliberately started with `ctx.store` instead — no gate
+  design work needed to prove the voice UX first. Worth revisiting once
+  the private list feels limiting.
+- Music control (play/pause/skip/what's playing) via Music.app/Spotify
+  AppleScript — same `execFile`-no-shell pattern as `core/executors/
+  apps.ts`, SHELL_EXEC, small and bounded.
+- Open a URL in the browser ("open GitHub", "look up X") — `open <url>`,
+  same executor as opening apps, SHELL_EXEC.
+- System controls: volume, brightness, Do Not Disturb toggle via
+  `osascript` — small, bounded, same executor pattern.
+- **Voice-authored Cursor/Claude Code prompts, with the owner still
+  pressing send** — asked about directly (2026-08-04): JARVIS types a
+  drafted prompt into Cursor's Claude Code panel via macOS UI scripting,
+  reads it back for confirmation, but the owner's own keypress (not
+  JARVIS) sends it and everything Claude Code then does still goes
+  through Claude Code's own permissions, same as typing it by hand.
+  Deliberately NOT the version where JARVIS also sends it autonomously —
+  that would mean JARVIS's own approval covers whatever a second,
+  separate coding agent decides to do afterward, which is exactly what
+  the gate's whole design (one approval = one bounded, reviewed action)
+  exists to prevent. Real UI-scripting research needed before this is
+  buildable at all (macOS Accessibility API access to a specific text
+  field inside Cursor) — not scoped yet.
 
 ## Platform
 - `make types` codegen from `shared/types.ts` (its own docstring already
@@ -64,6 +91,19 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   time** — one silently loses. Hit this directly while testing `make
   dev` for the SOAK. `make dev`'s own doc comment should say to
   `make uninstall-daemon` (or `launchctl unload`) first; not yet fixed.
+- **2026-08-04 — any skill using `ctx.store` in `init()` always failed
+  to load (fixed same day).** `core/main.ts` passed `store: undefined as
+  never` into `SkillInitContext` because no skill needed one before.
+  Found live loading the real registry with `tasks`/`shopping_list`
+  (both new). See ADR-024.
+- **2026-08-04 — lane classifier misrouted system-stats phrasing to
+  `see`/`reason` instead of `converse` (fixed same day).** "how's my
+  computer doing" landed on the vision lane; `system_health` never got a
+  chance to answer, and JARVIS's general-conversation fallback gave a
+  vague, unverified "the system health is normal" instead of a real
+  number. Fixed with a new few-shot example in `laneClassifier.ts`.
+  Lane accuracy went 93.3% → 97.8% on the full 45-case benchmark (no
+  regression, the fix generalized). See ADR-024.
 
 _(add as you find them — this section is the most valuable one)_
 

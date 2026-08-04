@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadSkill, validateManifest } from "../loader.ts";
 
-const CTX = { memory: undefined as never, store: undefined as never, log: { info() {}, warn() {}, error() {} } };
+const buildCtx = () => ({ memory: undefined as never, store: undefined as never, log: { info() {}, warn() {}, error() {} } });
 
 test("validateManifest accepts a well-formed manifest", () => {
   const result = validateManifest({
@@ -50,7 +50,7 @@ test("validateManifest rejects an unknown lane", () => {
 });
 
 test("loadSkill loads a valid skill and runs its init()", async () => {
-  const result = await loadSkill("./tests/fixtures/goodSkill.ts", CTX);
+  const result = await loadSkill("./tests/fixtures/goodSkill.ts", buildCtx);
   assert.equal(result.status, "loaded");
   if (result.status === "loaded") {
     assert.equal(result.skill.manifest.id, "fixture_good");
@@ -58,7 +58,7 @@ test("loadSkill loads a valid skill and runs its init()", async () => {
 });
 
 test("loadSkill disables (not throws) a skill with an invalid manifest", async () => {
-  const result = await loadSkill("./tests/fixtures/badManifestSkill.ts", CTX);
+  const result = await loadSkill("./tests/fixtures/badManifestSkill.ts", buildCtx);
   assert.equal(result.status, "disabled");
   if (result.status === "disabled") {
     assert.match(result.error, /invalid manifest/);
@@ -66,7 +66,7 @@ test("loadSkill disables (not throws) a skill with an invalid manifest", async (
 });
 
 test("loadSkill disables (not throws) a skill whose init() throws -- docs/SKILLS.md SS1", async () => {
-  const result = await loadSkill("./tests/fixtures/throwingInitSkill.ts", CTX);
+  const result = await loadSkill("./tests/fixtures/throwingInitSkill.ts", buildCtx);
   assert.equal(result.status, "disabled");
   if (result.status === "disabled") {
     assert.match(result.error, /deliberate init failure/);
@@ -78,7 +78,7 @@ test("loadSkill disables (not throws) a skill whose init() throws -- docs/SKILLS
 });
 
 test("loadSkill disables a module with no skill export", async () => {
-  const result = await loadSkill("./tests/fixtures/noExportSkill.ts", CTX);
+  const result = await loadSkill("./tests/fixtures/noExportSkill.ts", buildCtx);
   assert.equal(result.status, "disabled");
   if (result.status === "disabled") {
     assert.match(result.error, /no "skill" export/);
@@ -86,7 +86,7 @@ test("loadSkill disables a module with no skill export", async () => {
 });
 
 test("loadSkill disables a module that throws at import time", async () => {
-  const result = await loadSkill("./tests/fixtures/throwingImportSkill.ts", CTX);
+  const result = await loadSkill("./tests/fixtures/throwingImportSkill.ts", buildCtx);
   assert.equal(result.status, "disabled");
   if (result.status === "disabled") {
     assert.match(result.error, /deliberate module-level failure/);

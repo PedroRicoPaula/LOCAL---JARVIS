@@ -1621,13 +1621,42 @@ coordinates -- its state only exists client-side anyway (WebSocket-
 driven), so SSR wasn't preserving anything real. Verified: zero console
 errors/warnings on a fresh `next dev` load.
 
+**Same day, asked directly to make JARVIS actually do things:** the gate
+gained a real executor mechanism (`Gate` calls a registered `Executor`
+on approval, `decide()` now `async`) -- closes a real gap where
+`MEMORY_WRITE` approvals resolved with a signed execution nothing ever
+consumed. Five new skills, all real: `system_health` (CPU/mem/disk),
+`weather` (Open-Meteo, free), `tasks`/`shopping_list` (`ctx.store`
+CRUD), `launcher` (open apps, list/open real project directories --
+`~/Developer/Programação`'s actual 8 projects, confirmed live). Full
+detail in DECISIONS.md's ADR-024.
+
+Two more real bugs found and fixed via live loading/routing, not caught
+by any existing test: `SkillRegistry.loadAll` passed the same fixed
+`SkillInitContext` (with `store: undefined as never`) to every skill,
+so any skill using `ctx.store` in `init()` always failed to load --
+never hit before because no skill needed one until `tasks`/
+`shopping_list`. Now a per-skill factory. And the lane classifier routed
+"how's my computer doing" to `see` instead of `converse`, so
+`system_health` never got a chance to answer and the general-
+conversation fallback gave a vague, unverified "system health is
+normal." One new few-shot example fixed it and raised the full 45-case
+lane benchmark from 93.3% to 97.8% (`bench/bench_router_lane.ts`, live,
+real NIM calls) -- no regression, the fix generalized.
+
+Verified live beyond unit tests: a real `Calculator.app` launch through
+the full propose → approve → real-executor path (confirmed by PID, then
+closed); real Open-Meteo weather calls; real system metrics (memory at
+99% used on this machine -- a genuinely useful number surfaced, not
+just a demo). 183 TS tests (up from 139), `make check` green end to end.
+
 ---
 
 ## Key numbers to record as we go
 
 | Metric | Target | Actual | Phase |
 |---|---|---|---|
-| Lane classification accuracy | ≥ 85% | **93.3%** (Phase 3, live, through the real router — up from Phase 0's raw-model 71.1%; see Phase 3 log) | 0, 3 |
+| Lane classification accuracy | ≥ 85% | **97.8%** (SOAK 1, live, `bench/bench_router_lane.ts` — up from Phase 3's 93.3%, itself up from Phase 0's raw-model 71.1%; see Phase 3 log and ADR-024) | 0, 3, SOAK 1 |
 | Time to first audible syllable | < 1.5 s | 3/10 real trials: 657ms, 686ms, 1530ms (3rd was a ~45-word stress test) | 1 |
 | Wake false activations / 4h | < 2 | 1 (score=0.565) | 2 |
 | Wake detection rate (30 @ ~2m) | ≥ 90% | 30/30 synthetic TTS proxy (not the official number — see Phase 2 log); strong real-voice signal across several live rounds, no formal count-of-30 | 2 |

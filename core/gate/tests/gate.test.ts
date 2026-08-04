@@ -2,12 +2,17 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import type { ProposedAction } from "../../../shared/types.ts";
+import type { Executor } from "../gate.ts";
 import { Gate } from "../gate.ts";
 
 const KEY = "test-signing-key";
 
 function freshGate(): Gate {
   return new Gate(new DatabaseSync(":memory:"), KEY);
+}
+
+function freshGateWithExecutor(executor: Executor): Gate {
+  return new Gate(new DatabaseSync(":memory:"), KEY, { SHELL_EXEC: executor });
 }
 
 function auditRows(gate: Gate): { event: string; detail: unknown }[] {
@@ -224,4 +229,69 @@ test("listPendingRequests returns wire-shaped ApprovalRequest, payload parsed ba
 
   gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
   await outcomePromise;
+});
+
+test("approving a capability with a registered executor calls it and settles executed", async () => {
+  let received: unknown;
+  const gate = freshGateWithExecutor(async (payload) => {
+    received = payload;
+    return { ok: true, result: { opened: true } };
+  });
+  const action: ProposedAction = { capability: "SHELL_EXEC", humanSummary: "open Cursor", payload: { app: "Cursor" } };
+  const outcomePromise = gate.propose(action, "open-app");
+  const [request] = gate.listPendingRequests();
+
+  await gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
+  const outcome = await outcomePromise;
+
+  assert.deepEqual(received, { app: "Cursor" });
+  assert.deepEqual(outcome, { ok: true, result: { opened: true } });
+  assert.equal(gate.getApproval(request!.id)?.state, "executed");
+  const audit = auditRows(gate);
+  assert.ok(audit.some((a) => a.event === "executed"));
+});
+
+test("a failing executor keeps state 'approved' and reports the failure honestly, not a false success", async () => {
+  const gate = freshGateWithExecutor(async () => ({ ok: false, error: "app not found" }));
+  const action: ProposedAction = { capability: "SHELL_EXEC", humanSummary: "open Nonexistent", payload: { app: "Nonexistent" } };
+  const outcomePromise = gate.propose(action, "open-app");
+  const [request] = gate.listPendingRequests();
+
+  await gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
+  const outcome = await outcomePromise;
+
+  assert.deepEqual(outcome, { ok: false, reason: "error", detail: "app not found" });
+  // The owner's approval was real -- only the executor failed. That's a
+  // different fact than "never approved," so state stays "approved."
+  assert.equal(gate.getApproval(request!.id)?.state, "approved");
+  const audit = auditRows(gate);
+  assert.ok(audit.some((a) => a.event === "execution_failed"));
+});
+
+test("an executor that throws is treated as a failure, not an unhandled rejection", async () => {
+  const gate = freshGateWithExecutor(async () => {
+    throw new Error("boom");
+  });
+  const action: ProposedAction = { capability: "SHELL_EXEC", humanSummary: "open X", payload: {} };
+  const outcomePromise = gate.propose(action, "open-app");
+  const [request] = gate.listPendingRequests();
+
+  await gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
+  const outcome = await outcomePromise;
+
+  assert.deepEqual(outcome, { ok: false, reason: "error", detail: "boom" });
+});
+
+test("a capability with no registered executor still resolves immediately with the signed execution", async () => {
+  const gate = freshGateWithExecutor(async () => ({ ok: true }));
+  // MEMORY_WRITE has no executor registered on this gate (only SHELL_EXEC does) -- unchanged old behavior.
+  const action: ProposedAction = { capability: "MEMORY_WRITE", humanSummary: "write", payload: { x: 1 } };
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPendingRequests();
+
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
+  const outcome = await outcomePromise;
+
+  assert.equal(outcome.ok, true);
+  assert.equal(gate.getApproval(request!.id)?.state, "approved");
 });

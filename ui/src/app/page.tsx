@@ -6,6 +6,7 @@ import { Clock } from "@/components/clock";
 import { ErrorLog } from "@/components/error-log";
 import { SkillHealthPanel } from "@/components/skill-health";
 import { StatusBar } from "@/components/status-bar";
+import { SystemStatus } from "@/components/system-status";
 import { ThoughtStream } from "@/components/thought-stream";
 import { Timeline } from "@/components/timeline";
 import { Transcript } from "@/components/transcript";
@@ -26,7 +27,7 @@ const Orb = dynamic(() => import("@/components/orb").then((m) => m.Orb), {
 });
 
 export default function Home() {
-  const { connection, connectedSince, orbState, approvals, transcript, thoughts, events, skills, errors, decide } = useJarvis();
+  const { connection, connectedSince, orbState, approvals, transcript, thoughts, events, skills, errors, system, decide } = useJarvis();
   const lastOwnerLine = [...transcript].reverse().find((l) => l.speaker === "owner");
 
   return (
@@ -47,6 +48,7 @@ export default function Home() {
           {/* LEFT — telemetry */}
           <div className="flex flex-col gap-3 min-w-0" style={{ width: "22%" }}>
             <Clock />
+            <SystemStatus system={system} />
             <div className="shrink-0">
               <SkillHealthPanel skills={skills} />
             </div>

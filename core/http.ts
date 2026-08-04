@@ -11,6 +11,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Gate } from "./gate/gate.ts";
 import type { Memory } from "./memory/memory.ts";
 import type { SkillRegistry } from "./skills/registry.ts";
+import { getSystemMetrics } from "./systemMetrics.ts";
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const data = JSON.stringify(body);
@@ -45,6 +46,11 @@ export function createHttpServer(memory: Memory, skillRegistry: SkillRegistry, g
 
     if (url.pathname === "/api/approvals") {
       sendJson(res, 200, gate.listPendingRequests());
+      return;
+    }
+
+    if (url.pathname === "/api/system") {
+      sendJson(res, 200, getSystemMetrics());
       return;
     }
 

@@ -1,12 +1,24 @@
 # core/executors/
 
-Empty until Phase 6 (the gate — `ApprovalRequest` lifecycle, nonces, HMAC
-signing, the audit log; CLAUDE.md § 5). This directory exists now, ahead of
-that phase, purely to establish the import path `eslint.config.js`'s
-`no-restricted-imports` rule blocks `skills/**` from reaching — so the
-guardrail ("a skill cannot import an executor," CLAUDE.md § 5b) is live
-from Phase 5 rather than retrofitted once there's something real here to
-protect.
+The only code in this project allowed to cause a real side effect
+(SPEC.md: "only executors invoked *by the gate* cause side effects").
+`skills/**` cannot import anything here — enforced by `eslint.config.js`'s
+`no-restricted-imports` rule, live since Phase 5, before there was
+anything real to protect.
 
-Nothing in this directory yet performs a side effect. When Phase 6 adds
-that, it lives here.
+An `Executor` (`core/gate/gate.ts`'s own type) takes the payload from an
+*already-approved, already-signature-verified* `SignedExecution` and
+returns whether the real action succeeded. `Gate.decide()` calls it
+directly on approval — a skill never touches an executor, only
+`ctx.propose()`.
+
+- `apps.ts` — `openApp`: `open -a <App> [path]` via `execFile` (never a
+  shell), for `SHELL_EXEC` proposals shaped `{action: "open_app", app,
+  path?}`. `open` is a narrow macOS launcher, not an interpreter — no
+  injection surface regardless of what `app`/`path` contain.
+
+Registered in `core/main.ts`'s `new Gate(db, key, { SHELL_EXEC: openApp })`.
+Add a new executor by writing the module here, exporting a function
+matching `Executor`'s signature, and adding it to that map — a capability
+with nothing registered just stops at `approved` (unchanged, safe
+default), same as before this file had any real content.
