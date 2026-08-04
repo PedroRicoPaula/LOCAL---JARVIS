@@ -533,6 +533,23 @@ only which library to call.
   at the hard ceiling rather than a silence-detection issue. 32s is
   generous headroom for a genuinely long command while still bounding a
   stuck-mic worst case.
+- **`_on_sigterm` now switches itself to `SIG_IGN` before raising
+  `KeyboardInterrupt`.** Found live: a `make dev` Ctrl-C that looked clean
+  (traceback printed, prompt returned) had actually left `ears.main` and
+  `whisper-server` both running and still scoring audio a full CPU-minute
+  later — a second, independent daemon competing for the same mic, which
+  is why one test showed the same utterance transcribed twice slightly
+  differently (one instance dropped it for "no bridge connected," the
+  other delivered it). Root cause: the `Makefile`'s
+  `trap 'kill 0' EXIT INT TERM` sends SIGTERM twice per Ctrl-C — the INT
+  trap's `kill 0` triggers shell exit, which fires the EXIT trap's
+  `kill 0` again — and the second delivery was landing mid-cleanup
+  (often inside `whisper_server.stop()`'s `process.wait()`), raising a
+  second `KeyboardInterrupt` that aborted cleanup before `whisper-server`
+  was confirmed dead. Ignoring SIGTERM once the handler has already fired
+  makes the redundant second delivery a no-op instead of a second
+  interrupt. Verified on an isolated port: double SIGTERM now produces one
+  traceback, both processes gone.
 
 **Consequences.**
 - `senses/ears/audio_capture.py`'s `ContinuousAudioSource` is meaningfully

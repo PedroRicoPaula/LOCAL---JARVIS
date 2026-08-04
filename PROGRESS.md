@@ -597,6 +597,20 @@ voz"). Not a closed question, a deferred one.
   command in normal use. Closing this investigation thread: both the
   silence-pause cutoff and the length-cap cutoff are fixed and verified
   against realistic sentence lengths.
+- **A later test showed the same utterance transcribed twice, slightly
+  differently — one "dropped, no bridge connected," one "heard."** Turned
+  out to be two independent `ears` + `whisper-server` pairs both alive and
+  both listening on the mic: an orphan from an earlier `make dev` Ctrl-C
+  that only *looked* clean (traceback printed, prompt returned) but had
+  actually left both processes running — found one still burning CPU a
+  full minute later. Root cause: `Makefile`'s `trap 'kill 0' EXIT INT TERM`
+  sends SIGTERM twice per Ctrl-C (the INT trap's `kill 0` triggers shell
+  exit, which fires the EXIT trap's `kill 0` again), and the second
+  delivery was landing mid-cleanup — often inside `process.wait()` —
+  aborting it before `whisper-server` was confirmed dead. Fixed by having
+  `_on_sigterm` switch itself to `SIG_IGN` before raising, so the
+  redundant second SIGTERM is a no-op. Verified live on an isolated port:
+  double SIGTERM now produces one traceback, both processes gone.
 
 ---
 
