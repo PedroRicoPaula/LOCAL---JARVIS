@@ -209,3 +209,19 @@ test("listPending only returns pending approvals, not decided ones", async () =>
 
   assert.deepEqual(gate.listPending(), []);
 });
+
+test("listPendingRequests returns wire-shaped ApprovalRequest, payload parsed back to an object", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "FS_WRITE", humanSummary: "write the file", payload: { path: "a.txt" } };
+  const outcomePromise = gate.propose(action, "some-skill");
+
+  const [request] = gate.listPendingRequests();
+
+  assert.equal(request!.humanSummary, "write the file");
+  assert.equal(request!.skillId, "some-skill");
+  assert.equal(request!.state, "pending");
+  assert.deepEqual(request!.payload, { path: "a.txt" });
+
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
+  await outcomePromise;
+});

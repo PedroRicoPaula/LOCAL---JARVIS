@@ -65,6 +65,13 @@ export function recentEventsForSession(db: DatabaseSync, sessionId: string, limi
   return rows.map(rowToEvent).reverse();
 }
 
+/** Most recent events across every session, newest first — the dashboard
+ * timeline's data source (`core/http.ts`'s `/api/events`). */
+export function recentEvents(db: DatabaseSync, limit: number): MemoryEvent[] {
+  const rows = db.prepare("SELECT * FROM events ORDER BY ts DESC LIMIT ?").all(limit) as unknown as EventRow[];
+  return rows.map(rowToEvent);
+}
+
 export function getEvent(db: DatabaseSync, id: string): MemoryEvent | null {
   const row = db.prepare("SELECT * FROM events WHERE id = ?").get(id) as unknown as EventRow | undefined;
   return row ? rowToEvent(row) : null;

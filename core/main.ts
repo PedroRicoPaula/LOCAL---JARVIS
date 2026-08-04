@@ -27,6 +27,7 @@ import { extractAndRememberFacts } from "./factExtraction.ts";
 import { watchApprovalCommands } from "./gate/cli.ts";
 import { Gate } from "./gate/gate.ts";
 import { getSigningKey } from "./gate/hmac.ts";
+import { createHttpServer } from "./http.ts";
 import { openDb } from "./memory/db.ts";
 import { Memory } from "./memory/memory.ts";
 import { OllamaProvider } from "./router/providers/ollama.ts";
@@ -34,10 +35,12 @@ import { buildRegistry } from "./router/wiring.ts";
 import { buildSkillContext } from "./skills/context.ts";
 import { createIpcConversation } from "./skills/conversation/ipc.ts";
 import { SkillRegistry } from "./skills/registry.ts";
+import { createWsHub } from "./ws.ts";
 
 const EARS_SOCKET = process.env["JARVIS_EARS_SOCKET"] ?? "/tmp/jarvis-ears.sock";
 const VOICE_SOCKET = process.env["JARVIS_VOICE_SOCKET"] ?? "/tmp/jarvis-voice.sock";
 const DB_PATH = process.env["JARVIS_DB_PATH"] ?? "data/jarvis.db";
+const DASHBOARD_PORT = Number(process.env["JARVIS_DASHBOARD_PORT"] ?? 8787);
 
 // One long-lived session per `core` run. Real multi-session tracking
 // (new session on wake after a gap, etc.) isn't needed by anything built
@@ -65,6 +68,16 @@ async function main(): Promise<void> {
   );
   console.log("core: skills loaded:", loadReport.loaded, "-- disabled:", loadReport.disabled);
 
+  // The dashboard (Phase 7): one HTTP server for historical queries
+  // (`/api/events`, `/api/skills`) with a WebSocket upgraded on top of it
+  // for the live channel, so both share one port. `wsHub` is also how
+  // `Gate`'s "approval.new"/"approval.resolved" events (SPEC.md § 8: "the
+  // dashboard is a view, never an authority") reach a browser.
+  const httpServer = createHttpServer(memory, skillRegistry, gate);
+  const wsHub = createWsHub(httpServer, gate);
+  await new Promise<void>((resolve) => httpServer.listen(DASHBOARD_PORT, resolve));
+  console.log(`core: dashboard listening on :${DASHBOARD_PORT}`);
+
   const conversation = createIpcConversation((text) => sendLine(voiceSock, { type: "speak", text }));
 
   // Concurrent with the ears loop below, not before/after it -- until
@@ -82,6 +95,7 @@ async function main(): Promise<void> {
     if (conversation.offerUtterance(text)) continue;
 
     console.log(`core: heard ${JSON.stringify(text)}`);
+    wsHub.broadcast({ type: "transcript", text, final: true, speaker: "owner" });
     try {
       const utteranceEvent = memory.appendEvent({ kind: "utterance", actor: "owner", content: text, sessionId: SESSION_ID });
 
@@ -93,13 +107,21 @@ async function main(): Promise<void> {
         console.error("core: fact extraction failed, continuing", err);
       });
 
-      const { outcome } = await skillRegistry.dispatch(
+      const { outcome, trace } = await skillRegistry.dispatch(
         embedder,
         routerRegistry,
         text,
         SESSION_ID,
         (skillId) => buildSkillContext({ db, memory, routerRegistry, conversation, gate }, skillId, SESSION_ID),
       );
+      wsHub.broadcast({
+        type: "thought",
+        lane: trace.lane,
+        ts: Date.now(),
+        text: trace.chosen
+          ? `${trace.lane}: dispatched ${trace.chosen.skillId}.${trace.chosen.intentId}${trace.disambiguated ? " (disambiguated)" : ""}`
+          : `${trace.lane}: no skill matched, falling back to general conversation`,
+      });
 
       let speech: string;
       if (outcome.outcome === "dispatched") {
@@ -110,6 +132,7 @@ async function main(): Promise<void> {
         conversation.say(speech);
       }
       console.log(`core: said ${JSON.stringify(speech)}`);
+      wsHub.broadcast({ type: "transcript", text: speech, final: true, speaker: "jarvis" });
       memory.appendEvent({ kind: "response", actor: "jarvis", content: speech, sessionId: SESSION_ID });
     } catch (err) {
       // One bad utterance (a skill bug, a model failure) must not take

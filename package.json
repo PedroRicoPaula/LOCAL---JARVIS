@@ -10,12 +10,14 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/parser": "^8.66.0",
     "eslint": "^10.8.0",
     "typescript": "^5.6.3"
   },
   "dependencies": {
     "sqlite-vec": "^0.1.9",
-    "ulid": "^3.0.2"
+    "ulid": "^3.0.2",
+    "ws": "^8.21.2"
   }
 }

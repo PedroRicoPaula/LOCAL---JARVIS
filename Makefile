@@ -1,7 +1,8 @@
 .PHONY: check bench dev install-daemon uninstall-daemon new-skill
 
 # Requires: `npm install` (TypeScript), `ruff` on PATH (brew install ruff),
-# and .venv set up per requirements.txt (see README.md Phase 1 quickstart).
+# .venv set up per requirements.txt (see README.md Phase 1 quickstart), and
+# `npm install` inside ui/ too (Phase 7 -- its own project, own lockfile).
 # Grows as later phases add real code to check — see ROADMAP.md.
 check:
 	npx tsc --noEmit
@@ -9,6 +10,7 @@ check:
 	.venv/bin/pytest senses/ -q
 	node --test 'core/**/*.test.ts' 'skills/**/*.test.ts'
 	npx eslint 'skills/**/*.ts' --ignore-pattern 'skills/__fixtures__/**'
+	cd ui && npm run lint && npm run build
 
 # nim_smoke.sh takes no arguments. bench_local.py needs model names that
 # depend on what you pulled in `ollama pull` — see README.md Phase 0
@@ -19,20 +21,24 @@ bench:
 	@echo "Run bench_local.py yourself with the models you pulled, e.g.:"
 	@echo "  python3 bench/bench_local.py qwen3:8b phi4"
 
-# voice + ears (Python) + core (Node, Phase 5b) all at once. Ctrl+C stops
-# all three (trap kills the whole process group). core replaces the
-# Phase-1-only echo bridge -- ears/voice are unaware of the difference,
-# they only know "read from my socket" / "write to my socket."
+# voice + ears (Python) + core (Node, Phase 5b) + dashboard (Next.js dev
+# server, Phase 7) all at once. Ctrl+C stops all four (trap kills the
+# whole process group). core replaces the Phase-1-only echo bridge --
+# ears/voice are unaware of the difference, they only know "read from my
+# socket" / "write to my socket." Requires ui/'s own `npm install` to
+# have been run once (see ui/README.md).
 # PYTHONUNBUFFERED: without it, stdout is block-buffered whenever it isn't
 # a TTY (piped to a file, captured by a wrapper) and the startup/connect
 # prints sit invisible in the buffer — bit us once already, see PROGRESS.md.
 dev:
-	@echo 'Starting voice, ears, core — say "hey jarvis" or hold Tab. Ctrl+C to stop.'
+	@echo 'Starting voice, ears, core, dashboard — say "hey jarvis" or hold Tab.'
+	@echo 'Dashboard: http://localhost:3000 -- Ctrl+C to stop everything.'
 	@PYTHONUNBUFFERED=1; export PYTHONUNBUFFERED; \
 	trap 'kill 0' EXIT INT TERM; \
 	.venv/bin/python -m senses.voice.main & \
 	.venv/bin/python -m senses.ears.main & \
 	node core/main.ts & \
+	(cd ui && npm run dev) & \
 	wait
 
 # Phase 2: run `ears` as a background LaunchAgent instead of via `make dev`
