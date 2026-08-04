@@ -1598,11 +1598,19 @@ never told the model what's actually loaded. Fixed in both places;
 verified live against real NIM — "can you create a skill?" now gets an
 honest refusal. Full detail in the commit and `docs/BACKLOG.md`.
 
-Also found and logged in `docs/BACKLOG.md` (not fixed yet, owner's
-call): `Transcript` doesn't backfill on open the way `Timeline` does;
-`make dev`'s `ears` can silently fight the installed LaunchAgent for the
-same socket; the dashboard's visual match to the Figma reference is
-palette/type/panel-style only, not layout or the animated Orb centerpiece.
+Also found and logged in `docs/BACKLOG.md`: `Transcript` didn't backfill
+on open the way `Timeline` does; `make dev`'s `ears` can silently fight
+the installed LaunchAgent for the same socket (still open); the
+dashboard's visual match to the Figma reference was palette/type/
+panel-style only, not layout or the Orb centerpiece.
+
+**Same-day follow-up, owner asked directly:** real-time state
+(listening/thinking/speaking, from real `ears`/`voice` signals, not
+synthetic), errors reported to the owner instead of only a server log,
+Transcript backfill, and the Orb/grid/scanline/layout brought over from
+the Figma reference. Full detail in DECISIONS.md's ADR-023. Verified
+live end to end on an isolated instance: real timestamps, all four
+states, screenshotted. 139 TS + 22 Python tests, `make check` green.
 
 ---
 
