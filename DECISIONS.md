@@ -1748,3 +1748,32 @@ in `docs/BACKLOG.md` rather than guessed at under time pressure.
   fixed. Not treated as urgent-and-silent: written up here and in
   `docs/BACKLOG.md` so it doesn't need rediscovering the hard way
   again, per CLAUDE.md § 0.7.
+
+## ADR-029 — SOAK 1: five dashboard features built for real usage data (test console, feedback, live Tasks/Shopping panels, metrics)
+
+**Status:** accepted
+
+**Context.** Asked directly (2026-08-04) to brainstorm dashboard
+features that would make real activity visible when talking to JARVIS
+during the SOAK -- specifically wanting to see CRUD happening in the
+dashboard itself, and more real test data to drive future improvements.
+Five ideas were proposed and, on approval, all five were built the same
+session so testing could start immediately: a dashboard "test console"
+that injects a typed line into the real handling path; a 👍/👎 on each
+spoken response; live, editable Tasks/Shopping panels; an aggregated
+metrics widget; and (found, not originally asked for, while verifying
+the others) a real layout overflow bug.
+
+**Decisions.**
+- **`core/main.ts`'s whole utterance-handling body became `handleUtterance(text)`,** called both from the real `ears` loop and from a new `ClientEvent` "utterance.inject" wired through `core/ws.ts`. `core` cannot tell a dashboard-typed line from a transcribed one once it lands -- deliberate, since the point is real usage data, not a separate toy path. Resolved the resulting `wsHub` ⇄ `handleUtterance` circular reference with a forward-declared `let handleUtterance` assigned after `wsHub` exists, same pattern any event listener registered before its handler body is filled in uses.
+- **Feedback (`event_feedback` table) and routing stats (`routing_stats` table) are both new, separate tables -- not columns on `events`.** `events` is append-only by trigger (`db.ts`), so a rating couldn't live there even as a column; routing telemetry follows `core/dashboardHistory.ts`'s own established reasoning (ADR-028) for staying out of `Memory.recall()`'s reach, except durable (a real SQLite table, not a ring buffer) since this is exactly the real-usage data the SOAK exists to collect, not an ops log.
+- **`core/metrics.ts`'s `computeMetrics` is a pure function over already-fetched rows, not a SQL aggregation query** -- same fakes-first testing rule as everywhere else in this project (CLAUDE.md § 3), and it paid off immediately: 5 unit tests written and passing before any DB or HTTP wiring existed.
+- **Dashboard CRUD for Tasks/Shopping (`GET`/`POST .../toggle`/`DELETE` in `core/http.ts`) reuses `createSkillStore(db, skillId)` directly** -- the exact same namespace-prefix-enforced path the skills themselves use, not a raw `db` handle. Deliberately two named routes (`/api/tasks`, `/api/shopping-list`), not a generic "any skill's store" API -- only two skills have this list shape today, and a generic route would mean guessing a shape for hypothetical future skills (CLAUDE.md § 0.6).
+- **Dashboard-initiated task/shopping writes stay ungated,** matching the existing tier for these skills' own voice-driven writes (`docs/SKILLS.md` § 1: private, low-stakes, frequently-changing data, not a shared fact). A dashboard checkbox is the same trust level as saying "mark it done."
+- **Polling, not a new WS push, for Tasks/Shopping/Metrics** (3s/3s/10s respectively) -- `core` has no signal today for "a skill's store changed"; building one is real scope for three panels on a testing tool. Same interval class `SystemStatus` already established.
+
+**Consequences.**
+- 11 new backend tests (5 `metrics.test.ts`, 3 `feedback.test.ts`, 3 `routingStats.test.ts`), `make check` green at 224. `feedback.test.ts` caught a real thing worth knowing: `event_feedback.event_id REFERENCES events(id)` really does throw on a fabricated id (confirmed, not assumed) -- same FK behavior this project has hit and documented twice before (Phase 5b, ADR-027).
+- **Live-verified with Playwright against a fresh isolated instance** (fake ears/voice, scratch DB), not just unit tests: typed a line into the test console and watched it dispatch for real (`tasks.add_task`, real response); toggled a real task done from the dashboard and confirmed the `UPDATE` landed via a direct DB read; deleted a seeded shopping item from the dashboard and confirmed the `DELETE` landed; clicked 👎 on a response and confirmed `event_feedback` got a real row; confirmed the metrics widget's numbers matched a hand-count of what actually happened (3 utterances, 1 no-skill-matched of 2 successful routing decisions -- the one hard provider failure correctly contributed to neither, since it never reached a lane decision at all). Zero console/page errors across every run.
+- **Found and fixed during that verification, not before:** the dashboard's LEFT and RIGHT columns had no way to reveal content taller than the viewport -- `MetricsWidget` (new) pushed the column past its bound, and the outer wrapper's `overflow-hidden` silently clipped it rather than showing a scrollbar. Fixed with `overflow-y-auto` on both columns. Would have shipped invisible to Pedro tomorrow if this pass hadn't screenshotted the actual rendered page.
+- **Confirmed, not caused: the ADR-028 lane-classifier-under-degraded-conditions gap is still live.** Hit twice more during this verification pass (a NIM mid-stream abort on one turn, a `see`-lane misroute of "add butter to the shopping list" on another) with NIM otherwise reachable and CPU load back to 53%. Not fixed here -- still the open item logged in `docs/BACKLOG.md`, now with two more reproductions on record.

@@ -1766,6 +1766,36 @@ plain ring buffer, exercised live via the Playwright pass above; add a
 unit test if it grows any real logic), `npx tsc --noEmit` clean in both
 `core` and `ui`, `make check` green.
 
+**Same day, asked to brainstorm and then build dashboard features for
+more real SOAK test data:** five features, all built and live-verified
+same session so testing could start the next day -- a dashboard "test
+console" that injects a typed line into the exact same handling path a
+real transcribed utterance goes through; a 👍/👎 on each spoken response
+(real labeled data, never model-set); live, dashboard-editable
+Tasks/Shopping panels (toggle/delete write straight to the skills' own
+`ctx.store` tables); and an aggregated metrics widget (utterances
+today/this week, lane distribution, skill hit rate, no-skill-matched
+rate) computed by a new, separately-unit-tested pure function
+(`core/metrics.ts`). `core/main.ts`'s utterance handling became one
+shared `handleUtterance(text)` function so a real and an injected
+utterance are indistinguishable once they land. Full detail in
+DECISIONS.md's ADR-029.
+
+Live-verified with Playwright against a fresh isolated instance, not
+just unit tests: typed console input dispatched for real; a dashboard
+checkbox toggle and a dashboard delete both confirmed against direct
+DB reads, not just the UI; a 👎 click confirmed in `event_feedback`;
+metrics numbers hand-checked against what actually happened. Found and
+fixed in the same pass, not before: the dashboard's side columns had
+no way to reveal content taller than the viewport once the new Metrics
+widget pushed past the bound -- would have shipped invisible otherwise.
+Also confirmed, twice more, that the ADR-028 lane-classifier-under-
+degraded-conditions gap is still open (unrelated to this session's
+changes) -- still not fixed, now with two more live reproductions on
+record in `docs/BACKLOG.md`.
+
+224 tests, `make check` green.
+
 ---
 
 ## Key numbers to record as we go
