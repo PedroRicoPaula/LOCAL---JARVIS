@@ -1967,3 +1967,51 @@ Results:
   any of them still maps to `ProviderUnavailableError` and falls
   through regardless, so an imprecise client-side bucket costs at most
   one wasted attempt per burst, never a hard failure.
+
+## ADR-032 — SOAK 1: `weather` silently ignored "tomorrow," asked for a city instead, timed out
+
+**Status:** accepted
+
+**Context.** Pedro's second real `make dev` session with the new
+`groq`/`mistral`/`google`/`openrouter` fallback chain live (routing
+itself now working well end to end -- `shopping_list.clear_list`,
+`launcher.open_url`, and an honest capability refusal all correctly
+dispatched or fell through as intended this session). One real bug:
+"Can you give me the weather resume for tomorrow?" dispatched correctly
+to `weather.current_weather`, then hung -- `ask() timed out waiting for
+a spoken answer` after 30s.
+
+Root cause, confirmed by reading `skills/weather/index.ts`: this skill
+only ever calls Open-Meteo's *current* conditions endpoint (no forecast
+capability exists at all) and completely ignores the word "tomorrow" in
+the utterance -- with no city remembered yet (`data/jarvis.db`'s
+`facts` table has no `location.city` row; the owner has apparently
+never gotten far enough through this flow to have it proposed), it
+called `ctx.ask("What city should I use for weather?")`, a question
+that didn't match what was actually asked, and nobody answered it in
+time.
+
+**Decision.** Before doing anything else, `handle()` now checks the raw
+utterance against a `FORECAST_PATTERN` (`tomorrow`, `forecast`, `next
+<weekday>`, `this weekend`) and, if it matches, says so plainly --
+*"I can only tell you the current weather right now, not a forecast for
+another day."* -- and returns immediately, never calling `ctx.ask()`.
+CLAUDE.md § 6: silently answering a different, unsupported question is
+its own kind of wrong answer, not a lesser one than a bad number.
+Deliberately not real forecast support -- that's a real feature (a
+different Open-Meteo endpoint, more scope) logged in `docs/BACKLOG.md`
+if wanted, not a same-session patch.
+
+**Consequences.**
+- One new test (`skills/weather/index.test.ts`): asserts the forecast
+  refusal path never calls `ctx.ask()` at all (the fake conversation
+  has zero scripted answers and throws if asked), using `geocode`/
+  `fetchCurrentWeather` fakes that throw if called, to prove neither
+  runs either. 242 tests, `make check` green.
+- Confirmed via `data/jarvis.db`: no `location.city` fact and no
+  matching approval exist yet at all -- the owner has never completed
+  this flow successfully. Once he does answer the city question once
+  (for an actual current-weather ask, not a forecast one), a real
+  `MEMORY_WRITE` approval will appear in the dashboard queue; approving
+  it once fixes "always asks for a city" going forward. Not a bug to
+  fix in code -- an approval waiting on the owner.

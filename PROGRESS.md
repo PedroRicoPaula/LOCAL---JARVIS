@@ -1871,6 +1871,22 @@ correctly answered by `groq` after falling through -- the new chain
 already saved a real request during this same session. Full detail in
 DECISIONS.md's ADR-031.
 
+**Same day, Pedro's second real `make dev` session with the new
+provider chain live:** routing itself worked well throughout --
+`shopping_list.clear_list`, `launcher.open_url`, and an honest
+capability refusal all correctly dispatched or fell through as
+intended. One real bug: "weather for tomorrow" dispatched correctly to
+`weather.current_weather`, then hung on `ctx.ask()` -- the skill has no
+forecast capability at all and silently ignored "tomorrow," asking for
+a city instead of saying so. Fixed: a `FORECAST_PATTERN` check up
+front now refuses honestly ("I can only tell you the current weather
+right now, not a forecast for another day") without ever calling
+`ctx.ask()`. Also confirmed via the real DB: the owner has never
+actually completed the "what city" flow successfully yet -- no
+`location.city` fact exists, so that question will keep coming up
+until he answers it once and approves the resulting `MEMORY_WRITE`.
+242 tests, `make check` green. Full detail in DECISIONS.md's ADR-032.
+
 ---
 
 ## Key numbers to record as we go
