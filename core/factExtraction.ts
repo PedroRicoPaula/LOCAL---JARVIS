@@ -15,9 +15,25 @@
  * use ever shows facts needing to reference each other, a lightweight
  * relation table on top of SQLite is the boring next step — not a new
  * database.
+ *
+ * Writes go through `Gate.propose()` (`MEMORY_WRITE`, `core/executors/
+ * memory.ts`'s real executor), not a direct `memory.upsertFact()` call —
+ * found live, SOAK 1: this used to write straight to `facts` with no
+ * review at all, and real conversation produced garbage ("skills.create:
+ * true" at confidence 0.8, "abilities.musical: whistle", a fact literally
+ * keyed "weather" valued "tomorrow's weather" that `converse` later
+ * regurgitated verbatim as its entire answer to a real weather question).
+ * CLAUDE.md § 5 is unconditional -- "nothing performs a side-effecting
+ * action without an approval recorded in the audit log first" -- and a
+ * silent `facts` write was never actually exempt from that, it just
+ * predated the gate (Phase 5b, before Phase 6). Still fire-and-forget
+ * from the caller's side (`core/main.ts` never awaits this), so a pending
+ * approval adds no latency to the spoken response; it just means facts
+ * accumulate in the dashboard's approval queue for review instead of
+ * silently mutating memory.
  */
 
-import type { Memory } from "./memory/memory.ts";
+import type { Gate } from "./gate/gate.ts";
 import type { Registry } from "./router/registry.ts";
 import { createSkillRouter } from "./skills/skillRouter.ts";
 
@@ -27,14 +43,16 @@ single spoken utterance, for a personal assistant's long-term memory.
 A fact is something true about the owner that would still matter in a
 future, unrelated conversation: a preference, a restriction, a stable
 project detail, a recurring circumstance. NOT a one-off request, a
-question, small talk, or anything only about right now.
+question, small talk, a task/reminder/shopping item (those have their own
+skills), or anything only about right now.
 
 Keys are a short dotted namespace, e.g. "diet.avoids", "prefs.verbosity",
 "project.<name>.stack".
 
 Confidence is honest, not generous: 0.8-1.0 only for something stated
-explicitly and unambiguously. 0.5-0.7 for something reasonably implied.
-If you would say anything below 0.5, leave it out entirely instead.
+explicitly and unambiguously as a fact about the owner. 0.5-0.7 for
+something reasonably implied. If you would say anything below 0.5, leave
+it out entirely instead.
 
 Respond with JSON only. No prose, no markdown fences.
 Schema: {"facts": [{"key": "...", "value": "...", "confidence": <0..1>}]}
@@ -43,7 +61,18 @@ If nothing in the utterance is a durable fact, respond {"facts": []}.
 Example: "I don't eat peanuts, I'm allergic" ->
 {"facts": [{"key": "diet.avoids", "value": "peanuts", "confidence": 0.95}]}
 
-Example: "what time is it" -> {"facts": []}`;
+Example: "what time is it" -> {"facts": []}
+
+Example: "can you create a skill to track my CPU?" -> {"facts": []}
+(a request to the assistant, not a fact about the owner -- do not record
+"the owner wants a skill" or anything the assistant said back as a fact)
+
+Example: "remind me to drink coffee at 9am" -> {"facts": []}
+(a task, not a durable fact -- skills/tasks owns this, not memory)
+
+Example: "can you tell me the weather for tomorrow" -> {"facts": []}
+(a question the assistant should answer, not something true about the
+owner -- never invent a fact keyed by the topic of a question)`;
 
 export interface ExtractedFact {
   key: string;
@@ -86,17 +115,31 @@ export async function extractFacts(routerRegistry: Registry, utterance: string):
 }
 
 /** Fire-and-forget from `core/main.ts`: extraction is not user-facing, so
- * it must never add latency to the spoken response (CLAUDE.md § 7).
- * Returns what it stored, for callers (tests, logging) that want to know. */
+ * it must never add latency to the spoken response (CLAUDE.md § 7). Each
+ * extracted fact is proposed to the gate individually (not awaited to
+ * completion here in a way that would block the caller -- `core/main.ts`
+ * never awaits this function's own promise either), so the owner reviews
+ * and approves what actually gets remembered instead of it landing
+ * silently. Returns what was *extracted* (for tests/logging), not what
+ * was ultimately approved -- that's the gate's own audit log's job. */
 export async function extractAndRememberFacts(
   routerRegistry: Registry,
-  memory: Memory,
+  gate: Gate,
   utterance: string,
   sourceEventId: string,
 ): Promise<ExtractedFact[]> {
   const facts = await extractFacts(routerRegistry, utterance);
   for (const fact of facts) {
-    memory.upsertFact({ key: fact.key, value: fact.value, confidence: fact.confidence, sourceEventId });
+    gate
+      .propose(
+        {
+          capability: "MEMORY_WRITE",
+          humanSummary: `Remember: ${fact.key} = ${fact.value}`,
+          payload: { key: fact.key, value: fact.value, confidence: fact.confidence, sourceEventId },
+        },
+        "fact-extraction",
+      )
+      .catch(() => undefined);
   }
   return facts;
 }

@@ -123,7 +123,7 @@ async function main(): Promise<void> {
       // (CLAUDE.md § 7). A failed extraction just means nothing learned
       // this turn -- factExtraction.ts already degrades internally, this
       // catch is only for a truly unexpected throw.
-      extractAndRememberFacts(routerRegistry, memory, text, utteranceEvent.id).catch((err) => {
+      extractAndRememberFacts(routerRegistry, gate, text, utteranceEvent.id).catch((err) => {
         console.error("core: fact extraction failed, continuing", err);
       });
 
