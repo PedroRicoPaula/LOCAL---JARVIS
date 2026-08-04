@@ -117,6 +117,146 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   approval pending) — natural fit once Phase 7's dashboard exists, maybe
   earlier if a transient notification proves annoying in daily use.
 
+## External research — lessons from other Jarvis-style projects
+
+Asked directly (2026-08-04) to look at five other "personal AI assistant"
+repos and log what's worth learning, without changing anything yet:
+[thevickypedia/Jarvis](https://github.com/thevickypedia/Jarvis) (Python,
+249★, keyword-routed, cloud STT), [vierisid/jarvis](https://github.com/vierisid/jarvis)
+(TypeScript, 613★, multi-agent daemon + Go sidecars, forked from
+Activepieces), [open-jarvis/OpenJarvis](https://github.com/open-jarvis/OpenJarvis)
+(Python, 8308★, pluggable local-inference framework, also read its docs
+site), [Avinashb722/jarvis-ai-assistant](https://github.com/Avinashb722/jarvis-ai-assistant)
+(Python, 56★, hobby project), and [Project-N-E-K-O/N.E.K.O](https://github.com/Project-N-E-K-O/N.E.K.O)
+(Python, 2379★, companion/VRM avatar assistant with a plugin marketplace).
+
+**Validated design choices — confirms we're not behind, no action needed.**
+- Our `Gate` (HMAC-signed, single-use nonce, 5 min expiry, unconditional
+  approve-before-execute, append-only audit log — CLAUDE.md § 5) is
+  *stricter* than every comparable mechanism found. vierisid's
+  `src/authority/engine.ts` returns `requiresApproval` as advisory, not
+  a hard block at every entry point, and its config literally has
+  `learning: { enabled, suggest_threshold }` — authority that adapts
+  itself over time, exactly what CLAUDE.md § 5 rules out by design.
+  Its audit trail (`src/authority/audit.ts`) has no signature/nonce/
+  tamper protection at all. OpenJarvis's own docs admit `shell_exec`
+  over HTTP/Desktop auto-approves with no confirmation, and that its
+  file-write filename blocklist is "protection against fat fingers,
+  not a security boundary" (`docs/architecture/security.md`,
+  `docs/user-guide/system-access.md`).
+- N.E.K.O's `memory/speaker_trust.py` independently states the same
+  rule CLAUDE.md § 0.5/§ 5 already enforces here: *"Trust values never
+  come from model output — scores derive exclusively from request
+  provenance and code-side predicates."* Good outside confirmation
+  that this is the right line to hold, not our own house style.
+- `senses/ears` (openWakeWord, local, Phase 2) plus local Whisper is a
+  better fit for CLAUDE.md § 0.2 (free-tier, offline where possible)
+  than thevickypedia/Jarvis's approach, which has no wake-word model
+  at all — it transcribes continuously via the *cloud* Google Speech
+  Recognition API and filters by keyword after the fact.
+- Our structured-JSON lane classifier before dispatch (`core/router/
+  laneClassifier.ts`) fits small/free local+remote models better than
+  OpenJarvis's approach, which skips a routing step entirely and
+  injects the whole skill catalog into the agent's own system prompt
+  for the LLM to pick a tool from directly (ReAct-style) — workable
+  for them because they assume a frontier-capable model, not our
+  free-tier constraint.
+
+**Small, concrete ideas worth building — low risk, no design debate needed.**
+- **A permanent benchmark gate for lane-classifier changes.** OpenJarvis's
+  `docs/architecture/learning.md` describes a `BenchmarkGate` that
+  scores any proposed prompt/routing edit against a benchmark *before*
+  it ships, with rollback via a `CheckpointStore`. We hit the exact
+  failure this guards against, twice, by hand this SOAK (ADR-024,
+  ADR-026: an added few-shot example silently regressed unrelated
+  cases on the 45-case benchmark, caught only because I happened to
+  rerun it). `bench/bench_router_lane.ts` already exists — turning
+  "rerun it and eyeball the number" into a real gate (a `make check`
+  step, or at minimum a pre-commit hook, that fails if
+  `laneClassifier.ts` changes and the benchmark score drops) would
+  make that class of regression structurally hard to ship again,
+  instead of relying on remembering to check.
+- **Tag the audit log with which channel resolved an approval**
+  (dashboard click vs. `gate/cli.ts` terminal command vs. voice, once
+  voice approval ever exists). vierisid's `AuditEntry.channel` field
+  ("click" | "voice" | "system") is a small addition with real
+  forensic value — right now our `audit_log` records the decision but
+  not how it arrived.
+- **A reviewable list of routing misses**, not just individual
+  `no_skill_matched` thought-stream entries. thevickypedia/Jarvis dumps
+  every unrecognized phrase to a file for the developer to read later
+  and turn into new keywords/examples (`support.unrecognized_dumper`).
+  We have the data (every `no_skill_matched` trace), just not surfaced
+  as a punch list — would make closing gaps like ADR-026's coffee
+  collision a matter of reading a list instead of re-reading the whole
+  conversation log by hand.
+- **MCP tool calls, if/when the MCP backlog item above gets built, must
+  go through `Gate.propose()` like everything else — do not wrap them
+  the way OpenJarvis does.** Its own MCP doc confirms tool calls from
+  an external MCP server are wrapped as a plain `BaseTool` and "agents
+  cannot distinguish between local and external tools at runtime" —
+  no extra approval step versus a native tool. Worth stating explicitly
+  now so future-me doesn't take the easy path later: an MCP tool is a
+  `SHELL_EXEC`-tier action or worse, same capability tiering as any
+  other executor, never an exception.
+
+**Bigger ideas, real design work, not scoped yet.**
+- **Batch fact-extraction review after a period of idle activity,
+  instead of one approval per utterance.** N.E.K.O's `app/memory_server/
+  gates.py` only runs its background memory-consolidation pass after
+  `IDLE_THRESHOLD` (10s) of no new conversation, with a minimum-new-
+  messages floor before bothering to review at all. ADR-027/ADR-028
+  already flagged approval-fatigue as a real risk once `fact-extraction`
+  approvals show up regularly (confirmed live 2026-08-04: 6 proposals
+  from one 8-utterance test run). Batching "review what I might have
+  learned this conversation" into one approval instead of N could cut
+  that noise a lot — real UX design work (what does one batched
+  approval's `humanSummary`/diff even look like?), not a quick patch.
+- **Auto-tuned skill examples/prompts from real usage traces, instead
+  of hand-editing `manifest.ts` examples every time a collision is
+  found live.** OpenJarvis's optimization overlays
+  (`~/.openjarvis/learning/skills/<name>/optimized.toml`, DSPy/GEPA-
+  based) learn better descriptions and few-shot examples from
+  successful/failed traces automatically, gated by the same
+  `BenchmarkGate` mentioned above before rollout. This is exactly the
+  manual process this SOAK kept doing by hand (moving "coffee" out of
+  `shopping_list`'s examples, multi-lane manifest fixes) — a real
+  productionized version of it is a legitimately bigger lever, but a
+  heavy dependency (DSPy) for a one-person project. Worth it only if
+  manual example-tuning keeps recurring as a pain point.
+- **Per-speaker trust, if JARVIS is ever used by more than one person
+  in the household.** N.E.K.O's `speaker_trust.py` model (deterministic
+  trust bands from `platform:actor` identity, never from model output,
+  used to arbitrate conflicting claims) is a reasonable shape for this
+  if it ever becomes real — not needed now (SPEC.md's whole design
+  assumes one owner), flagging only so it doesn't need re-deriving from
+  scratch if a second household member ever starts talking to it.
+
+**Anti-patterns confirmed to keep avoiding** (from
+`Avinashb722/jarvis-ai-assistant`, a much less disciplined codebase —
+useful as a negative example, not a source of ideas to adopt):
+- Real user data and secrets committed straight into the repo:
+  `password_key.key`, `passwords.json`, `jarvis_memory.db`,
+  `health_data.json`, `expenses.json` all sit in the repo root, plus
+  compiled `.pyc` files. Exactly what `.gitignore`/Keychain
+  (CLAUDE.md § 5) exist to prevent here — `data/jarvis.db` is
+  gitignored, secrets are Keychain-only, on purpose.
+- Multiple never-cleaned-up variants of the same file left side by
+  side (`dual_ai_broken.py`, `dual_ai_scanner_fixed.py`,
+  `ultimate_ai_executor.py` / `ultimate_ai_executor_simple.py`) —
+  the exact pattern CLAUDE.md's "no backwards-compatibility hacks,
+  delete what's unused" rule and the top-level agent instructions
+  exist to prevent.
+- Its provider-fallback code (`engine/ai_fallback_system.py`) catches
+  bare `except Exception` around every provider call, only `print()`s
+  the error (no logging, no audit trail), and silently drops the
+  system prompt for every provider except the first one in the chain —
+  a real, quiet correctness bug baked into the fallback path itself.
+  `core/router/router.ts`'s narrower `ProviderUnavailableError`
+  distinction (only *that* specific error type triggers fallback,
+  everything else propagates) and identical request shape per provider
+  are the right call here, not something to loosen.
+
 ## Annoyances found during SOAK
 
 - **2026-08-04 — `converse` hallucinated capabilities (fixed same day).**
