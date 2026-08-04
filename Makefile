@@ -7,6 +7,7 @@ check:
 	npx tsc --noEmit
 	ruff check bench/ senses/
 	.venv/bin/pytest senses/ -q
+	node --test 'core/**/*.test.ts'
 
 # nim_smoke.sh takes no arguments. bench_local.py needs model names that
 # depend on what you pulled in `ollama pull` — see README.md Phase 0
