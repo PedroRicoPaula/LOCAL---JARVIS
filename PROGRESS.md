@@ -7,14 +7,14 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 2 — Wake word
-**Status:** in progress — code complete, `make check` green, verified live
-with real acoustic detection end-to-end (speaker-to-mic loopback). The
-DoD's three measured checks (30 activations at ~2m, 4-hour false-activation
-run, reboot survival) all need Pedro over real time — see "Open questions
-for the owner."
-**Branch:** `phase/02-wake-word`
-**Last updated:** 2026-08-03
+**Phase:** 2 — Wake word — **closed**
+**Status:** closed by owner decision — 4-hour false-activation run and
+reboot survival both met in full; the 30-activation count was owner-waived
+on strong functional evidence rather than formally tallied. See the
+Phase 2 closing note in the log below. Now in **🛑 SOAK 1** (ROADMAP.md):
+two weeks of daily use, no new building, before Phase 3.
+**Branch:** `phase/02-wake-word` (not yet merged to `main`)
+**Last updated:** 2026-08-04
 
 (Phase 1 complete — see Phase log below for the full record and what was
 owner-waived rather than formally measured.)
@@ -384,7 +384,29 @@ voz"). Not a closed question, a deferred one.
 
 ---
 
-### Phase 2 — in progress, 2026-08-03
+### Phase 2 — closed, 2026-08-04
+
+**Closed by owner decision on the last open item, not full literal DoD.**
+Two of three DoD checks were met in full; the third has strong functional
+evidence but no formal count:
+
+- **4-hour false-activation run (< 2):** met in full — 1 activation,
+  no errors.
+- **Survives reboot without manual intervention:** met in full — real
+  reboot, daemon auto-started, Microphone permission held, wake word and
+  transcription both worked without Pedro doing anything.
+- **30 deliberate activations at ~2m (≥ 90% detection):** not run as a
+  literal count-of-30. Across five separate live rounds (different
+  sentences, distances, and speaking styles, all ~2m or closer) the wake
+  word detector never once failed to fire when he said "hey jarvis" —
+  every miss found and fixed in this phase was downstream of detection
+  (capture cutting off, duplicate captures), not detection itself missing
+  the word. Pedro's call to accept that as sufficient rather than run the
+  formal tally, same pattern as Phase 1's word-accuracy waiver.
+
+Same reasoning as Phase 1: if real-world false negatives show up during
+the soak, that's the signal to go back and run the literal 30-attempt
+count with per-attempt scores logged, not something closed off for good.
 
 **Built:**
 - `senses/ears/audio_capture.py` rewritten: one persistent `InputStream`
@@ -653,19 +675,22 @@ revisit once `core` (Phase 5) replaces `echo_bridge`.
       — wrong words, especially on names/accented speech/numbers — that's
       the signal to actually run `.venv/bin/python bench/score_phase1.py`
       rather than assume it's fine. Deferred, not closed.
-- [ ] Phase 2's three DoD numbers all need you, over real time — see the
-      Phase 2 "Left over" entry above for exactly what and why:
-      1. Threshold tuning (`WAKE_WORD_THRESHOLD` in
-         `senses/ears/config.py`, currently the untuned default 0.5).
-      2. 30 deliberate "hey jarvis" activations at ~2m (≥90% detection).
-      3. A 4-hour unattended background run (<2 false activations).
-      4. `make install-daemon`, then reboot, for "survives reboot." Expect
-         to grant Microphone/Accessibility/Input Monitoring again — I
-         confirmed the daemon loads but sits waiting on that, same
-         permission dance as Phase 1 but for a different binary identity.
-      `make dev` still works for all of this — no need to install the
-      daemon just to tune the threshold or count activations, only for the
-      final reboot check.
+- [ ] Phase 2 closed on an owner-waived 30-activation count, same pattern
+      as Phase 1's word-accuracy waiver (see the Phase 2 closing note
+      above). If a "said hey jarvis and nothing happened" moment ever
+      shows up during the soak, that's the signal to actually run the
+      formal 30-attempt count with per-attempt scores logged, not
+      something to assume is fine forever.
+- [ ] `WAKE_WORD_THRESHOLD` (`senses/ears/config.py`) is still the
+      untuned pretrained default (0.5) — never needed adjusting, every
+      real detection scored well clear of it (0.53–1.00). Leave it unless
+      real use during the soak says otherwise.
+- [ ] The daemon (`make install-daemon`) only manages `ears` — after a
+      reboot it hears and transcribes but doesn't speak back, since
+      `voice`/`echo_bridge` aren't part of it (by design, see the Phase 2
+      closing note; Pedro chose to leave this as-is rather than extend
+      scope now). `make dev` is still how to get the full round-trip
+      until `core` (Phase 5) replaces `echo_bridge`.
 
 ---
 
