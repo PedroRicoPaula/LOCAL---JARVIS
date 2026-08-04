@@ -80,17 +80,57 @@ export interface SkillHealth {
 
 export type JarvisState = "idle" | "listening" | "thinking";
 
+export type FeedbackRating = "up" | "down";
+
 export type ServerEvent =
   | { type: "thought"; text: string; lane: Lane; ts: number }
   | { type: "approval.new"; request: ApprovalRequest }
   | { type: "approval.resolved"; requestId: string; state: ApprovalState }
-  | { type: "transcript"; text: string; final: boolean; speaker: "owner" | "jarvis" }
+  | { type: "transcript"; text: string; final: boolean; speaker: "owner" | "jarvis"; eventId?: string }
   | { type: "state"; value: JarvisState }
   | { type: "speaking"; active: boolean }
   | { type: "camera"; active: boolean }
   | { type: "health"; providers: Record<string, boolean> }
-  | { type: "error"; message: string; detail?: string; ts: number };
+  | { type: "error"; message: string; detail?: string; ts: number }
+  | { type: "feedback"; eventId: string; rating: FeedbackRating };
 
 export type ClientEvent =
   | { type: "approval.decide"; response: ApprovalResponse }
-  | { type: "mute"; category: string; muted: boolean };
+  | { type: "mute"; category: string; muted: boolean }
+  | { type: "utterance.inject"; text: string }
+  | { type: "feedback"; eventId: string; rating: FeedbackRating };
+
+// ---------------------------------------------------------------------------
+// Dashboard live-data panels + metrics (SOAK 1) — see shared/types.ts's own
+// docstring for these; mirrored here by hand same as everything else in
+// this file.
+// ---------------------------------------------------------------------------
+
+export interface TaskItem {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: number;
+}
+
+export interface ShoppingItem {
+  id: string;
+  text: string;
+  createdAt: number;
+}
+
+export interface SkillHitRate {
+  skillId: string;
+  intentId: string;
+  count: number;
+}
+
+export interface DashboardMetrics {
+  utterancesToday: number;
+  utterancesThisWeek: number;
+  laneDistribution: Partial<Record<Lane, number>>;
+  skillHitRate: SkillHitRate[];
+  noSkillMatchedCount: number;
+  noSkillMatchedRate: number;
+  totalRoutingDecisions: number;
+}

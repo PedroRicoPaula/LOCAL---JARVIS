@@ -65,6 +65,32 @@ CREATE TABLE IF NOT EXISTS observations (
   structured  TEXT,                        -- JSON, may be null
   confidence  REAL NOT NULL
 );
+
+-- Owner's up/down rating of a jarvis response (SOAK 1). One row per event,
+-- last rating wins. Purely diagnostic -- never read by Memory.recall(),
+-- never influences a live response, CLAUDE.md § 0.5's "trust never comes
+-- from model output" applies to the rating source too (it's always the
+-- owner clicking, never inferred).
+CREATE TABLE IF NOT EXISTS event_feedback (
+  event_id    TEXT PRIMARY KEY REFERENCES events(id),
+  rating      TEXT NOT NULL,               -- up|down
+  created_at  INTEGER NOT NULL
+);
+
+-- One row per dispatch decision (SOAK 1) -- separate from the events table
+-- on purpose, same reasoning as core/dashboardHistory.ts's ring buffer:
+-- routing telemetry is not conversation, and must never leak into
+-- Memory.recall()'s context. Durable (not a ring buffer) because this is
+-- exactly the kind of real-usage data the SOAK exists to collect --
+-- see core/metrics.ts.
+CREATE TABLE IF NOT EXISTS routing_stats (
+  id          TEXT PRIMARY KEY,
+  ts          INTEGER NOT NULL,
+  lane        TEXT NOT NULL,
+  skill_id    TEXT,                        -- null when no_skill_matched
+  intent_id   TEXT,
+  matched     INTEGER NOT NULL             -- 0|1
+);
 `;
 
 export function openDb(path: string): DatabaseSync {

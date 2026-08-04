@@ -13,6 +13,7 @@
 import type { Server as HttpServer } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import type { Gate } from "./gate/gate.ts";
+import type { Memory } from "./memory/memory.ts";
 import type { ClientEvent, ServerEvent } from "../shared/types.ts";
 
 export interface WsHub {
@@ -22,9 +23,14 @@ export interface WsHub {
 
 /** Wires a `WebSocketServer` onto an existing `http.Server` (so the
  * dashboard's WS and HTTP history endpoints share one port), subscribes
- * to `Gate`'s lifecycle events, and relays `approval.decide` from any
- * client into `gate.decide()`. */
-export function createWsHub(httpServer: HttpServer, gate: Gate): WsHub {
+ * to `Gate`'s lifecycle events, relays `approval.decide` from any client
+ * into `gate.decide()`, stores `feedback` ratings and rebroadcasts them
+ * (same "state lives in core, two tabs stay in sync" reasoning as
+ * approvals), and hands `utterance.inject` (SOAK 1's dashboard test
+ * console) to `onUtterance` -- `core/main.ts`'s own real handling path,
+ * unchanged, so an injected line and a real transcribed one are
+ * indistinguishable once they land. */
+export function createWsHub(httpServer: HttpServer, gate: Gate, memory: Memory, onUtterance: (text: string) => void): WsHub {
   const wss = new WebSocketServer({ server: httpServer });
 
   function broadcast(event: ServerEvent): void {
@@ -44,6 +50,14 @@ export function createWsHub(httpServer: HttpServer, gate: Gate): WsHub {
       }
       if (event.type === "approval.decide") {
         gate.decide(event.response);
+      }
+      if (event.type === "utterance.inject") {
+        const text = event.text.trim();
+        if (text) onUtterance(text);
+      }
+      if (event.type === "feedback") {
+        memory.setFeedback(event.eventId, event.rating);
+        broadcast({ type: "feedback", eventId: event.eventId, rating: event.rating });
       }
       // "mute" has no server-side effect yet — noted in ROADMAP, not this phase's scope.
     });

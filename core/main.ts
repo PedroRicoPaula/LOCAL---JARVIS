@@ -79,18 +79,27 @@ async function main(): Promise<void> {
   );
   console.log("core: skills loaded:", loadReport.loaded, "-- disabled:", loadReport.disabled);
 
+  const conversation = createIpcConversation((text) => sendLine(voiceSock, { type: "speak", text }));
+
+  // Forward reference: `wsHub` needs `onUtterance` to wire the dashboard's
+  // test console (SOAK 1) before `handleUtterance` itself can be defined
+  // (it broadcasts through `wsHub`). Assigned below, only ever *called*
+  // once the real handler exists -- same pattern as any event-emitter
+  // listener registered before its handler body is filled in.
+  let handleUtterance: (text: string) => Promise<void>;
+
   // The dashboard (Phase 7): one HTTP server for historical queries
   // (`/api/events`, `/api/skills`) with a WebSocket upgraded on top of it
   // for the live channel, so both share one port. `wsHub` is also how
   // `Gate`'s "approval.new"/"approval.resolved" events (SPEC.md § 8: "the
   // dashboard is a view, never an authority") reach a browser.
   const history = createDashboardHistory();
-  const httpServer = createHttpServer(memory, skillRegistry, gate, history);
-  const wsHub = createWsHub(httpServer, gate);
+  const httpServer = createHttpServer(memory, skillRegistry, gate, history, db);
+  const wsHub = createWsHub(httpServer, gate, memory, (text) => {
+    handleUtterance(text).catch((err) => console.error("core: injected utterance failed, continuing", err));
+  });
   await new Promise<void>((resolve) => httpServer.listen(DASHBOARD_PORT, resolve));
   console.log(`core: dashboard listening on :${DASHBOARD_PORT}`);
-
-  const conversation = createIpcConversation((text) => sendLine(voiceSock, { type: "speak", text }));
 
   // Concurrent with the ears loop below, not before/after it -- until
   // Phase 7's dashboard exists, typing into this same terminal is the
@@ -102,25 +111,20 @@ async function main(): Promise<void> {
   // as-is so the dashboard shows genuine progress, not a guess.
   relayVoiceStatus(voiceSock, wsHub).catch((err) => console.error("core: voice status relay failed", err));
 
-  console.log("core: ready.");
-  for await (const message of readLines(earsSock)) {
-    if (message["type"] === "listening") {
-      wsHub.broadcast({ type: "state", value: "listening" });
-      continue;
-    }
-    if (message["type"] !== "utterance") continue;
-    const text = String(message["text"] ?? "").trim();
-    if (!text) continue;
-
+  // The single utterance-handling path -- real speech from `ears` and a
+  // dashboard test-console line (SOAK 1, `ClientEvent` "utterance.inject")
+  // both end up here, and `core` cannot tell them apart once they do.
+  // That's deliberate: it's what makes the dashboard console a source of
+  // real usage data, not a separate toy path.
+  handleUtterance = async (text: string): Promise<void> => {
     // An answer to a skill's ctx.ask(), not a new top-level utterance.
-    if (conversation.offerUtterance(text)) continue;
+    if (conversation.offerUtterance(text)) return;
 
     console.log(`core: heard ${JSON.stringify(text)}`);
-    wsHub.broadcast({ type: "transcript", text, final: true, speaker: "owner" });
+    const utteranceEvent = memory.appendEvent({ kind: "utterance", actor: "owner", content: text, sessionId: SESSION_ID });
+    wsHub.broadcast({ type: "transcript", text, final: true, speaker: "owner", eventId: utteranceEvent.id });
     wsHub.broadcast({ type: "state", value: "thinking" });
     try {
-      const utteranceEvent = memory.appendEvent({ kind: "utterance", actor: "owner", content: text, sessionId: SESSION_ID });
-
       // Fire-and-forget: never adds latency to the spoken response
       // (CLAUDE.md § 7). A failed extraction just means nothing learned
       // this turn -- factExtraction.ts already degrades internally, this
@@ -136,6 +140,12 @@ async function main(): Promise<void> {
         SESSION_ID,
         (skillId) => buildSkillContext({ db, memory, routerRegistry, conversation, gate }, skillId, SESSION_ID),
       );
+      memory.recordRoutingStat({
+        lane: trace.lane,
+        skillId: trace.chosen?.skillId ?? null,
+        intentId: trace.chosen?.intentId ?? null,
+        matched: trace.chosen !== undefined,
+      });
       const thoughtEvent = {
         type: "thought" as const,
         lane: trace.lane,
@@ -162,8 +172,8 @@ async function main(): Promise<void> {
         conversation.say(speech);
       }
       console.log(`core: said ${JSON.stringify(speech)}`);
-      wsHub.broadcast({ type: "transcript", text: speech, final: true, speaker: "jarvis" });
-      memory.appendEvent({ kind: "response", actor: "jarvis", content: speech, sessionId: SESSION_ID });
+      const responseEvent = memory.appendEvent({ kind: "response", actor: "jarvis", content: speech, sessionId: SESSION_ID });
+      wsHub.broadcast({ type: "transcript", text: speech, final: true, speaker: "jarvis", eventId: responseEvent.id });
     } catch (err) {
       // One bad utterance (a skill bug, a model failure) must not take
       // the whole process down -- same "supervisor boundary" reasoning
@@ -182,6 +192,18 @@ async function main(): Promise<void> {
     } finally {
       wsHub.broadcast({ type: "state", value: "idle" });
     }
+  };
+
+  console.log("core: ready.");
+  for await (const message of readLines(earsSock)) {
+    if (message["type"] === "listening") {
+      wsHub.broadcast({ type: "state", value: "listening" });
+      continue;
+    }
+    if (message["type"] !== "utterance") continue;
+    const text = String(message["text"] ?? "").trim();
+    if (!text) continue;
+    await handleUtterance(text);
   }
 }
 

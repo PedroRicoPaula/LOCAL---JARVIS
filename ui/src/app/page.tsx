@@ -4,9 +4,12 @@ import dynamic from "next/dynamic";
 import { ApprovalQueue } from "@/components/approval-queue";
 import { Clock } from "@/components/clock";
 import { ErrorLog } from "@/components/error-log";
+import { MetricsWidget } from "@/components/metrics-widget";
 import { SkillHealthPanel } from "@/components/skill-health";
 import { StatusBar } from "@/components/status-bar";
+import { StorePanel } from "@/components/store-panel";
 import { SystemStatus } from "@/components/system-status";
+import { TestConsole } from "@/components/test-console";
 import { ThoughtStream } from "@/components/thought-stream";
 import { Timeline } from "@/components/timeline";
 import { Transcript } from "@/components/transcript";
@@ -27,7 +30,28 @@ const Orb = dynamic(() => import("@/components/orb").then((m) => m.Orb), {
 });
 
 export default function Home() {
-  const { connection, connectedSince, orbState, approvals, transcript, thoughts, events, skills, errors, system, decide } = useJarvis();
+  const {
+    connection,
+    connectedSince,
+    orbState,
+    approvals,
+    transcript,
+    thoughts,
+    events,
+    skills,
+    errors,
+    system,
+    tasks,
+    shoppingItems,
+    metrics,
+    feedback,
+    decide,
+    injectUtterance,
+    sendFeedback,
+    toggleTask,
+    deleteTask,
+    deleteShoppingItem,
+  } = useJarvis();
   const lastOwnerLine = [...transcript].reverse().find((l) => l.speaker === "owner");
 
   return (
@@ -45,13 +69,17 @@ export default function Home() {
         </div>
 
         <div className="absolute inset-0 flex gap-3" style={{ padding: "28px 16px 8px 16px" }}>
-          {/* LEFT — telemetry */}
-          <div className="flex flex-col gap-3 min-w-0" style={{ width: "22%" }}>
+          {/* LEFT — telemetry. `overflow-y-auto`: SOAK 1 added Metrics on
+              top of the existing four panels, and the column's natural
+              height can now exceed the viewport -- found live, this scrolls
+              instead of silently clipping whatever's last (was Timeline). */}
+          <div className="flex flex-col gap-3 min-w-0 min-h-0 overflow-y-auto" style={{ width: "22%" }}>
             <Clock />
             <SystemStatus system={system} />
             <div className="shrink-0">
               <SkillHealthPanel skills={skills} />
             </div>
+            <MetricsWidget metrics={metrics} />
             <Timeline events={events} />
           </div>
 
@@ -71,16 +99,26 @@ export default function Home() {
             <ThoughtStream thoughts={thoughts} />
           </div>
 
-          {/* RIGHT — approvals + conversation */}
-          <div className="flex flex-col gap-3 min-w-0" style={{ width: "26%" }}>
-            <div style={{ maxHeight: "40%" }} className="flex flex-col min-h-0 shrink-0">
+          {/* RIGHT — approvals + live data + conversation. Same
+              `overflow-y-auto` safety net as LEFT, now that `StorePanel`
+              sits between the two existing panels. */}
+          <div className="flex flex-col gap-3 min-w-0 min-h-0 overflow-y-auto" style={{ width: "26%" }}>
+            <div style={{ maxHeight: "32%" }} className="flex flex-col min-h-0 shrink-0">
               <ApprovalQueue approvals={approvals} onDecide={decide} />
             </div>
-            <Transcript lines={transcript} />
+            <StorePanel
+              tasks={tasks}
+              shoppingItems={shoppingItems}
+              onToggleTask={toggleTask}
+              onDeleteTask={deleteTask}
+              onDeleteItem={deleteShoppingItem}
+            />
+            <Transcript lines={transcript} feedback={feedback} onFeedback={sendFeedback} />
           </div>
         </div>
       </div>
 
+      <TestConsole onSubmit={injectUtterance} />
       <StatusBar connection={connection} connectedSince={connectedSince} />
     </div>
   );

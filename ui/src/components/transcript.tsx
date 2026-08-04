@@ -1,10 +1,52 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { FeedbackRating } from "@/lib/types";
 import type { TranscriptLine } from "@/lib/use-jarvis";
 import { Panel } from "./panel";
 
-export function Transcript({ lines }: { lines: TranscriptLine[] }) {
+/** SOAK 1: a real, owner-only judgement call on a `jarvis` line -- labeled
+ * data for later routing/prompt tuning, not something a model ever sets
+ * (CLAUDE.md § 0.5). Only rendered when `eventId` exists (a real `events`
+ * row to attach to). */
+function FeedbackButtons({
+  eventId,
+  rating,
+  onFeedback,
+}: {
+  eventId: string;
+  rating: FeedbackRating | undefined;
+  onFeedback: (eventId: string, rating: FeedbackRating) => void;
+}) {
+  return (
+    <span className="inline-flex gap-1 ml-2 align-middle">
+      <button
+        onClick={() => onFeedback(eventId, "up")}
+        className={`text-[10px] leading-none ${rating === "up" ? "opacity-100" : "opacity-30 hover:opacity-70"}`}
+        title="Good response"
+      >
+        👍
+      </button>
+      <button
+        onClick={() => onFeedback(eventId, "down")}
+        className={`text-[10px] leading-none ${rating === "down" ? "opacity-100" : "opacity-30 hover:opacity-70"}`}
+        title="Bad response"
+      >
+        👎
+      </button>
+    </span>
+  );
+}
+
+export function Transcript({
+  lines,
+  feedback,
+  onFeedback,
+}: {
+  lines: TranscriptLine[];
+  feedback: Record<string, FeedbackRating>;
+  onFeedback: (eventId: string, rating: FeedbackRating) => void;
+}) {
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,6 +74,9 @@ export function Transcript({ lines }: { lines: TranscriptLine[] }) {
                   <span className="text-jarvis-cyan opacity-70">JV › </span>
                 )}
                 {line.text}
+                {line.speaker === "jarvis" && line.eventId ? (
+                  <FeedbackButtons eventId={line.eventId} rating={feedback[line.eventId]} onFeedback={onFeedback} />
+                ) : null}
               </div>
             </div>
           ))

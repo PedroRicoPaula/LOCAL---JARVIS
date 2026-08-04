@@ -16,10 +16,28 @@
  * Two tabs stay in sync for the same reason two callers of `Gate.decide`
  * always have: state lives in `core`, not here. Every tab is just another
  * WS subscriber.
+ *
+ * SOAK 1 added `tasks`/`shoppingItems`/`metrics` (polled — `core` doesn't
+ * push a WS event on a skill-store write, polling is the boring choice
+ * for a testing tool, same interval class as `system`) and `feedback`
+ * (WS-pushed, same sync-across-tabs reasoning as approvals) plus
+ * `injectUtterance` for the dashboard's test console.
  */
 
 import { useEffect, useRef, useState } from "react";
-import type { ApprovalRequest, ClientEvent, JarvisState, MemoryEvent, ServerEvent, SkillHealth, SystemMetrics } from "./types";
+import type {
+  ApprovalRequest,
+  ClientEvent,
+  DashboardMetrics,
+  FeedbackRating,
+  JarvisState,
+  MemoryEvent,
+  ServerEvent,
+  ShoppingItem,
+  SkillHealth,
+  SystemMetrics,
+  TaskItem,
+} from "./types";
 
 type ThoughtEvent = Extract<ServerEvent, { type: "thought" }>;
 type ErrorEvent = Extract<ServerEvent, { type: "error" }>;
@@ -28,6 +46,8 @@ const CORE_URL = process.env["NEXT_PUBLIC_JARVIS_CORE_URL"] ?? "http://localhost
 const WS_URL = CORE_URL.replace(/^http/, "ws");
 const RECONNECT_DELAY_MS = 2000;
 const SYSTEM_POLL_MS = 5000;
+const STORE_POLL_MS = 3000;
+const METRICS_POLL_MS = 10000;
 
 export type ConnectionState = "connecting" | "open" | "closed";
 
@@ -46,6 +66,10 @@ export interface TranscriptLine {
   text: string;
   speaker: "owner" | "jarvis";
   ts: number;
+  /** Absent for lines with no backing `events` row (the fallback line
+   * spoken when a turn errors out) -- feedback needs a real event to
+   * attach to. */
+  eventId?: string;
 }
 
 export interface JarvisError {
@@ -65,8 +89,17 @@ export interface JarvisDashboardState {
   skills: SkillHealth[];
   errors: JarvisError[];
   system: SystemMetrics | null;
+  tasks: TaskItem[];
+  shoppingItems: ShoppingItem[];
+  metrics: DashboardMetrics | null;
+  feedback: Record<string, FeedbackRating>;
   decide(request: ApprovalRequest, decision: "approve" | "reject"): void;
   refreshSkills(): void;
+  injectUtterance(text: string): void;
+  sendFeedback(eventId: string, rating: FeedbackRating): void;
+  toggleTask(id: string): void;
+  deleteTask(id: string): void;
+  deleteShoppingItem(id: string): void;
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -76,8 +109,8 @@ async function fetchJson<T>(path: string): Promise<T> {
 }
 
 function eventToTranscriptLine(e: MemoryEvent): TranscriptLine | null {
-  if (e.kind === "utterance") return { text: e.content, speaker: "owner", ts: e.ts };
-  if (e.kind === "response") return { text: e.content, speaker: "jarvis", ts: e.ts };
+  if (e.kind === "utterance") return { text: e.content, speaker: "owner", ts: e.ts, eventId: e.id };
+  if (e.kind === "response") return { text: e.content, speaker: "jarvis", ts: e.ts, eventId: e.id };
   return null;
 }
 
@@ -93,6 +126,10 @@ export function useJarvis(): JarvisDashboardState {
   const [skills, setSkills] = useState<SkillHealth[]>([]);
   const [errors, setErrors] = useState<JarvisError[]>([]);
   const [system, setSystem] = useState<SystemMetrics | null>(null);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [feedback, setFeedback] = useState<Record<string, FeedbackRating>>({});
   const wsRef = useRef<WebSocket | null>(null);
 
   const refreshSkills = () => {
@@ -115,6 +152,7 @@ export function useJarvis(): JarvisDashboardState {
     fetchJson<ErrorEvent[]>("/api/errors").then((all) => {
       setErrors(all.map((e) => ({ message: e.message, detail: e.detail, ts: e.ts })));
     }).catch(() => undefined);
+    fetchJson<Record<string, FeedbackRating>>("/api/feedback").then(setFeedback).catch(() => undefined);
     refreshSkills();
   }, []);
 
@@ -122,6 +160,23 @@ export function useJarvis(): JarvisDashboardState {
     const poll = () => fetchJson<SystemMetrics>("/api/system").then(setSystem).catch(() => undefined);
     poll();
     const id = setInterval(poll, SYSTEM_POLL_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const poll = () => {
+      fetchJson<TaskItem[]>("/api/tasks").then(setTasks).catch(() => undefined);
+      fetchJson<ShoppingItem[]>("/api/shopping-list").then(setShoppingItems).catch(() => undefined);
+    };
+    poll();
+    const id = setInterval(poll, STORE_POLL_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const poll = () => fetchJson<DashboardMetrics>("/api/metrics").then(setMetrics).catch(() => undefined);
+    poll();
+    const id = setInterval(poll, METRICS_POLL_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -155,9 +210,12 @@ export function useJarvis(): JarvisDashboardState {
           case "approval.resolved":
             setApprovals((prev) => prev.filter((a) => a.id !== event.requestId));
             break;
-          case "transcript":
-            setTranscript((prev) => [...prev, { text: event.text, speaker: event.speaker, ts: Date.now() }]);
+          case "transcript": {
+            const line: TranscriptLine = { text: event.text, speaker: event.speaker, ts: Date.now() };
+            if (event.eventId !== undefined) line.eventId = event.eventId;
+            setTranscript((prev) => [...prev, line]);
             break;
+          }
           case "thought":
             setThoughts((prev) => [...prev.slice(-49), { text: event.text, lane: event.lane, ts: event.ts }]);
             break;
@@ -169,6 +227,9 @@ export function useJarvis(): JarvisDashboardState {
             break;
           case "error":
             setErrors((prev) => [...prev.slice(-19), { message: event.message, detail: event.detail, ts: event.ts }]);
+            break;
+          case "feedback":
+            setFeedback((prev) => ({ ...prev, [event.eventId]: event.rating }));
             break;
           default:
             break;
@@ -192,17 +253,41 @@ export function useJarvis(): JarvisDashboardState {
     };
   }, []);
 
-  function decide(request: ApprovalRequest, decision: "approve" | "reject"): void {
+  function send(message: ClientEvent): void {
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify(message));
+  }
+
+  function decide(request: ApprovalRequest, decision: "approve" | "reject"): void {
     // Optimistic: the dashboard is a view, but there's no reason to make
     // the owner wait on the round trip to stop showing a decided request.
     setApprovals((prev) => prev.filter((a) => a.id !== request.id));
-    const message: ClientEvent = {
-      type: "approval.decide",
-      response: { requestId: request.id, nonce: request.nonce, decision, decidedAt: Date.now() },
-    };
-    socket.send(JSON.stringify(message));
+    send({ type: "approval.decide", response: { requestId: request.id, nonce: request.nonce, decision, decidedAt: Date.now() } });
+  }
+
+  function injectUtterance(text: string): void {
+    send({ type: "utterance.inject", text });
+  }
+
+  function sendFeedback(eventId: string, rating: FeedbackRating): void {
+    setFeedback((prev) => ({ ...prev, [eventId]: rating })); // optimistic, same reasoning as decide()
+    send({ type: "feedback", eventId, rating });
+  }
+
+  async function toggleTask(id: string): Promise<void> {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))); // optimistic
+    await fetch(`${CORE_URL}/api/tasks/${id}/toggle`, { method: "POST" }).catch(() => undefined);
+  }
+
+  async function deleteTask(id: string): Promise<void> {
+    setTasks((prev) => prev.filter((t) => t.id !== id)); // optimistic
+    await fetch(`${CORE_URL}/api/tasks/${id}`, { method: "DELETE" }).catch(() => undefined);
+  }
+
+  async function deleteShoppingItem(id: string): Promise<void> {
+    setShoppingItems((prev) => prev.filter((i) => i.id !== id)); // optimistic
+    await fetch(`${CORE_URL}/api/shopping-list/${id}`, { method: "DELETE" }).catch(() => undefined);
   }
 
   return {
@@ -216,7 +301,16 @@ export function useJarvis(): JarvisDashboardState {
     skills,
     errors,
     system,
+    tasks,
+    shoppingItems,
+    metrics,
+    feedback,
     decide,
     refreshSkills,
+    injectUtterance,
+    sendFeedback,
+    toggleTask,
+    deleteTask,
+    deleteShoppingItem,
   };
 }

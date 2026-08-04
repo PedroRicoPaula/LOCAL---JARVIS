@@ -272,12 +272,17 @@ export interface SkillResult {
  * dispatch loop, back to `idle` once that turn is fully handled. */
 export type JarvisState = "idle" | "listening" | "thinking";
 
+export type FeedbackRating = "up" | "down";
+
 export type ServerEvent =
   | { type: "thought"; text: string; lane: Lane; ts: number }
   | { type: "trace"; trace: RouterTrace }
   | { type: "approval.new"; request: ApprovalRequest }
   | { type: "approval.resolved"; requestId: string; state: ApprovalState }
-  | { type: "transcript"; text: string; final: boolean; speaker: "owner" | "jarvis" }
+  /** `eventId` is absent for the owner's own line (nothing to rate) and
+   * present for `jarvis` lines backed by a real `events` row, so the
+   * dashboard can attach a thumbs up/down without a second round trip. */
+  | { type: "transcript"; text: string; final: boolean; speaker: "owner" | "jarvis"; eventId?: string }
   | { type: "state"; value: JarvisState }
   | { type: "speaking"; active: boolean }
   | { type: "camera"; active: boolean }
@@ -285,11 +290,24 @@ export type ServerEvent =
   /** A turn failed. Spoken to the owner too (persona.md) -- this is the
    * dashboard-visible half of the same honesty rule, not a replacement
    * for it. `detail` is a plain message, never a raw stack trace. */
-  | { type: "error"; message: string; detail?: string; ts: number };
+  | { type: "error"; message: string; detail?: string; ts: number }
+  /** Relayed to every tab after a rating lands, same "two tabs stay in
+   * sync" reasoning as approvals -- state lives in `core`, not the tab
+   * that clicked. */
+  | { type: "feedback"; eventId: string; rating: FeedbackRating };
 
 export type ClientEvent =
   | { type: "approval.decide"; response: ApprovalResponse }
-  | { type: "mute"; category: string; muted: boolean };
+  | { type: "mute"; category: string; muted: boolean }
+  /** Dashboard "test console" (SOAK 1): feeds a typed line into the exact
+   * same handling path a real transcribed utterance goes through --
+   * `core` cannot tell the difference, which is the point: real usage
+   * data without needing a working mic every time. */
+  | { type: "utterance.inject"; text: string }
+  /** Rates a `jarvis` response, owner-only judgement (CLAUDE.md § 0.5:
+   * never model-generated). Purely diagnostic -- never gated, never fed
+   * back into `Memory.recall()`. */
+  | { type: "feedback"; eventId: string; rating: FeedbackRating };
 
 // ---------------------------------------------------------------------------
 // Camera — see SPEC.md § 6 and ADR-010
@@ -409,4 +427,51 @@ export interface MealLog {
   /** Frame retained only if the owner approved keeping it. */
   framePath?: string;
   confirmedAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard live-data panels (SOAK 1) — read/write views onto a skill's own
+// `ctx.store` table, built for the two list-shaped skills that have one
+// (`tasks`, `shopping_list`). Deliberately not a generic "any skill's
+// store" API: only two skills have this shape today, and guessing a
+// generic shape for hypothetical future ones is exactly the kind of
+// premature abstraction CLAUDE.md § 0.6 warns against.
+// ---------------------------------------------------------------------------
+
+export interface TaskItem {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: number;
+}
+
+export interface ShoppingItem {
+  id: string;
+  text: string;
+  createdAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard metrics (SOAK 1) — aggregated from `routing_stats` (one row per
+// dispatch decision) and `events`, so the dashboard can show whether real
+// usage is actually working, not just individual turns. See
+// `core/metrics.ts`'s own docstring for why this is a pure, separately
+// testable function over raw rows rather than SQL aggregation.
+// ---------------------------------------------------------------------------
+
+export interface SkillHitRate {
+  skillId: string;
+  intentId: string;
+  count: number;
+}
+
+export interface DashboardMetrics {
+  utterancesToday: number;
+  utterancesThisWeek: number;
+  laneDistribution: Partial<Record<Lane, number>>;
+  skillHitRate: SkillHitRate[];
+  noSkillMatchedCount: number;
+  /** 0..1 of all routing decisions in the window, not just today's. */
+  noSkillMatchedRate: number;
+  totalRoutingDecisions: number;
 }

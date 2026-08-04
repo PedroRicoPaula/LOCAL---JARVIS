@@ -6,15 +6,17 @@
  */
 
 import type { DatabaseSync } from "node:sqlite";
-import type { Fact, MemoryEvent, Observation } from "../../shared/types.ts";
+import type { Fact, FeedbackRating, Lane, MemoryEvent, Observation } from "../../shared/types.ts";
 import { openDb } from "./db.ts";
 import type { Embedder } from "./embeddings.ts";
 import { indexText } from "./embeddings.ts";
 import { appendEvent, getEvent, recentEvents, recentEventsForSession } from "./events.ts";
 import { factsAboveConfidence, getFact, upsertFact } from "./facts.ts";
+import { recentFeedback, setFeedback } from "./feedback.ts";
 import { addObservation, getObservation } from "./observations.ts";
 import type { AssembledContext, RecallOptions } from "./recall.ts";
 import { assembleContext } from "./recall.ts";
+import { recordRoutingStat, routingStatsSince, type RoutingStatRow } from "./routingStats.ts";
 
 export class Memory {
   private readonly db: DatabaseSync;
@@ -81,5 +83,21 @@ export class Memory {
 
   recall(opts: RecallOptions): Promise<AssembledContext> {
     return assembleContext(this.db, this.embedder, opts);
+  }
+
+  setFeedback(eventId: string, rating: FeedbackRating): void {
+    setFeedback(this.db, eventId, rating);
+  }
+
+  recentFeedback(limit: number): Record<string, FeedbackRating> {
+    return recentFeedback(this.db, limit);
+  }
+
+  recordRoutingStat(input: { lane: Lane; skillId: string | null; intentId: string | null; matched: boolean }): void {
+    recordRoutingStat(this.db, input);
+  }
+
+  routingStatsSince(sinceTs: number): RoutingStatRow[] {
+    return routingStatsSince(this.db, sinceTs);
   }
 }
