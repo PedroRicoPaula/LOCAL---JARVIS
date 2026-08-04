@@ -13,4 +13,6 @@ SAY_BIN = os.environ.get("JARVIS_SAY_BIN", "say")
 # internal list — which turned out to be a novelty voice, garbled enough
 # that even a correct STT pipeline couldn't transcribe it. See PROGRESS.md's
 # Phase 1 log. ADR-004: `say` in Phase 1, Piper from Phase 2.
-SAY_VOICE = os.environ.get("JARVIS_SAY_VOICE", "Samantha")
+# Male, British English — owner's choice, post Phase-5-integration live
+# test (see PROGRESS.md). Was "Samantha" (female) through Phases 1-5.
+SAY_VOICE = os.environ.get("JARVIS_SAY_VOICE", "Daniel")

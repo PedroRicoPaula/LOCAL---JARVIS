@@ -923,3 +923,93 @@ incomplete.
   whichever phase (a new one, or folded into an existing one) actually
   makes voice-in-and-out real needs to know this wasn't secretly already
   done.
+
+---
+
+## ADR-020 — core ↔ senses integration, fallback conversation, fact extraction over a graph engine
+
+**Status:** accepted
+
+**Context.** Phase 5's close-out flagged a real gap: no phase's checklist
+ever connected `core` (TypeScript — router, memory, skills, Phases 3-5) to
+the Python voice pipeline (`senses/ears`, `senses/voice`, Phases 1-2).
+`senses/echo_bridge.py` — always documented as a Phase-1-only stand-in —
+was still the only thing sitting between them. The owner asked this be
+resolved before Phase 6, then, after seeing it run live, asked for a voice
+change, a latency investigation, and — the bigger question — whether
+JARVIS should "learn" from conversation over time, floating a graph-based
+memory engine as a possibility to research.
+
+**Decisions.**
+- **`core/main.ts` replaces `senses/echo_bridge.py` outright** (deleted).
+  `senses/ipc.py`'s own docstring named this the plan since Phase 1;
+  `ears`/`voice` are unaware of the difference — they only know "read from
+  my socket" / "write to my socket."
+- **`Conversation`'s real implementation (`conversation/ipc.ts`) is
+  decoupled from any actual `net.Socket`** — takes a plain
+  `sendToVoice(text)` function instead, so its `ask()`/`offerUtterance()`
+  queue-and-timeout logic is unit-tested without a real socket. `core/
+  main.ts` wires the real socket in; that wiring itself is proven live
+  (`make dev` + acoustic loopback), not unit-tested, matching how `senses/
+  ears/main.py`/`senses/voice/main.py` are already treated.
+- **`core/converse.ts` implements the general-conversation fallback
+  docs/SKILLS.md § 3's routing diagram names but Phase 5 never built.**
+  Without it, `no_skill_matched` was a dead end — grounded in
+  `Memory.recall()` (Phase 4, actually exercised in real use for the
+  first time) and voiced through `core/persona.md`, same as any skill.
+- **Declined a graph-based memory engine (Graphiti/Zep-style) for
+  learning-over-time, after researching it at the owner's explicit
+  request.** The production-validated approach (Graphiti, backing Zep)
+  requires Neo4j or FalkorDB running alongside it — "at least three
+  systems to provision, monitor, and maintain" by its own maintainers'
+  framing — plus its own LLM-based extraction pipeline. Real value for
+  multi-hop reasoning over large, densely interconnected, often
+  multi-user datasets (LongMemEval benchmark: Zep/Graphiti 63.8% vs
+  Mem0's 49%, a real gap). Not a good fit for one person's personal facts
+  (dozens to a few hundred, mostly flat — preferences, restrictions,
+  project details) on an already 8GB-constrained machine. Presented as
+  one of three explicit options (simple extraction / graph engine /
+  simple-now-graph-later); owner chose simple extraction onto the
+  existing Phase 4 `facts` table.
+- **`core/factExtraction.ts` runs on every utterance, fire-and-forget,
+  never blocking the spoken response** (CLAUDE.md § 7). Confidence is
+  deliberately conservative — the system prompt requires 0.8+ only for
+  something stated explicitly, and anything the model would score under
+  0.5 is instructed to be omitted entirely rather than included low. A
+  malformed model response or a provider failure both degrade to "nothing
+  learned this turn," never a crash — same "never guessed at" reasoning
+  CLAUDE.md § 0.5 already applies to quantities, extended here to facts
+  inferred from casual speech rather than explicitly declared.
+- **`core/memory/recall.ts`'s semantic search is now bounded
+  (`semanticTimeoutMs`, default 1500ms) and best-effort.** Found live: a
+  real embedding call took 46.6 seconds under real memory pressure on
+  this 8GB machine — confirmed via a raw `curl` to the same endpoint,
+  independent of any of this project's code, and confirmed independent of
+  embedding model size (`all-minilm`, 45MB, was affected too, ruling out
+  "use a smaller model" as the fix). Recall now degrades to recent-turns-
+  and-facts-only (both DB-only, no embedding call) rather than blocking
+  the whole response — the same "even a degraded one" reasoning SPEC.md
+  § 3 already applies to provider fallback, applied here to a single
+  slow dependency instead of a whole failed provider. This does not
+  cancel the underlying embedding request (`Embedder` has no
+  `AbortSignal` in its contract across Phases 3-5); it stops the caller
+  waiting on it, which is what actually mattered for the response.
+- **Voice changed from `Samantha` to `Daniel`** (male, British) —
+  `senses/voice/config.py`'s `SAY_VOICE` default — owner's explicit
+  choice after hearing the first live exchange.
+
+**Consequences.**
+- The system this project has been building toward — voice in, through a
+  real router/memory/skill host, voice out, durably remembered — worked
+  end to end for the first time this session, verified not just by a
+  planned test but by the owner spontaneously talking to it the moment it
+  came online.
+- This machine's 8GB ceiling (ADR-001) is now confirmed to affect more
+  than just the `converse`-lane provider choice — it can throttle a
+  *local* embedding call too, under real concurrent load. Nothing in this
+  ADR changes that ceiling; the timeout-based degradation manages its
+  symptom in the recall path specifically. Closing background
+  applications or a reboot before demanding live sessions remains the
+  owner's own lever, not something further code changes here can fix.
+- `docs/BACKLOG.md`'s IPC-gap entry (added at Phase 5's close-out) is
+  resolved and removed rather than left stale.

@@ -19,18 +19,20 @@ bench:
 	@echo "Run bench_local.py yourself with the models you pulled, e.g.:"
 	@echo "  python3 bench/bench_local.py qwen3:8b phi4"
 
-# Phase 1: ears + voice + the throwaway echo bridge, all three at once.
-# Ctrl+C stops all three (trap kills the whole process group).
+# voice + ears (Python) + core (Node, Phase 5b) all at once. Ctrl+C stops
+# all three (trap kills the whole process group). core replaces the
+# Phase-1-only echo bridge -- ears/voice are unaware of the difference,
+# they only know "read from my socket" / "write to my socket."
 # PYTHONUNBUFFERED: without it, stdout is block-buffered whenever it isn't
 # a TTY (piped to a file, captured by a wrapper) and the startup/connect
 # prints sit invisible in the buffer — bit us once already, see PROGRESS.md.
 dev:
-	@echo 'Starting voice, ears, echo_bridge — say "hey jarvis" or hold Tab. Ctrl+C to stop.'
+	@echo 'Starting voice, ears, core — say "hey jarvis" or hold Tab. Ctrl+C to stop.'
 	@PYTHONUNBUFFERED=1; export PYTHONUNBUFFERED; \
 	trap 'kill 0' EXIT INT TERM; \
 	.venv/bin/python -m senses.voice.main & \
 	.venv/bin/python -m senses.ears.main & \
-	.venv/bin/python -m senses.echo_bridge & \
+	node core/main.ts & \
 	wait
 
 # Phase 2: run `ears` as a background LaunchAgent instead of via `make dev`

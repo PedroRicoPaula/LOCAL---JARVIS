@@ -32,6 +32,16 @@ export interface RecallOptions {
   semanticMaxDistance?: number;
   factConfidenceFloor?: number;
   maxChars?: number;
+  /** Semantic search is best-effort, not required — recent turns and
+   * facts (both DB-only, no embedding call) still make it into the
+   * assembled context even if this times out. Found live, post Phase 5:
+   * on a loaded 8GB machine, `Ollama` embedding calls can occasionally
+   * take tens of seconds (confirmed independent of model size — even the
+   * 45MB `all-minilm` was affected, ruling out "just use a smaller
+   * model" as the fix). Recall must degrade, not block the whole
+   * response, the same "even a degraded one" reasoning SPEC.md § 3
+   * already applies to provider fallback. Default 1500ms. */
+  semanticTimeoutMs?: number;
 }
 
 export interface AssembledContext {
@@ -41,6 +51,11 @@ export interface AssembledContext {
   text: string;
   /** True if anything that would have qualified was left out for space. */
   truncated: boolean;
+  /** True if the embedding call for semantic search didn't return within
+   * `semanticTimeoutMs` — `semanticMatches` is `[]` in that case, not
+   * "genuinely nothing matched." Surfaced rather than hidden, so a
+   * confusingly memory-less reply can be told apart from a slow embed. */
+  semanticTimedOut: boolean;
 }
 
 const DEFAULTS = {
@@ -49,7 +64,22 @@ const DEFAULTS = {
   semanticMaxDistance: 0.5,
   factConfidenceFloor: 0.6,
   maxChars: 8000,
+  semanticTimeoutMs: 1500,
 };
+
+const TIMED_OUT = Symbol("semanticSearch timed out");
+
+/** Races `promise` against a timer. Does NOT cancel `promise` — `Embedder`
+ * has no `AbortSignal` in its contract (Phase 3/4/5 code all assumes a
+ * plain `embed(texts): Promise<number[][]>`), so a slow embed call keeps
+ * running in the background after this gives up waiting on it. That's an
+ * accepted, honest limitation: it stops *blocking the response*, it
+ * doesn't reduce load on Ollama. Real cancellation would mean widening
+ * `Embedder`'s interface across everything that implements or calls it —
+ * not justified yet by a single caller's timeout need. */
+function raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  return Promise.race([promise, new Promise<typeof TIMED_OUT>((resolve) => setTimeout(() => resolve(TIMED_OUT), ms))]);
+}
 
 function renderEvent(e: MemoryEvent): string {
   return `[${e.actor}] ${e.content}`;
@@ -70,10 +100,17 @@ export async function assembleContext(
   const factConfidenceFloor = opts.factConfidenceFloor ?? DEFAULTS.factConfidenceFloor;
   const maxChars = opts.maxChars ?? DEFAULTS.maxChars;
 
+  const semanticTimeoutMs = opts.semanticTimeoutMs ?? DEFAULTS.semanticTimeoutMs;
+
   const recentTurns = recentEventsForSession(db, opts.sessionId, recentTurnsLimit);
   const recentIds = new Set(recentTurns.map((e) => e.id));
 
-  const matches = await semanticSearch(db, embedder, opts.queryText, semanticTopK, semanticMaxDistance);
+  const matchesOrTimeout = await raceTimeout(
+    semanticSearch(db, embedder, opts.queryText, semanticTopK, semanticMaxDistance),
+    semanticTimeoutMs,
+  );
+  const semanticTimedOut = matchesOrTimeout === TIMED_OUT;
+  const matches = semanticTimedOut ? [] : matchesOrTimeout;
   const semanticMatches = matches
     .map((m) => getEvent(db, m.refId))
     .filter((e): e is MemoryEvent => e !== null && !recentIds.has(e.id));
@@ -104,5 +141,6 @@ export async function assembleContext(
     facts,
     text: included.join("\n"),
     truncated,
+    semanticTimedOut,
   };
 }
