@@ -30,11 +30,17 @@ bench:
 # PYTHONUNBUFFERED: without it, stdout is block-buffered whenever it isn't
 # a TTY (piped to a file, captured by a wrapper) and the startup/connect
 # prints sit invisible in the buffer — bit us once already, see PROGRESS.md.
+EARS_PLIST := $(HOME)/Library/LaunchAgents/com.jarvis.ears.plist
+
 dev:
 	@echo 'Starting voice, ears, core, dashboard — say "hey jarvis" or hold Tab.'
 	@echo 'Dashboard: http://localhost:3000 -- Ctrl+C to stop everything.'
+	@if [ -f "$(EARS_PLIST)" ] && launchctl list | grep -q com.jarvis.ears; then \
+		echo 'Unloading the installed ears daemon for this session (same socket as the one below) -- reloaded on exit.'; \
+		launchctl unload "$(EARS_PLIST)"; \
+	fi
 	@PYTHONUNBUFFERED=1; export PYTHONUNBUFFERED; \
-	trap 'kill 0' EXIT INT TERM; \
+	trap '[ -f "$(EARS_PLIST)" ] && launchctl load "$(EARS_PLIST)" 2>/dev/null; kill 0' EXIT INT TERM; \
 	.venv/bin/python -m senses.voice.main & \
 	.venv/bin/python -m senses.ears.main & \
 	node core/main.ts & \

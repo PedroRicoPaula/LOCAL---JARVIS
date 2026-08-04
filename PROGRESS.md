@@ -1669,6 +1669,36 @@ against the real, not-running Music.app. Deliberately skipped a live
 intrusive surprise than needed for this round; unit coverage stands in.
 210 TS tests total, `make check` green end to end.
 
+**Same day, asked to read the real conversation log and check what's
+actually working:** found and fixed four real bugs, none caught by any
+existing test since all four need real phrasing or real speech, not
+fixtures. "Can you open Facebook?" and "what's playing" were both
+falling through to `converse`'s general-reply fallback because
+`launcher`/`media`'s intents only declared `converse` while the lane
+classifier read them as `act`/`reflex`/`see` -- fixed with multi-lane
+manifests (`wardrobe`'s own precedent), except `now_playing`, where a
+prompt-based fix was tried first, found to regress 3 unrelated cases on
+the full lane benchmark (97.8% → 91.1%, confirmed clean), and reverted
+in favor of the same manifest-lane approach. `shopping_list`'s own
+examples used "coffee" in two places, pulling any unrelated
+coffee-mentioning `tasks` request into the wrong skill live ("remind me
+to drink coffee at 9am" → misrouted) -- swapped to "butter." Also fixed
+a small trailing-punctuation cosmetic bug ("Added: X..") found in the
+same log.
+
+The very first bug from this SOAK's first real conversation -- "Ponta
+Delgada, Açores" transcribed as "Ponta del Gada, Zoris" -- got a real
+fix too: `senses/ears` now passes Whisper a vocabulary hint
+(`--prompt` + `--carry-initial-prompt`), tested clean (exact phrase
+correct, diacritic included, English calls before/after unaffected).
+Tried swapping to a multilingual Whisper model first; two different
+synthetic-voice tests came back inconclusive-to-worse, not shipped.
+Full detail, including the prompt-regression lesson, in DECISIONS.md's
+ADR-026.
+
+211 tests, `make check` green, lane benchmark confirmed back at 97.8%
+after the revert (checked twice, clean both times).
+
 ---
 
 ## Key numbers to record as we go
@@ -1731,6 +1761,14 @@ intrusive surprise than needed for this round; unit coverage stands in.
       camera indicator exist and are live. Not built (real scope, not
       asked for this phase); worth a look together once Phase 8 gives
       the camera indicator something to actually show.
+- [ ] STT accuracy on Portuguese proper nouns beyond "Ponta Delgada,
+      Açores" (the one real case seen so far, now fixed via
+      `WHISPER_INITIAL_PROMPT`) is genuinely unverified against your
+      real voice/accent — I can only test with synthetic `say`-generated
+      audio, which turned out unreliable for this specific question (see
+      ADR-026). If another name/word gets mangled in real use, add it to
+      `JARVIS_WHISPER_PROMPT` (or ask me to) rather than assume the one
+      fix generalizes on its own.
 
 ---
 

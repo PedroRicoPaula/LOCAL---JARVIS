@@ -47,7 +47,9 @@ respond with exactly: NONE`;
 
 async function extractName(ctx: SkillContext, system: string, utterance: string): Promise<string | null> {
   const raw = await ctx.router.complete("converse", system, utterance, { maxTokens: 20 }).catch(() => "");
-  const trimmed = raw.trim();
+  // Trailing punctuation on an app name would reach `open -a "X."` --
+  // stripped the same way skills/tasks found it needed live.
+  const trimmed = raw.trim().replace(/[.!?]+$/, "");
   if (!trimmed || trimmed.toUpperCase() === "NONE") return null;
   return trimmed;
 }

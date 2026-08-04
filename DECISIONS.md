@@ -1466,3 +1466,113 @@ capabilities, or one capability that knows how to do more things.
 - Remaining backlog ideas (real macOS Reminders/Calendar instead of
   `tasks`'s private table, the "voice-authored Cursor prompt, owner
   still sends" idea) stay logged, not built -- not asked for this round.
+
+---
+
+## ADR-026 — SOAK 1: real routing bugs found by reading the actual conversation log, and a Whisper vocabulary fix
+
+**Status:** accepted
+
+**Context.** Asked directly to read `data/jarvis.db`'s real conversation
+history and find out what's actually broken, not just what unit tests
+say. It found four real, live bugs across three different layers --
+lane classification, embedding-match example collisions, and STT
+vocabulary -- none of which any existing test caught, because all four
+depend on real phrasing/real speech, not fixture data.
+
+**Decisions.**
+- **`launcher`/`media`'s action intents declare multiple lanes
+  (`converse` + `act`, or `converse` + `act` + `reflex`), not `converse`
+  alone.** Live: "Can you open Facebook?" classified as `act`; "pause
+  the music" and "set the volume to 50" classified as `reflex`; "play
+  music" as `act`. None of these are classifier mistakes exactly --
+  `act`'s own definition ("running commands") and `reflex`'s
+  ("trivial, instant... turning the camera on or off") both genuinely
+  fit "open an app" / "control playback" about as well as `converse`
+  does. Declaring every lane real phrasing lands on (same fix Phase 5's
+  `wardrobe` already used for its own ambiguity) is more robust than
+  trying to argue the classifier into a single "correct" reading of an
+  inherently multi-interpretable request.
+- **A lane-classifier prompt fix was tried for `now_playing` ("what's
+  playing" landing on `see`), then reverted in favor of a manifest-only
+  fix.** The prompt example worked in isolation (confirmed) but
+  regressed three *unrelated* cases on the full 45-case benchmark
+  (97.8% -> 91.1%, confirmed clean, no network noise in that run) --
+  few-shot prompt examples have non-local effects on a shared
+  classifier, discovered directly rather than assumed. Declaring `see`
+  as an *additional* lane on `now_playing` (alongside `converse`) fixes
+  the same routing gap without touching the prompt every other case in
+  the system also depends on. Worth naming as a general lesson: prefer
+  a manifest-lane fix over a shared-prompt fix when the shared prompt
+  isn't obviously, unambiguously wrong.
+- **`shopping_list`'s examples no longer use "coffee."** Both
+  `add_item` ("we're out of coffee") and `remove_item` ("got the
+  coffee") used it, and any real utterance mentioning coffee for an
+  unrelated reason -- live: "remind me to drink coffee at 9am," a
+  `tasks` request -- embedded closer to `shopping_list` than to
+  `tasks`' own matching example, misrouting across skills entirely.
+  Swapped to "butter." Not a coffee-specific problem: whatever word an
+  example uses becomes a magnet for anything else that happens to
+  mention it, worth remembering for future manifests.
+- **Extraction helpers in `tasks`/`shopping_list`/`launcher` now strip
+  trailing punctuation from what the model returns.** Live: "Added:
+  drink coffee at 9am.." (double period) -- the model's extracted text
+  already ends in "." and this project's own `Added: ${text}.` wrapping
+  added a second one. Small, but a real, visible rough edge.
+- **`senses/ears`'s Whisper STT gets a vocabulary hint
+  (`WHISPER_INITIAL_PROMPT`, `--prompt` + `--carry-initial-prompt`), not
+  a model swap.** The original, real bug (first conversation of this
+  SOAK): "Ponta Delgada, Açores" transcribed as "Ponta del Gada, Zoris"
+  by `small.en` (English-only, per ADR-003's deliberate choice for
+  speed). Downloaded and tested the multilingual `small` model side by
+  side first -- results were inconclusive-to-worse across two different
+  synthetic-voice tests (an English voice attempting the Portuguese
+  phrase, and a genuine Portuguese-accented voice reading the whole
+  English sentence, which broke *both* models equally badly via
+  hallucination, a known small-Whisper failure mode on heavily accented
+  input). Not a safe basis to swap the model ADR-003 chose deliberately
+  for measured speed. `--prompt "Ponta Delgada, Açores, Portugal"` (the
+  one place name actually seen live) tested cleanly instead: same
+  model, same speed, the exact phrase transcribed correctly including
+  the diacritic, confirmed unaffected on repeated plain-English calls
+  after it (`--carry-initial-prompt` -- without it, the hint only
+  applies to a whisper-server's first request ever, useless for a
+  long-lived daemon serving many utterances). CLAUDE.md § 0.1 governs
+  the *deliverable* (code, docs, TTS output, wake word) staying
+  English; accurately hearing a real proper noun that has no English
+  spelling isn't "adding Portuguese" to any of those, it's correctly
+  capturing what was actually said. `JARVIS_WHISPER_PROMPT` env-
+  overridable so more names can be added from real use without a code
+  change.
+- **`make dev` now unloads the installed `ears` LaunchAgent
+  automatically at start and reloads it on exit.** Docs/BACKLOG.md
+  already named this socket conflict once (2026-08-04); it recurred a
+  second time in this same session (Pedro's own `make dev` restart hit
+  it) -- a "remember to unload it first" comment clearly wasn't going to
+  stick, so `Makefile`'s `dev` target does it automatically instead,
+  checked via `launchctl list` first so it's a no-op when the daemon
+  isn't installed at all. Verified live: unloads cleanly at start,
+  reloads on `SIGTERM`/Ctrl+C, confirmed via a real `ps`/`launchctl
+  list` check before and after, not just reading the recipe.
+
+**Consequences.**
+- Verified live: "Can you open Facebook?", "what's playing", and
+  "remind me to drink coffee at 9am" all route to the correct skill now
+  (confirmed via the real dispatch pipeline on an isolated instance,
+  not just lane/embedding checks in isolation) -- the first two
+  previously fell through to `converse`'s general-reply fallback, which
+  then either denied a real capability or (for the coffee case) landed
+  in the wrong skill entirely.
+- Lane benchmark holds at 97.8% (`bench/bench_router_lane.ts`) after
+  the revert -- confirmed clean twice, no regression carried forward.
+- 211 tests (up one: a regression test for the trailing-punctuation
+  fix), `make check` green end to end.
+- The multilingual Whisper model (`ggml-small-q5_1.bin`, ~190MB,
+  gitignored like the others) stays on disk -- downloaded, tested,
+  didn't win, but costs nothing to leave in case a future real-voice
+  test (owner-required, not something synthetic TTS can substitute for)
+  says otherwise.
+- STT accuracy on Portuguese proper nouns beyond the one tested is
+  still genuinely unverified against Pedro's real voice/accent --
+  logged as an owner-required check, same category as Phase 1's
+  original word-accuracy waiver.

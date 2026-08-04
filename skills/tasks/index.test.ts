@@ -24,6 +24,19 @@ async function initialized(store: ReturnType<typeof freshStore>) {
   await skill.init!({ store, memory: undefined as never, log: fakeLogger() });
 }
 
+test("strips trailing punctuation the model adds -- found live as 'Added: X..'", async () => {
+  const store = freshStore();
+  await initialized(store);
+  const router = fakeRouter({ completeReturns: "drink coffee at 9am." });
+
+  const result = await skill.handle(
+    { utterance: "remind me to drink coffee at 9am", intent: "add_task", sessionId: "s1" },
+    fakeSkillContext({ store, router }),
+  );
+
+  assert.equal(result.speech, "Added: drink coffee at 9am.");
+});
+
 test("happy path: add, list, complete", async () => {
   const store = freshStore();
   await initialized(store);

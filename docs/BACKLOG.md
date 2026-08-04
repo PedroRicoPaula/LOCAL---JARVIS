@@ -133,11 +133,14 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   the Figma file's own SVG math, background grid + scanline restored,
   live state (idle/listening/thinking/speaking) actually wired end to
   end. See ADR-023.
-- **`make install-daemon`'s `ears` LaunchAgent and `make dev`'s own
-  `senses.ears.main` both bind the same socket if run at the same
-  time** — one silently loses. Hit this directly while testing `make
-  dev` for the SOAK. `make dev`'s own doc comment should say to
-  `make uninstall-daemon` (or `launchctl unload`) first; not yet fixed.
+- ~~`make install-daemon`'s `ears` LaunchAgent and `make dev`'s own
+  `senses.ears.main` both bind the same socket~~ — **fixed 2026-08-04.**
+  Recurred a second time (Pedro's own SOAK session hit it after
+  restarting `make dev`), worth fixing properly rather than a doc-
+  comment reminder: `make dev` now unloads the installed daemon
+  automatically at start (if present) and reloads it on exit (Ctrl+C or
+  normal stop), verified live -- no manual `launchctl` step needed
+  either way anymore.
 - **2026-08-04 — any skill using `ctx.store` in `init()` always failed
   to load (fixed same day).** `core/main.ts` passed `store: undefined as
   never` into `SkillInitContext` because no skill needed one before.

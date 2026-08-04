@@ -25,7 +25,8 @@ interface ItemRow {
 
 async function extractItemText(ctx: SkillContext, utterance: string): Promise<string | null> {
   const raw = await ctx.router.complete("converse", EXTRACT_SYSTEM, utterance, { maxTokens: 40 });
-  const trimmed = raw.trim();
+  // Same trailing-punctuation cosmetic fix as skills/tasks -- found live.
+  const trimmed = raw.trim().replace(/[.!?]+$/, "");
   if (!trimmed || trimmed.toUpperCase() === "NONE") return null;
   return trimmed;
 }

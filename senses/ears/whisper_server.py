@@ -19,6 +19,7 @@ import urllib.request
 from senses.ears.config import (
     LANGUAGE,
     VAD_MODEL,
+    WHISPER_INITIAL_PROMPT,
     WHISPER_MODEL,
     WHISPER_SERVER_BIN,
     WHISPER_SERVER_HOST,
@@ -37,6 +38,14 @@ def start() -> subprocess.Popen:
             "-m", str(WHISPER_MODEL),
             "--vad", "-vm", str(VAD_MODEL),
             "-l", LANGUAGE,
+            # `--carry-initial-prompt`: without it, `--prompt` only biases
+            # the *first* /inference call this server ever handles --
+            # `ears` is a long-lived daemon serving many utterances over
+            # its whole lifetime, so every one needs the vocabulary hint,
+            # not just the first (confirmed against whisper-server's own
+            # --help text, not assumed).
+            "--prompt", WHISPER_INITIAL_PROMPT,
+            "--carry-initial-prompt",
             "--host", WHISPER_SERVER_HOST,
             "--port", str(WHISPER_SERVER_PORT),
         ],

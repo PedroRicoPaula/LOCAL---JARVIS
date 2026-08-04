@@ -27,7 +27,10 @@ interface TaskRow {
 
 async function extractTaskText(ctx: SkillContext, utterance: string): Promise<string | null> {
   const raw = await ctx.router.complete("converse", EXTRACT_SYSTEM, utterance, { maxTokens: 40 });
-  const trimmed = raw.trim();
+  // Trailing punctuation from the model reads oddly once this project's
+  // own "Added: <text>." wraps it again ("Added: drink coffee at 9am..")
+  // -- found live.
+  const trimmed = raw.trim().replace(/[.!?]+$/, "");
   if (!trimmed || trimmed.toUpperCase() === "NONE") return null;
   return trimmed;
 }

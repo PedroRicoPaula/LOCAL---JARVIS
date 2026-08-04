@@ -4,6 +4,17 @@
  * (yellow) for actually opening anything -- every open goes through
  * `ctx.propose` and the owner's approval, executed by
  * `core/executors/shell.ts`.
+ *
+ * `open_app`/`open_project`/`open_url` declare both `converse` and `act`
+ * -- found live: the lane classifier consistently reads "open X" as
+ * `act` ("requires... running commands", which is technically true of
+ * `open -a`), not `converse`, so a `converse`-only intent was
+ * unreachable in practice ("Can you open Facebook?" fell through to
+ * general conversation, which then wrongly denied having this
+ * capability at all). Same fix pattern Phase 5's `wardrobe` already
+ * established for its own lane ambiguity -- declare every lane real
+ * phrasing lands on, don't fight the classifier's reasonable-but-narrow
+ * reading of a single utterance.
  */
 
 import type { SkillManifest } from "../../shared/types.ts";
@@ -25,7 +36,7 @@ export const manifest: SkillManifest = {
         "start Terminal",
         "open Spotify",
       ],
-      lanes: ["converse"],
+      lanes: ["converse", "act"],
     },
     {
       id: "list_projects",
@@ -47,7 +58,7 @@ export const manifest: SkillManifest = {
         "open my Jarvis project",
         "load the Jarvis project",
       ],
-      lanes: ["converse"],
+      lanes: ["converse", "act"],
     },
     {
       id: "open_url",
@@ -59,7 +70,7 @@ export const manifest: SkillManifest = {
         "go to google.com",
         "open the NVIDIA build website",
       ],
-      lanes: ["converse"],
+      lanes: ["converse", "act"],
     },
   ],
 

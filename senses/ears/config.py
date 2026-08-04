@@ -59,6 +59,26 @@ VAD_MODEL = Path(
 )
 LANGUAGE = "en"
 
+# whisper.cpp's `--prompt` biases recognition toward specific vocabulary
+# without changing the model or its language setting -- found live: the
+# owner said "Ponta Delgada, Açores" (a real Portuguese place name) and
+# `small.en` transcribed it as "Ponta del Gada, Zoris." Tried swapping to
+# the multilingual `small` model first (downloaded, tested side by side
+# with synthetic TTS audio); results were inconclusive-to-worse and the
+# whole point of choosing `small.en` (ADR-003) was proven speed/accuracy
+# on English, not worth risking for one class of word. The prompt fix
+# tested cleanly instead: same model, same speed, "Ponta Delgada, Açores"
+# transcribed correctly including the diacritic, English control
+# utterances unaffected. CLAUDE.md § 0.1 governs the deliverable (code,
+# docs, TTS, wake word) staying English -- accurately hearing a proper
+# noun that has no English spelling isn't "adding Portuguese," it's
+# transcribing what was actually said. Add more names here as real
+# conversations surface them; this is a vocabulary hint, not a language
+# switch.
+WHISPER_INITIAL_PROMPT = os.environ.get(
+    "JARVIS_WHISPER_PROMPT", "Ponta Delgada, Açores, Portugal"
+)
+
 # --- Phase 2: wake word --------------------------------------------------
 
 # 80ms frames (1280 samples at 16kHz) is openWakeWord's own recommended
