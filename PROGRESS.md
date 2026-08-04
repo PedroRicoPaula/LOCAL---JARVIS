@@ -853,6 +853,24 @@ happy path first. **Owner chose to close now.**
   tuning, leaning on tiny targeted re-checks (as most of this session
   eventually did) rather than re-running all 45 cases per iteration.
 
+**Post-close hardening, 2026-08-04:** Pedro asked, after seeing an OmniRoute
+(a 290-provider "AI gateway" project) recommendation on social media, for a
+professional read on integrating it as a NIM-quota fallback. Declined —
+duplicates the router this phase just built, makes the destination of
+transcribed speech non-deterministic across 290 unknown ToS, sits a lossy
+compression layer on top of the exact wording the lane classifier was just
+tuned against, and solves a problem a single owner's real usage volume
+essentially never hits. Recommended the JSON-native alternative instead —
+one more deliberately-chosen free provider as a config line in
+`wiring.ts` if real headroom is ever needed — and, ahead of that, actually
+fixing today's root cause: `core/router/concurrencyLimiter.ts`, a second,
+independent throttle alongside `TokenBucket` that caps requests **in
+flight at once** (default 8), wired into `NimProvider` the same way the
+bucket already was. `TokenBucket` alone only limits requests-per-minute;
+today's "Worker local total request limit reached (19/16)" was a
+concurrency ceiling, a different axis entirely, which nothing was
+guarding. 3 new tests (37 router tests total, 57 across both languages).
+
 ---
 
 ## Key numbers to record as we go

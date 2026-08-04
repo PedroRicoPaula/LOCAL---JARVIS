@@ -2,18 +2,24 @@
  * core/router/providers/nim.ts — `free-remote` provider, NVIDIA Build (NIM),
  * OpenAI-compatible at `https://integrate.api.nvidia.com/v1`.
  *
- * Self-throttles to `rpm` (default 30, SPEC.md § 3) via `TokenBucket`,
- * staying under the confirmed ~40 rpm account ceiling (DECISIONS.md
- * ADR-002). A `429` from NIM itself — or the bucket refusing a token before
- * the request is even sent — both map to `ProviderUnavailableError`, which
- * `router.ts` treats as "try the next provider," never a hard error: an
- * owner asking something should never see a rate-limit message, they
- * should just quietly get an answer from whatever's next in the chain.
+ * Two independent throttles, not one: `TokenBucket` self-throttles to `rpm`
+ * (default 30, SPEC.md § 3), staying under the confirmed ~40 rpm account
+ * ceiling (DECISIONS.md ADR-002). `ConcurrencyLimiter` caps requests *in
+ * flight at once* (default 8) — found necessary live in Phase 3, when a
+ * burst of rapid calls during benchmark iteration stayed under 30/min but
+ * still hit NIM's own concurrency ceiling ("Worker local total request
+ * limit reached (19/16)"). A `429`, a concurrency refusal, or the bucket
+ * refusing a token before the request is even sent all map to
+ * `ProviderUnavailableError`, which `router.ts` treats as "try the next
+ * provider," never a hard error: an owner asking something should never
+ * see a rate-limit message, they should just quietly get an answer from
+ * whatever's next in the chain.
  */
 
 import type { ChatChunk, ChatRequest, Lane } from "../../../shared/types.ts";
 import type { ModelProvider, ProviderHealth } from "../provider.ts";
 import { ProviderUnavailableError } from "../provider.ts";
+import { ConcurrencyLimiter } from "../concurrencyLimiter.ts";
 import { TokenBucket } from "../tokenBucket.ts";
 
 export interface NimConfig {
@@ -21,6 +27,11 @@ export interface NimConfig {
   baseUrl?: string;
   models: Partial<Record<Lane, string>>;
   rpm?: number;
+  /** Max requests in flight at once. Default 8 — comfortably under the
+   * account's observed 16-concurrent ceiling, generous for a single-owner
+   * assistant that in real use rarely has more than 1-2 requests overlapping
+   * at all; the headroom is for burst/dev-time safety, not expected load. */
+  maxConcurrent?: number;
   /** Injectable for tests — the SSE-embedded-error bug (see `NimStreamChunk`)
    * shipped once already because nothing could exercise this parsing logic
    * without a real NIM call. Defaults to the global `fetch`. */
@@ -47,6 +58,7 @@ export class NimProvider implements ModelProvider {
   private readonly baseUrl: string;
   private readonly models: Partial<Record<Lane, string>>;
   private readonly bucket: TokenBucket;
+  private readonly concurrency: ConcurrencyLimiter;
   private readonly fetchFn: typeof fetch;
 
   constructor(config: NimConfig, now?: () => number) {
@@ -55,6 +67,7 @@ export class NimProvider implements ModelProvider {
     this.models = config.models;
     this.lanes = Object.keys(config.models) as Lane[];
     this.bucket = new TokenBucket(config.rpm ?? 30, now);
+    this.concurrency = new ConcurrencyLimiter(config.maxConcurrent ?? 8);
     this.fetchFn = config.fetchFn ?? fetch;
   }
 
@@ -65,6 +78,9 @@ export class NimProvider implements ModelProvider {
     }
     if (!this.bucket.tryTake()) {
       throw new ProviderUnavailableError(this.id, "client-side rate limit reached (30 rpm)");
+    }
+    if (!this.concurrency.tryAcquire()) {
+      throw new ProviderUnavailableError(this.id, "too many requests in flight");
     }
 
     const controller = new AbortController();
@@ -90,15 +106,18 @@ export class NimProvider implements ModelProvider {
       });
     } catch (cause) {
       clearTimeout(timeout);
+      this.concurrency.release();
       throw new ProviderUnavailableError(this.id, "connection failed", cause);
     }
 
     if (response.status === 429) {
       clearTimeout(timeout);
+      this.concurrency.release();
       throw new ProviderUnavailableError(this.id, "HTTP 429 (rate limited by NIM)");
     }
     if (!response.ok || !response.body) {
       clearTimeout(timeout);
+      this.concurrency.release();
       throw new ProviderUnavailableError(this.id, `HTTP ${response.status}`);
     }
 
@@ -123,6 +142,7 @@ export class NimProvider implements ModelProvider {
       throw new ProviderUnavailableError(this.id, "stream failed", cause);
     } finally {
       clearTimeout(timeout);
+      this.concurrency.release();
     }
   }
 

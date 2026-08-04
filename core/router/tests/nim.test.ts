@@ -84,6 +84,34 @@ test("client-side bucket exhaustion refuses before any request is sent", async (
   assert.equal(fetchCalls, 1);
 });
 
+test("refuses once maxConcurrent requests are in flight, then accepts again after one completes", async () => {
+  // Two overlapping in-flight requests via a fetchFn that doesn't resolve
+  // until we release it, so we can observe the limiter mid-flight.
+  const releasers: (() => void)[] = [];
+  const provider = new NimProvider({
+    apiKey: "k",
+    models: { converse: "m" },
+    maxConcurrent: 1,
+    fetchFn: () =>
+      new Promise<Response>((resolve) => {
+        releasers.push(() =>
+          resolve(sseResponse('data: {"choices":[{"delta":{"content":"x"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')),
+        );
+      }),
+  });
+
+  const first = drain(provider.chat(REQ)); // holds the one concurrency slot
+
+  await assert.rejects(() => drain(provider.chat(REQ)), ProviderUnavailableError);
+
+  releasers[0]!();
+  await first; // slot freed once the first call completes
+
+  const third = drain(provider.chat(REQ));
+  releasers[1]!();
+  await third; // slot available again
+});
+
 test("no model configured for the lane refuses without calling fetch", async () => {
   let called = false;
   const provider = new NimProvider({

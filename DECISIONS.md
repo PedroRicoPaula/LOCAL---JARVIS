@@ -734,3 +734,25 @@ catch two real bugs no fake could have.
   no bundler, no new runtime dependency — `node --test` runs `.ts` files
   directly on this Node version (22.22), matching the Python side's own
   "no unnecessary tooling" precedent.
+
+**Update (post-close, 2026-08-04): `ConcurrencyLimiter` added, declined
+OmniRoute.** Owner asked about integrating OmniRoute (a 290-provider "AI
+gateway" project surfaced on social media) as a NIM-quota fallback.
+Declined: it duplicates this ADR's own router, makes the destination of
+transcribed speech non-deterministic across dozens of unaudited providers'
+ToS (a real regression from the already-accepted NIM-specific tradeoff in
+ADR-001), and its prompt-compression pipeline sits directly on top of the
+exact wording this phase spent several rounds tuning. It would also solve a
+problem real single-owner usage essentially never hits — the account strain
+this phase saw came from ~120 benchmark calls in under 20 minutes, not from
+anything resembling normal use.
+
+The actual root cause was real and worth fixing: `TokenBucket` limits
+requests *per minute*; "Worker local total request limit reached (19/16)"
+is a concurrency ceiling, a different axis it never guarded. Added
+`core/router/concurrencyLimiter.ts` — a second, independent, non-blocking
+throttle (default max 8 in flight) wired into `NimProvider` alongside the
+bucket. If real future headroom is ever needed beyond this, the
+JARVIS-native path is one more deliberately-chosen, auditable free
+provider as a config line in `wiring.ts` — exactly what the registry
+architecture (ADR-008) exists to make cheap — not a black-box aggregator.
