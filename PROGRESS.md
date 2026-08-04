@@ -580,8 +580,14 @@ voz"). Not a closed question, a deferred one.
   25 frames (2.0s) and made both it and `MAX_RECORDING_FRAMES` (200 frames
   / 16s, kept proportionally above it) env-overridable
   (`JARVIS_SILENCE_FRAMES_TO_STOP`, `JARVIS_MAX_RECORDING_FRAMES`) so
-  further tuning doesn't need a code change. Not yet re-verified live —
-  needs a fourth round on long, natural-paced sentences.
+  further tuning doesn't need a code change.
+- **Fourth live round: the 2.0s silence fix confirmed working** — three
+  multi-clause test sentences (commas, natural pauses) came through
+  complete, no premature cutoff. But long (~40-word, ~16s at natural pace)
+  sentences hit the next ceiling: `MAX_RECORDING_FRAMES` at 200 (16s) was
+  cutting them right near the end — same sentence, cut in roughly the same
+  place on repeated attempts, a hard ceiling rather than randomness.
+  Raised to 400 (32s). Not yet re-verified live.
 
 ---
 

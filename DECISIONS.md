@@ -525,6 +525,14 @@ only which library to call.
   than a threshold being too tight. This is exactly the kind of value
   ADR-005 already flagged as needing real-voice tuning rather than a
   static guess; env vars exist so it can keep moving without a redeploy.
+- **`MAX_RECORDING_FRAMES` raised again, 200 (16s) → 400 (32s).** Fourth
+  live round confirmed the 2.0s silence fix works (multi-clause sentences
+  with natural pauses now come through complete), but longer (~40-word)
+  test sentences were hitting this cap instead — cut in roughly the same
+  place on repeated attempts of the same sentence, not randomly, pointing
+  at the hard ceiling rather than a silence-detection issue. 32s is
+  generous headroom for a genuinely long command while still bounding a
+  stuck-mic worst case.
 
 **Consequences.**
 - `senses/ears/audio_capture.py`'s `ContinuousAudioSource` is meaningfully

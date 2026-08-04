@@ -89,12 +89,19 @@ WAKE_WORD_MAX_FRAMES_ABOVE = 20
 # SILENCE_FRAMES_TO_STOP started at 10 (800ms) and cut Pedro off mid-
 # sentence on ordinary thinking/breath pauses in natural (non-scripted,
 # non-native-English-cadence) speech — confirmed live, see PROGRESS.md's
-# Phase 2 log. Raised to 25 (2.0s); MAX_RECORDING_FRAMES raised to keep the
-# same margin above it. Both env-overridable so this can be tuned further
-# from real use without a code change.
+# Phase 2 log. Raised to 25 (2.0s), confirmed fixed against sentences with
+# several internal pauses/commas. Both env-overridable so this can be
+# tuned further from real use without a code change.
+#
+# MAX_RECORDING_FRAMES started at 100 (8s), then 200 (16s) — still too
+# tight: ~40-word test sentences (~16s at natural pace) were hitting the
+# cap and getting cut right near the end, confirmed live (same long
+# sentence, cut in roughly the same place on repeated attempts — not
+# random, a hard ceiling). Raised to 400 (32s), generous headroom for a
+# genuinely long command while still bounding a stuck-mic worst case.
 MIN_SPEECH_FRAMES = 4
 SILENCE_FRAMES_TO_STOP = int(os.environ.get("JARVIS_SILENCE_FRAMES_TO_STOP", "25"))
-MAX_RECORDING_FRAMES = int(os.environ.get("JARVIS_MAX_RECORDING_FRAMES", "200"))
+MAX_RECORDING_FRAMES = int(os.environ.get("JARVIS_MAX_RECORDING_FRAMES", "400"))
 SILENCE_RMS_THRESHOLD = float(os.environ.get("JARVIS_SILENCE_RMS_THRESHOLD", "150"))
 
 # Reflex-lane ack (SPEC.md § 3: <300ms budget) — a system sound, not `say`;
