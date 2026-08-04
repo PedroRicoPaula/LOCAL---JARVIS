@@ -101,7 +101,12 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   sandboxed, reviewed pipeline where generated code goes through the
   same capability/gate model everything else does, not raw model output
   running unsupervised. Genuinely hard, genuinely later.
-- Additional providers: Groq, Gemini, OpenRouter, Cerebras
+- ~~Additional providers: Groq, Gemini, OpenRouter, Cerebras~~ — **built
+  2026-08-04**, three of four (`groq`, `google`/Gemini, `openrouter`;
+  Cerebras tested and left out, no usable free quota) plus a bonus
+  fourth the owner also provided (`mistral`), all live-verified with
+  real keys and wired into `converse`/`reason`'s fallback chain ahead
+  of `ollama`. See ADR-031.
 - `livekit-wakeword` if openWakeWord tuning proves unreliable
 - Piper voice cloning for a custom JARVIS voice
 - Smart glasses (camera-equipped) as a future JARVIS embodiment — owner is

@@ -66,6 +66,29 @@ profile:
 security add-generic-password -a "$USER" -s jarvis-nim-key -w 'nvapi-...'
 ```
 
+**3b. Optional: free-tier fallback keys (Groq, Mistral, Google AI Studio, OpenRouter)**
+
+Added 2026-08-04 (SOAK 1, ADR-031) -- `nim` stays primary, but `core/router/
+wiring.ts` now also falls through to these four before ever touching local
+`ollama`, in this order (fastest/most reliable first, measured live, not
+assumed): `groq` → `mistral` → `google` → `openrouter`. Every one is
+optional -- `core` starts and runs fine with only `jarvis-nim-key`
+configured, each missing key just shortens the fallback chain by one.
+Sign up free at `console.groq.com`, `console.mistral.ai`,
+`aistudio.google.com`, and `openrouter.ai`, then:
+
+```bash
+security add-generic-password -a "$USER" -s jarvis-groq-key -w 'gsk_...'
+security add-generic-password -a "$USER" -s jarvis-mistral-key -w '...'
+security add-generic-password -a "$USER" -s jarvis-google-key -w '...'
+security add-generic-password -a "$USER" -s jarvis-openrouter-key -w 'sk-or-...'
+```
+
+Cerebras was tested the same day and left out on purpose: the key
+authenticates but the account has no usable free quota (HTTP 402 on every
+model). No `CerebrasProvider` exists in this codebase for that reason --
+see ADR-031.
+
 **4. Run both checks**
 
 ```bash
