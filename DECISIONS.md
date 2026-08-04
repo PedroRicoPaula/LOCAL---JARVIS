@@ -756,3 +756,85 @@ bucket. If real future headroom is ever needed beyond this, the
 JARVIS-native path is one more deliberately-chosen, auditable free
 provider as a config line in `wiring.ts` — exactly what the registry
 architecture (ADR-008) exists to make cheap — not a black-box aggregator.
+
+---
+
+## ADR-018 — Phase 4 memory: node:sqlite + sqlite-vec, schema deviations, cap design
+
+**Status:** accepted
+
+**Context.** `SPEC.md` § 4 specifies the schema (`events`/`facts`/
+`observations`/`memory_vec`), a recall policy (recent turns + semantic
+matches + high-confidence facts, capped), and that `events` must be
+genuinely append-only. Building it meant choosing an actual SQLite binding
+and reconciling two of the schema's literal numbers with what Phase 3 had
+already put in place.
+
+**Decisions.**
+- **`node:sqlite` (built into Node 22, Experimental) over `better-sqlite3`
+  (a compiled native addon).** Smaller supply-chain surface — no native
+  compile step, no prebuilt-binary-per-platform story beyond what
+  `sqlite-vec` itself ships — matching CLAUDE.md § 3's "maintainable by one
+  person" bias toward fewer moving parts. Experimental status is a real,
+  deliberately accepted risk: this is a local, single-writer file database
+  for one owner, not a concurrent multi-user service, so API churn is cheap
+  to absorb. `better-sqlite3` is the documented fallback if it ever isn't.
+- **`sqlite-vec` (the official npm package, prebuilt per-platform binaries,
+  no compilation) for the vector index**, loaded via `node:sqlite`'s
+  `DatabaseSync`'s `allowExtension`/`loadExtension` support. Confirmed live
+  before writing real code against it: extension loads, `vec0` virtual
+  table creates, insert/search round-trips.
+- **`events` is append-only via two `BEFORE UPDATE`/`BEFORE DELETE`
+  triggers that `RAISE(ABORT, ...)`**, not application-level convention.
+  Confirmed live that both raise catchable errors from `node:sqlite`, not
+  silent no-ops.
+- **`memory_vec`'s embedding dimension is 1024, not `SPEC.md` § 4's literal
+  `float[768]`.** That number assumed `nomic-embed-text`; Phase 3 already
+  pulled and wired `mxbai-embed-large` (1024-dim, generally the stronger
+  model on public benchmarks) as the `ollama` provider's embed model.
+  Adjusted the schema to the model already in use rather than switching
+  models to match an illustrative schema number.
+- **`memory_vec` uses `distance_metric=cosine`, not `sqlite-vec`'s default
+  L2/euclidean.** `SPEC.md` § 4 asks for a "similarity floor" on semantic
+  matches; cosine distance is bounded (0 identical, 1 orthogonal, ~2
+  opposite) and a threshold on it reads directly as a similarity floor. L2
+  has no natural bound to floor against. Confirmed `distance_metric=cosine`
+  is a real, working `sqlite-vec` column option before relying on it.
+- **Facts are recalled by confidence threshold only in this phase — not
+  indexed into `memory_vec` for semantic search.** `SPEC.md` § 4's recall
+  policy step 3 doesn't ask for semantic fact matching, only step 2
+  (events) does. Not building fact-embedding ahead of an actual need
+  (CLAUDE.md § 0.6).
+- **The recall cap is character-based, not a real tokenizer count.** A
+  tokenizer is a dependency for a number that only needs to be a
+  reasonable, consistent budget, not a billing-accurate one — documented
+  as an approximation in `recall.ts`, not implied to be more precise than
+  it is. Pieces that don't fit are skipped whole, never truncated
+  mid-text, in SPEC.md § 4's own priority order (recent turns always
+  first, then semantic matches, then facts) — simpler to reason about and
+  to test "never exceeds the cap" against exactly.
+- **The literal "three facts told across three sessions" DoD line is
+  proven as a mechanism, not yet as the owner's real experience.**
+  Nothing can *tell* `Memory` something by voice until Phase 5 gives it a
+  skill to talk through — this phase owns storage/recall, not the
+  conversational path into it. `memory.test.ts` proves the storage/recall
+  mechanism directly (three facts via `upsertFact()` across three
+  simulated sessions, recalled via `factsAboveConfidence()` in a fourth).
+  Flagged as exactly that, not claimed as the full owner-facing scenario.
+
+**Consequences.**
+- Recall latency measured at **12.43ms p95** (median 11.96ms) over 10k
+  synthetic events — comfortably under the 200ms bar, `bench/
+  bench_recall_p95.ts`. Synthetic here means random embeddings inserted
+  directly, not 10k real Ollama embedding calls; that cost lives in the
+  `ollama` provider (Phase 3) and isn't what this number is measuring.
+- Two runtime-only bugs surfaced by actually running the code, not by
+  `tsc --noEmit`: `sqlite-vec` needs a JSON-array string for vector
+  parameters, not a raw `ArrayBuffer` blob (a confusing "JSON array
+  parsing error" otherwise); and `sqlite-vec`'s package is a default
+  export only under CommonJS `require()` — `import sqliteVec from
+  "sqlite-vec"` type-checks fine under `esModuleInterop` but fails at
+  runtime under real ESM, only `import { load } from "sqlite-vec"` works.
+  Both a reminder that a clean `tsc --noEmit` on a new dependency's import
+  shape doesn't guarantee it actually runs — worth one real execution
+  before trusting it.
