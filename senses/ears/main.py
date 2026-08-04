@@ -11,6 +11,7 @@ docs/ARCHITECTURE.md § 7.
 
 from __future__ import annotations
 
+import signal
 import socket
 import threading
 import time
@@ -178,7 +179,18 @@ def accept_loop(socket_server: socket.socket, holder: ConnectionHolder) -> None:
         holder.set(conn)
 
 
+def _on_sigterm(signum: int, frame: object) -> None:
+    """launchd sends SIGTERM on stop/unload, and Python's default SIGTERM
+    disposition kills the process immediately without unwinding — so the
+    `finally: whisper_server.stop(...)` below would never run, leaking the
+    whisper-server child on every daemon restart. Routing it through the
+    same KeyboardInterrupt path Ctrl+C already uses keeps cleanup in one
+    place instead of duplicating it in a signal handler."""
+    raise KeyboardInterrupt
+
+
 def main() -> None:
+    signal.signal(signal.SIGTERM, _on_sigterm)
     print("ears: starting whisper-server (model load takes a few seconds)...")
     server_process = whisper_server.start()
     try:

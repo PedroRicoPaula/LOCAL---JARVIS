@@ -419,6 +419,22 @@ voz"). Not a closed question, a deferred one.
   wake-word falling-edge + safety-cap triggering, non-speech marker
   filtering. `make check` green throughout.
 
+- **SIGTERM killed the daemon without cleaning up its whisper-server
+  child.** Found stopping the 4-hour test run: `kill <pid>` sends SIGTERM,
+  whose default Python disposition terminates the process immediately —
+  it does not unwind the stack, so `main()`'s `finally:
+  whisper_server.stop(server_process)` never ran. Ctrl+C (SIGINT) was
+  always fine because Python turns that into a `KeyboardInterrupt` the
+  `try/finally` catches; SIGTERM gets no such treatment by default. This
+  would have leaked a whisper-server process every time `launchd` restarts
+  `ears` (`KeepAlive`, or any `launchctl stop`/`unload`) — exactly the
+  daemon lifecycle the reboot DoD test exercises. Fixed with a SIGTERM
+  handler in `main.py` that raises `KeyboardInterrupt`, routing both
+  signals through the one cleanup path instead of duplicating it.
+  Reproduced and verified fixed: started the daemon, sent SIGTERM, checked
+  `ps` — before the fix `whisper-server` was left running; after, both
+  processes exit together.
+
 **Decided:**
 - ADR-015: ONNX over tflite for openWakeWord; real-time audio callback
   does nothing but enqueue (see "Surprised me" — this fixes a real bug,
@@ -426,24 +442,31 @@ voz"). Not a closed question, a deferred one.
   pipeline; system sound + notification for the reflex ack, not `say`;
   `LaunchAgent` not `LaunchDaemon`.
 
+**Automated, results in:**
+- 4-hour unattended background run (2026-08-03 20:52–00:52 local,
+  `senses.ears.main` standalone, logged to
+  `data/logs/false_activation_run.log`): **1 false activation**
+  (21:51:28, score=0.565 — just over the 0.5 threshold), no errors. Under
+  the <2 bar. Room was in normal use, not empty — that one activation may
+  have been actual speech containing something acoustically close to
+  "hey jarvis," not a pure false positive; not investigated further since
+  it's already within budget.
+- 30-activation smoke test, synthetic proxy (`say -v Samantha "Hey
+  Jarvis"`, 5s apart, logged to
+  `data/logs/synthetic_activation_test.log`): **30/30 detected**, scores
+  0.998–1.000. This is NOT the official DoD number — clean TTS through a
+  speaker at close range is closest to a best-case SNR, not representative
+  of Pedro's real voice at ~2m with room noise, and `hey_jarvis` was
+  trained on real speech. It does confirm the detection→capture→transcribe
+  pipeline is mechanically reliable end-to-end with zero misses under easy
+  conditions. **Still needs Pedro:** 30 deliberate activations at ~2m with
+  his real voice for the actual ≥90% number, which also doubles as the
+  threshold-tuning session (`WAKE_WORD_THRESHOLD` in
+  `senses/ears/config.py`, currently the untuned default 0.5 — untouched
+  since both real tests above stayed inside budget without needing to).
+
 **Left over — needs Pedro, not automatable:**
-- Threshold tuning against his own voice/mic/room (`WAKE_WORD_THRESHOLD`
-  in `senses/ears/config.py`, currently the untuned default 0.5). ADR-005
-  already budgeted "half a day" for this.
-- 30 deliberate activations at ~2m for the ≥90% detection DoD number.
-  Pedro's own voice is the real number; I can run a synthetic `say`-voice
-  proxy as a smoke test but openWakeWord's `hey_jarvis` was trained on
-  real speech, so a TTS pass/fail rate isn't the official one.
-- A 4-hour unattended background run for the <2 false-activations
-  number — **started** 2026-08-03 20:52 local, `senses.ears.main` running
-  standalone (not via `make dev`), logging to
-  `data/logs/false_activation_run.log` with a timestamp per line. A
-  background timer stops it and appends an end marker after 4h; a Monitor
-  watches the log for `wake word detected` / `4h run ended` lines. Count
-  the `wake word detected` lines in that window against the <2 bar once
-  it ends — anyone in the room who actually said "hey jarvis" during the
-  window is a real activation, not false, and should be excluded by
-  timestamp if that happens.
+- 30 deliberate activations at ~2m, his real voice — see above.
 - `make install-daemon`, then an actual reboot, for "survives reboot
   without manual intervention." The loaded daemon will almost certainly
   need Microphone/Accessibility/Input Monitoring granted again — confirmed

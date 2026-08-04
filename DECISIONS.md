@@ -484,6 +484,19 @@ only which library to call.
   grant target) and has never been granted anything before. Expected, not a
   bug; flagged plainly rather than left for Pedro to discover blind — see
   `PROGRESS.md`'s Open Questions.
+- **`main()` installs a SIGTERM handler that raises `KeyboardInterrupt`,
+  reusing the existing shutdown path instead of a second one.** Found
+  running the 4-hour false-activation test: `kill <pid>` (SIGTERM) killed
+  `ears` but left `whisper-server` orphaned, because Python's default
+  SIGTERM disposition terminates immediately without unwinding the stack —
+  the `try/finally` that stops `whisper-server` only ever ran for Ctrl+C
+  (SIGINT), which Python does convert into a catchable
+  `KeyboardInterrupt`. This matters beyond a stray process during manual
+  testing: `launchd` sends SIGTERM on every `KeepAlive` restart and on
+  `launchctl stop`/`unload`, so the unpatched daemon would have leaked a
+  `whisper-server` process on every single restart cycle — directly in the
+  path of the reboot DoD test. Verified fixed by starting the daemon,
+  sending SIGTERM, and checking `ps`: both processes now exit together.
 
 **Consequences.**
 - `senses/ears/audio_capture.py`'s `ContinuousAudioSource` is meaningfully
