@@ -7,20 +7,11 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 4 — Memory — **built, all DoD checks self-run PASS, not yet merged**
-**Status:** `core/memory/` — SQLite schema (`events`/`facts`/`observations`/
-`memory_vec`), an enforcing append-only trigger on `events`, semantic
-recall via `sqlite-vec`, and a hard-capped context assembler. All four DoD
-numbers measured: `UPDATE events` raises (PASS), recall p95 over 10k
-synthetic events is **12.43ms** (bar: <200ms, PASS), assembled context
-never exceeds its cap (PASS, tested), and the "three facts across three
-sessions, recalled in a fourth" scenario passes as a mechanism-level test
-(no skill exists yet to actually *tell* it something by voice — that's
-Phase 5). 26 new TS tests, zero network, zero models loaded. See the
-Phase 4 log below for two real deviations from `SPEC.md` § 4's literal
-schema (embedding dimension, distance metric) and the `node:sqlite`
-choice.
-**Branch:** `phase/04-memory`
+**Phase:** 5 — Skill host + `brief` — **starting**
+**Status:** Phase 4 (Memory) closed and merged to `main` — all four DoD
+numbers PASS, see Phase 4 log below. Phase 5 is the architectural
+keystone (`docs/SKILLS.md`) — building now.
+**Branch:** `phase/05-skills`
 **Last updated:** 2026-08-04
 
 (Phase 3 complete and merged to `main`; Phase 1 complete — see Phase log below for the full record and what was
