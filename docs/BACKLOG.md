@@ -154,6 +154,31 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   number. Fixed with a new few-shot example in `laneClassifier.ts`.
   Lane accuracy went 93.3% → 97.8% on the full 45-case benchmark (no
   regression, the fix generalized). See ADR-024.
+- **Thought Stream / Error Log didn't backfill on a fresh dashboard
+  tab (fixed 2026-08-04)** — same class of gap as the Transcript
+  backfill fix (ADR-023), never generalized to these two panels. New
+  `core/dashboardHistory.ts` ring buffer + `/api/thoughts`/`/api/errors`.
+  See ADR-028.
+- **Open, needs real design work — the `qwen2.5:0.5b` local fallback is
+  not reliable for lane classification, only benchmarked/accepted for
+  conversation quality (ADR-001).** Live-reproduced 2026-08-04 during a
+  NIM outage (confirmed via direct `curl` timeout): with every
+  `converse`-lane call forced onto the tiny fallback, lane
+  classification itself frequently misfired to `see` for plainly
+  non-visual utterances ("add butter to the shopping list", "Can you
+  open Facebook?"), so `dispatch` filtered out the correct skill before
+  scoring ever ran. Very likely the real explanation behind several of
+  the owner's own live routing failures beyond what ADR-026 already
+  fixed. Candidate fixes, none built yet: a non-LLM heuristic fallback
+  for lane classification specifically (rules-based, same spirit as the
+  `reflex` lane's own `RulesProvider`), retry/backoff before falling
+  back to the tiny model, or benchmarking whether a slightly larger
+  local model is viable now vs. when ADR-001 last checked. See ADR-028.
+  Related: the same tiny-model conditions also made
+  `core/factExtraction.ts` produce mostly garbage facts (5 of 6 in one
+  live run) — safely caught by ADR-027's gate fix, not a new gap, but
+  worth knowing the approval queue may see a burst of nonsense during
+  any future NIM outage.
 
 _(add as you find them — this section is the most valuable one)_
 

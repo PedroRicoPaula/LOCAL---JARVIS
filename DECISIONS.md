@@ -1652,3 +1652,99 @@ exactly this.
   volume becomes annoying during the rest of the soak, in which case
   the extraction prompt (not the gate) is what needs tightening
   further.
+
+## ADR-028 — SOAK 1: Playwright dashboard verification, Thought Stream / Error Log backfill fix, and a live-reproduced lane-classifier reliability gap under NIM outage
+
+**Status:** accepted
+
+**Context.** Asked directly to test more rigorously and verify, with
+Playwright, that the dashboard actually shows everything the project
+has discussed building -- not a spot check, a genuine pass "as if you
+were me [the owner]." Built a fresh isolated instance (scripted fake
+`ears` feeding real reported phrasing plus enough variety to touch all
+8 loaded skills, a scratch DB, `core` and `ui` on scratch ports) and
+drove the real running dashboard with Playwright: transcript, skill
+health, approval queue, approve/reject round-trip (verified against
+`audit_log`, not just the UI removing a row), system status, Orb,
+console errors.
+
+**Finding 1 — Thought Stream and Error Log never backfilled.** A fresh
+tab showed "No routing activity yet." and an empty error log even
+seconds after real routing decisions and a real error had already
+happened server-side. `core/ws.ts`'s own docstring already names the
+reason: the live WS channel is push-only, no replay -- a fresh tab
+needs a REST snapshot first. That snapshot existed for Transcript
+(ADR-023), Approvals, and Events, but was never built for these two
+panels when they were added, so they silently only ever showed
+"since this tab opened."
+
+**Decision 1.** New `core/dashboardHistory.ts`: a small in-process ring
+buffer (50 thoughts, 20 errors -- the same caps `use-jarvis.ts` already
+applies client-side to live events), populated at the same two call
+sites in `core/main.ts` that already broadcast these over WS. Two new
+read-only endpoints, `GET /api/thoughts` / `GET /api/errors`
+(`core/http.ts`). `use-jarvis.ts` fetches both on mount and seeds
+`thoughts`/`errors` state, same pattern as transcript/approvals.
+Deliberately **not** stored in the `events` table `Memory.recall()`
+reads from -- routing telemetry and error text are not conversation,
+and ADR-026/ADR-027 already show a weak fallback model copying
+recalled text verbatim into what it says out loud; keeping this buffer
+isolated from recall closes that risk off entirely rather than trusting
+prompt wording to avoid it. Verified live: reloaded the tab after real
+activity, both panels populated immediately.
+
+**Finding 2 — a real, live-reproduced reliability gap, not fixed this
+session.** While running the Playwright pass, a direct `curl` to the
+NIM endpoint timed out at 10s -- NIM was genuinely unreachable, the
+same failure the owner's own pasted transcript showed for "Can you
+open Facebook?" (not a one-off; ADR-026 already flagged this as worth
+investigating further). With NIM down, every `converse`-lane call --
+including lane classification itself, which runs on the `converse`
+lane (`laneClassifier.ts`) -- fell through to the local `qwen2.5:0.5b`
+fallback (ADR-001's accepted "degraded but functional" fallback).
+Live evidence this session: that fallback frequently misclassified
+plainly non-visual utterances ("add butter to the shopping list",
+"Can you open Facebook?") as lane `see`, so `dispatch` filtered out
+the correct skill before scoring ever ran -- not a low-confidence
+miss, a wrong-lane miss. The same fallback also echoed raw
+recalled-memory text (formatted `[owner] ...\n[jarvis] ...`) verbatim
+as a spoken answer on one turn, and fact extraction on it produced
+mostly garbage (5 of 6 extracted facts nonsense, including literally
+extracting the extraction prompt's own placeholder syntax
+`project.<name>.status` as if it were a real key) -- all safely caught
+as pending approvals rather than corrupting memory, which is direct
+live confirmation that ADR-027's gate fix holds up under exactly the
+failure mode it exists for.
+
+**Decision 2 — not fixed, logged instead.** The root cause here is
+NIM availability plus this machine's own demonstrated resource
+pressure (98% RAM / 100% CPU with the full stack running, previously
+documented in Phase 5b and again in ADR-026), not a bug in any single
+file. `qwen2.5:0.5b` was accepted (ADR-001) as an honest degraded
+fallback for *conversation quality* -- nobody had separately verified
+it for *lane classification accuracy*, and live evidence now says it
+is not reliable at that specific task. Candidate real fixes (a
+non-LLM heuristic fallback for lane classification, retry/backoff
+before falling back, a slightly larger but still-viable local model)
+are each a real design question, not a same-session patch -- logged
+in `docs/BACKLOG.md` rather than guessed at under time pressure.
+
+**Consequences.**
+- Two real dashboard gaps closed and verified live: Thought Stream and
+  Error Log now show real history on a fresh tab, not just live
+  events. `npx tsc --noEmit` clean in both `core` and `ui`, `make
+  check` green, 213 tests (no new test file for `dashboardHistory.ts`
+  -- a plain ring buffer, exercised live via the Playwright pass; add
+  unit coverage if it grows any real logic).
+- Approve/reject confirmed correct end-to-end against `audit_log`
+  during this pass (the Playwright script's own first check of
+  "approved" state came back empty because `Gate.decide()` advances
+  a `MEMORY_WRITE` approval straight through to `executed` -- a false
+  negative in the test script, not a bug in the app; confirmed by
+  reading `audit_log` directly).
+- The lane-classifier-under-fallback finding is real, reproduced, and
+  currently open -- likely explains several of the routing failures in
+  the owner's own pasted transcript beyond the two ADR-026 already
+  fixed. Not treated as urgent-and-silent: written up here and in
+  `docs/BACKLOG.md` so it doesn't need rediscovering the hard way
+  again, per CLAUDE.md § 0.7.

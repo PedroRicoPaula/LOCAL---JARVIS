@@ -1699,6 +1699,73 @@ ADR-026.
 211 tests, `make check` green, lane benchmark confirmed back at 97.8%
 after the revert (checked twice, clean both times).
 
+**Same day, the actual root cause behind the "weather: tomorrow's
+weather" bug reported above:** `core/factExtraction.ts` wrote extracted
+facts straight to `memory.upsertFact()` with zero review, a gap that
+predated Phase 6's gate (built in Phase 5b) and was never closed even
+after the gate existed. Fixed: `extractAndRememberFacts` now proposes
+each fact to the gate (`MEMORY_WRITE`) instead of writing directly; the
+extraction prompt gained three counter-examples for the failure patterns
+actually observed (a request to the assistant, a task/reminder, and the
+topic of a question, none of which are facts about the owner); all 23
+existing facts deleted from the real DB rather than curated, since none
+were ever reviewed in the first place. 213 tests, `make check` green.
+Full detail in DECISIONS.md's ADR-027.
+
+**Same day, asked to test more rigorously and verify the dashboard shows
+everything with Playwright, "as if you were me":** ran a fresh isolated
+`core`+`ui` instance (scripted fake ears feeding real reported phrasing,
+scratch DB) and drove the real dashboard with Playwright end to end --
+transcript, skill health (all 8 skills), approval queue, approve/reject
+round-trip (confirmed via `audit_log`, not just the UI), system status,
+Orb, console errors. Two real things came out of it:
+
+1. **Thought Stream and Error Log didn't backfill on a fresh tab** --
+   same class of gap ADR-023 already fixed once for Transcript, never
+   generalized to these two panels. `core/ws.ts`'s own docstring says
+   the live channel is push-only by design, so a fresh tab needs a
+   REST snapshot; that existed for transcript/approvals/events but not
+   these two. Fixed with a new `core/dashboardHistory.ts` -- a small
+   in-process ring buffer (50 thoughts, 20 errors, matching the
+   client's own caps), deliberately *not* stored in the `events` table
+   `Memory.recall()` reads from (routing/error telemetry leaking into
+   conversation recall is a real risk, not a hypothetical one -- see
+   finding 2 below). Two new endpoints (`/api/thoughts`, `/api/errors`),
+   `use-jarvis.ts` seeds both on mount the same way it already does for
+   transcript/approvals. Verified live: reloaded the tab after real
+   routing decisions and a real error had already happened, both panels
+   now show them immediately instead of "No routing activity yet."
+
+2. **NIM was genuinely unreachable during this test** (confirmed
+   directly: `curl` to the NIM endpoint timed out at 10s) -- the same
+   failure Pedro's own pasted transcript showed for "Can you open
+   Facebook?" This forced every `converse`-lane call, including lane
+   classification itself, through the local `qwen2.5:0.5b` fallback.
+   Live evidence this session: that fallback frequently misclassified
+   ordinary utterances ("add butter to the shopping list", "Can you
+   open Facebook?") as lane `see` instead of `converse`/`act`, so the
+   correct skill was never even considered by `dispatch` -- filtered
+   out before scoring, not a low-confidence miss. Also reproduced the
+   general-conversation fallback echoing raw recalled-memory text
+   (formatted `[owner] ...\n[jarvis] ...`) verbatim as a spoken answer
+   on one turn, and fact extraction on the same tiny model produced
+   mostly garbage (5 of 6 extracted facts nonsense, including literally
+   extracting the extraction prompt's own placeholder syntax
+   `project.<name>.status` as a fact key) -- all safely caught as
+   pending approvals by ADR-027's fix rather than corrupting memory,
+   confirming that fix holds up under exactly the failure mode it was
+   built for. **Not fixed this session** -- root cause is NIM
+   availability plus this machine's own resource pressure (98% RAM,
+   100% CPU with the full stack up), and the right fix (retry/backoff
+   tuning, a better local fallback, or a non-LLM lane-classifier
+   fallback) is real design work, not a same-session patch. Logged in
+   `docs/BACKLOG.md` for a real look.
+
+213 tests still (dashboardHistory has no new test file yet -- it's a
+plain ring buffer, exercised live via the Playwright pass above; add a
+unit test if it grows any real logic), `npx tsc --noEmit` clean in both
+`core` and `ui`, `make check` green.
+
 ---
 
 ## Key numbers to record as we go
@@ -1796,3 +1863,10 @@ after the revert (checked twice, clean both times).
   regardless, but any *other* brew-installed tool used ad hoc (not through
   this project's own config) may silently be the slower Rosetta build.
   `which -a <tool>` before trusting one's provenance.
+- **When NIM is unreachable, the `converse` fallback (`qwen2.5:0.5b`)
+  degrades further than ADR-001 originally checked** — live-reproduced
+  2026-08-04 (SOAK 1): lane classification itself runs on the
+  `converse` lane, and under the fallback it frequently misclassifies
+  ordinary utterances as `see`, silently misrouting them (not just
+  answering worse). See ADR-028 and `docs/BACKLOG.md`. Open, needs
+  design work, not fixed yet.
