@@ -10,6 +10,17 @@ import { manifest } from "./manifest.ts";
 
 const LOCATION_FACT_KEY = "location.city";
 
+// Found live (SOAK 1, twice across two different sessions): asked for
+// "the weather for tomorrow," this skill silently ignored "tomorrow"
+// and proceeded into its ordinary current-weather flow -- asking for a
+// city the owner had no reason to expect, which then timed out
+// (`ctx.ask()`'s 30s window) because the question didn't match what was
+// actually asked. This skill only ever calls Open-Meteo's *current*
+// conditions endpoint (see api.ts) -- there is no forecast capability
+// to silently fall short of. CLAUDE.md § 6: say so plainly rather than
+// proceed as if a different, unsupported question was asked.
+const FORECAST_PATTERN = /\b(tomorrow|forecast|next (week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|this weekend)\b/i;
+
 function speakWeather(cityName: string, tempC: number, windKph: number, code: number): string {
   const roundedTemp = Math.round(tempC);
   const roundedWind = Math.round(windKph);
@@ -31,7 +42,13 @@ export function createWeatherSkill(deps: WeatherDeps = DEFAULT_DEPS): Skill {
   return {
     manifest,
 
-    async handle(_input, ctx): Promise<{ speech: string }> {
+    async handle(input, ctx): Promise<{ speech: string }> {
+      if (FORECAST_PATTERN.test(input.utterance)) {
+        const speech = "I can only tell you the current weather right now, not a forecast for another day.";
+        ctx.say(speech);
+        return { speech };
+      }
+
       const knownCity = ctx.memory.getFact(LOCATION_FACT_KEY);
       let cityQuery: string;
       let isNewCity = false;

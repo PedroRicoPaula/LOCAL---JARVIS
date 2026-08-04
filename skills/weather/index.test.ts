@@ -96,6 +96,28 @@ test("weather API failure: honest fallback, does not throw", async () => {
   memory.close();
 });
 
+test("asking about tomorrow/forecast is refused honestly, never silently asks for a city instead -- found live, SOAK 1", async () => {
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
+  const conversation = fakeConversation(); // no answer queued -- ctx.ask() must never be called
+  const ctx = fakeSkillContext({ memory, conversation });
+  const skill = createWeatherSkill({
+    geocode: async () => {
+      throw new Error("must not geocode for an unsupported forecast request");
+    },
+    fetchCurrentWeather: async () => {
+      throw new Error("must not fetch weather for an unsupported forecast request");
+    },
+  });
+
+  const result = await skill.handle(
+    { utterance: "Can you give me the weather resume for tomorrow?", intent: "current_weather", sessionId: "s1" },
+    ctx,
+  );
+
+  assert.match(result.speech, /can only tell you the current weather/i);
+  memory.close();
+});
+
 test("a newly-learned city proposes remembering it, but a gate rejection doesn't change the spoken weather", async () => {
   const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
   const conversation = fakeConversation(["Porto"]);
