@@ -513,6 +513,18 @@ only which library to call.
   second real bug the fakes-based test suite couldn't have caught, both
   found only through Pedro's own live usage — is unit-testable going
   forward instead of living only in `main()`.
+- **`SILENCE_FRAMES_TO_STOP` raised from 10 frames (800ms) to 25 (2.0s),
+  `MAX_RECORDING_FRAMES` from 100 (8s) to 200 (16s), both made
+  env-overridable.** Found in Pedro's third live round, after confirming
+  the retrigger fix above actually worked: with the duplicate-capture bug
+  gone, he still reported the daemon "stops listening while I'm still
+  talking." 800ms of silence is shorter than an ordinary thinking or
+  breath pause in unscripted speech, so auto-stop was disarming mid-
+  sentence and silently dropping everything said after — no error, no
+  visible cue, which is why it presented as the daemon losing him rather
+  than a threshold being too tight. This is exactly the kind of value
+  ADR-005 already flagged as needing real-voice tuning rather than a
+  static guess; env vars exist so it can keep moving without a redeploy.
 
 **Consequences.**
 - `senses/ears/audio_capture.py`'s `ContinuousAudioSource` is meaningfully

@@ -83,11 +83,18 @@ WAKE_WORD_MAX_FRAMES_ABOVE = 20
 # the key release; there's no key here). Energy-based, not a second VAD
 # pipeline — see ADR-014's reasoning, same logic applies. Frame = 80ms:
 # ~320ms grace before silence counts (people pause right after "hey
-# jarvis"), ~800ms trailing silence to confirm they're actually done,
-# ~8s hard cap so a stuck mic can't record forever.
+# jarvis"), trailing silence to confirm they're actually done, hard cap so
+# a stuck mic can't record forever.
+#
+# SILENCE_FRAMES_TO_STOP started at 10 (800ms) and cut Pedro off mid-
+# sentence on ordinary thinking/breath pauses in natural (non-scripted,
+# non-native-English-cadence) speech — confirmed live, see PROGRESS.md's
+# Phase 2 log. Raised to 25 (2.0s); MAX_RECORDING_FRAMES raised to keep the
+# same margin above it. Both env-overridable so this can be tuned further
+# from real use without a code change.
 MIN_SPEECH_FRAMES = 4
-SILENCE_FRAMES_TO_STOP = 10
-MAX_RECORDING_FRAMES = 100
+SILENCE_FRAMES_TO_STOP = int(os.environ.get("JARVIS_SILENCE_FRAMES_TO_STOP", "25"))
+MAX_RECORDING_FRAMES = int(os.environ.get("JARVIS_MAX_RECORDING_FRAMES", "200"))
 SILENCE_RMS_THRESHOLD = float(os.environ.get("JARVIS_SILENCE_RMS_THRESHOLD", "150"))
 
 # Reflex-lane ack (SPEC.md § 3: <300ms budget) — a system sound, not `say`;

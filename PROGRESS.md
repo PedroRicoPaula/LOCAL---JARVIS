@@ -568,16 +568,20 @@ voz"). Not a closed question, a deferred one.
   raises `KeyboardInterrupt`, reusing the same cleanup path Ctrl+C always
   used. Both fixes verified: 20 tests green, and a live SIGTERM check
   (`kill` + `ps`) shows both processes now exit together.
-- Separately reported: longer sentences sometimes "give a break" (stop
-  short). Not yet root-caused — plausibly the same mid-utterance-retrigger
-  bug misattributed to length (longer sentences give more opportunities
-  for a stray mid-utterance detection), or genuinely hitting
-  `SILENCE_FRAMES_TO_STOP` (800ms) on a natural inter-clause pause, or the
-  `MAX_RECORDING_FRAMES` (8s) safety cap. Deliberately not tuning either
-  constant yet — no log evidence pins down which one, and guessing at a
-  fix without reading the actual failure is exactly what CLAUDE.md § 2
-  says not to do. Needs a retest after the retrigger fix above, on long
-  sentences *without* repeating the wake word, to isolate it.
+- **Root-caused, third live round:** retested without repeating the wake
+  word — retrigger fix confirmed working (each utterance now logs exactly
+  one `wake word detected` / one `heard` pair, no more duplicates) — but
+  Pedro still reported it "stops listening while I'm still talking."
+  That's `SILENCE_FRAMES_TO_STOP`: at 10 frames (800ms), an ordinary
+  thinking/breath pause mid-sentence in natural (non-scripted) speech reads
+  as "done," auto-stop disarms the recording, and whatever he keeps saying
+  after that point is never captured at all — with no error and no visual
+  cue, which is exactly why it read as "it stopped on its own." Raised to
+  25 frames (2.0s) and made both it and `MAX_RECORDING_FRAMES` (200 frames
+  / 16s, kept proportionally above it) env-overridable
+  (`JARVIS_SILENCE_FRAMES_TO_STOP`, `JARVIS_MAX_RECORDING_FRAMES`) so
+  further tuning doesn't need a code change. Not yet re-verified live —
+  needs a fourth round on long, natural-paced sentences.
 
 ---
 
