@@ -82,6 +82,29 @@ def handle_wakeword_utterance(
     )
 
 
+def make_wake_handler(
+    busy_lock: threading.Lock, wake_event: threading.Event, log: Callable[[str], None] = print
+) -> Callable[[float], None]:
+    """Builds the wake-word callback: ignores detections that land while a
+    capture (hotkey or wake-word) is already in progress, rather than
+    setting `wake_event` and relying on `run_wakeword_forever`'s finally
+    block to discard it. That discard-on-cleanup approach had a race: a
+    genuine "hey jarvis" said mid-utterance (Pedro's live test, see
+    PROGRESS.md) could land in the gap between the current cycle's
+    `finally: wake_event.clear()` and `busy_lock.release()`, surviving to
+    fire a spurious near-duplicate capture the instant the first one
+    ended. Checking `busy_lock.locked()` before ever setting the event
+    closes that window instead of racing to clean it up after."""
+
+    def on_wake(score: float) -> None:
+        if busy_lock.locked():
+            return
+        log(f"ears: wake word detected (score={score:.3f})")
+        wake_event.set()
+
+    return on_wake
+
+
 def safe_run(fn: Callable[[], None], label: str) -> None:
     """Any single capture cycle failing (whisper-server hiccup, a corrupt
     WAV) is logged and swallowed rather than killing the daemon — `ears`
@@ -206,10 +229,7 @@ def main() -> None:
         busy_lock = threading.Lock()
         wake_event = threading.Event()
 
-        def on_wake(score: float) -> None:
-            print(f"ears: wake word detected (score={score:.3f})")
-            wake_event.set()
-
+        on_wake = make_wake_handler(busy_lock, wake_event)
         audio_source.add_frame_listener(wake_word.watch(detector, on_wake))
         audio_source.start()
         print('ears: listening continuously — say "hey jarvis" or hold Tab')

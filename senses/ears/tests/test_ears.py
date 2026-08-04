@@ -3,6 +3,7 @@ network. CLAUDE.md § 3."""
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ from senses.ears.main import (
     ConnectionHolder,
     handle_hotkey_utterance,
     handle_wakeword_utterance,
+    make_wake_handler,
     safe_run,
 )
 from senses.ears.wake_word import watch
@@ -123,6 +125,35 @@ def test_connection_holder_clears_on_send_failure() -> None:
     # A second emit with the connection cleared should just drop silently,
     # not fail again trying to use the dead socket.
     holder.emit({"type": "utterance", "text": "again"})
+
+
+def test_wake_handler_ignores_detection_while_busy() -> None:
+    """Confirmed live (Pedro): saying "hey jarvis" mid-utterance used to
+    survive the finally-block cleanup and fire a spurious second capture
+    the instant the first one ended. Gating on `busy_lock.locked()` before
+    ever setting the event closes that race."""
+    busy_lock = threading.Lock()
+    wake_event = threading.Event()
+    logged: list[str] = []
+    on_wake = make_wake_handler(busy_lock, wake_event, log=logged.append)
+
+    with busy_lock:
+        on_wake(0.9)
+
+    assert not wake_event.is_set()
+    assert logged == []
+
+
+def test_wake_handler_fires_when_not_busy() -> None:
+    busy_lock = threading.Lock()
+    wake_event = threading.Event()
+    logged: list[str] = []
+    on_wake = make_wake_handler(busy_lock, wake_event, log=logged.append)
+
+    on_wake(0.9)
+
+    assert wake_event.is_set()
+    assert logged == ["ears: wake word detected (score=0.900)"]
 
 
 def test_wake_word_watch_fires_on_falling_edge_with_peak_score() -> None:
