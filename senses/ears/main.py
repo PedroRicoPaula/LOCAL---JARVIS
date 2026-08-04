@@ -1,43 +1,51 @@
-"""senses/ears/main.py — wake word -> VAD -> STT -> text. (Phase 1: hotkey
-instead of wake word; VAD lives inside whisper-server, see transcribe.py.)
+"""senses/ears/main.py — wake word -> VAD -> STT -> text.
 
-Runs as a long-lived server: listens on a Unix socket, accepts whoever
-connects (the Phase 1 echo bridge today, core/ from Phase 3 on), and emits
-one {"type": "utterance", ...} line per push-to-talk press. No executor
-imports here, by construction — see docs/ARCHITECTURE.md § 7.
+Two independent trigger sources feed the same capture pipeline: the Tab
+hotkey (Phase 1) and "hey jarvis" (Phase 2), serialized by one lock so
+they can't both record at once. Runs as a long-lived server: listens on a
+Unix socket for whoever connects (the Phase 1 echo bridge today, core/
+from Phase 3 on) and emits one {"type": "utterance", ...} line per
+captured command. No executor imports here, by construction — see
+docs/ARCHITECTURE.md § 7.
 """
 
 from __future__ import annotations
 
+import signal
+import socket
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from senses import ipc
-from senses.ears import config, whisper_server
-from senses.ears.audio_capture import AudioSource, MicAudioSource
+from senses.ears import config, wake_word, whisper_server
+from senses.ears.ack import Ack, SystemAck
+from senses.ears.audio_capture import AudioSource, ContinuousAudioSource
 from senses.ears.hotkey import Hotkey, PynputHotkey
 from senses.ears.transcribe import Transcriber, WhisperServerTranscriber
+from senses.ears.wake_word import OpenWakeWordDetector
 
 Emit = Callable[[dict[str, Any]], None]
 
 
-def handle_one_utterance(
-    hotkey: Hotkey,
-    audio_source: AudioSource,
+def capture_and_transcribe(
+    arm: Callable[[], None],
+    wait_for_end: Callable[[], None],
+    disarm: Callable[[], Path],
     transcriber: Transcriber,
     emit: Emit,
 ) -> str:
-    """One press-record-release-transcribe-emit cycle. Returns the
-    transcribed text ("" if the owner pressed the key but nothing was
-    heard — never guessed at, per CLAUDE.md § 0.5's spirit applied to
-    speech, not just numbers)."""
-    hotkey.wait_for_press()
-    audio_source.start()
-    hotkey.wait_for_release()
+    """The shared core of both trigger paths: arm, block until whatever
+    signals the command is over (key release, or auto-stop silence),
+    disarm, transcribe, emit if non-empty. Returns the transcribed text
+    ("" if nothing was heard — never guessed at, per CLAUDE.md § 0.5's
+    spirit applied to speech, not just numbers)."""
+    arm()
+    wait_for_end()
     end_of_speech_ts = time.time()  # DoD's "time to first audible syllable"
-    wav_path: Path = audio_source.stop()  # starts counting from here, not from emit()
+    wav_path = disarm()
 
     text = transcriber.transcribe(wav_path)
     if text:
@@ -45,61 +53,213 @@ def handle_one_utterance(
     return text
 
 
-def safe_handle_one_utterance(
-    hotkey: Hotkey,
-    audio_source: AudioSource,
-    transcriber: Transcriber,
-    emit: Emit,
-) -> None:
-    """handle_one_utterance, but a failure mid-cycle (whisper-cli crashes,
-    a corrupt WAV, anything) is logged and swallowed instead of killing the
-    daemon. `ears` is "launchd, always on" per SPEC.md § 2 — one bad
-    utterance shouldn't end the process. Connection failures still
-    propagate: those are main()'s signal to wait for a reconnect, not
-    something to swallow here."""
+def handle_hotkey_utterance(
+    hotkey: Hotkey, audio_source: AudioSource, transcriber: Transcriber, emit: Emit
+) -> str:
+    """Caller's job to have already waited for the press — this arms,
+    waits for release, and finishes the cycle."""
+    return capture_and_transcribe(
+        arm=lambda: audio_source.arm(auto_stop=False),
+        wait_for_end=hotkey.wait_for_release,
+        disarm=audio_source.disarm,
+        transcriber=transcriber,
+        emit=emit,
+    )
+
+
+def handle_wakeword_utterance(
+    audio_source: AudioSource, transcriber: Transcriber, emit: Emit, ack: Ack
+) -> str:
+    """Caller's job to have already detected the wake word — this acks,
+    arms with silence-based auto-stop, and finishes the cycle."""
+    ack.fire()
+    return capture_and_transcribe(
+        arm=lambda: audio_source.arm(auto_stop=True),
+        wait_for_end=audio_source.wait_for_auto_stop,
+        disarm=audio_source.disarm,
+        transcriber=transcriber,
+        emit=emit,
+    )
+
+
+def make_wake_handler(
+    busy_lock: threading.Lock, wake_event: threading.Event, log: Callable[[str], None] = print
+) -> Callable[[float], None]:
+    """Builds the wake-word callback: ignores detections that land while a
+    capture (hotkey or wake-word) is already in progress, rather than
+    setting `wake_event` and relying on `run_wakeword_forever`'s finally
+    block to discard it. That discard-on-cleanup approach had a race: a
+    genuine "hey jarvis" said mid-utterance (Pedro's live test, see
+    PROGRESS.md) could land in the gap between the current cycle's
+    `finally: wake_event.clear()` and `busy_lock.release()`, surviving to
+    fire a spurious near-duplicate capture the instant the first one
+    ended. Checking `busy_lock.locked()` before ever setting the event
+    closes that window instead of racing to clean it up after."""
+
+    def on_wake(score: float) -> None:
+        if busy_lock.locked():
+            return
+        log(f"ears: wake word detected (score={score:.3f})")
+        wake_event.set()
+
+    return on_wake
+
+
+def safe_run(fn: Callable[[], None], label: str) -> None:
+    """Any single capture cycle failing (whisper-server hiccup, a corrupt
+    WAV) is logged and swallowed rather than killing the daemon — `ears`
+    is "launchd, always on" per SPEC.md § 2."""
     try:
-        handle_one_utterance(hotkey, audio_source, transcriber, emit)
-    except (BrokenPipeError, ConnectionResetError):
-        raise
-    except Exception as exc:  # broad on purpose — supervisor boundary, see docstring
-        print(f"ears: utterance failed, continuing ({exc!r})")
+        fn()
+    except Exception as exc:  # broad on purpose — supervisor boundary
+        print(f"ears: {label} failed, continuing ({exc!r})")
 
 
-def run_forever(
+def run_hotkey_forever(
     hotkey: Hotkey,
     audio_source: AudioSource,
     transcriber: Transcriber,
     emit: Emit,
+    busy_lock: threading.Lock,
 ) -> None:
     while True:
-        safe_handle_one_utterance(hotkey, audio_source, transcriber, emit)
+        hotkey.wait_for_press()
+        if not busy_lock.acquire(blocking=False):
+            print("ears: hotkey pressed while already capturing, ignoring")
+            hotkey.wait_for_release()
+            continue
+        try:
+            safe_run(
+                lambda: handle_hotkey_utterance(hotkey, audio_source, transcriber, emit),
+                "hotkey utterance",
+            )
+        finally:
+            busy_lock.release()
+
+
+def run_wakeword_forever(
+    wake_event: threading.Event,
+    audio_source: AudioSource,
+    transcriber: Transcriber,
+    emit: Emit,
+    ack: Ack,
+    busy_lock: threading.Lock,
+) -> None:
+    while True:
+        wake_event.wait()
+        wake_event.clear()
+        if not busy_lock.acquire(blocking=False):
+            print("ears: wake word heard while already capturing, ignoring")
+            continue
+        try:
+            safe_run(
+                lambda: handle_wakeword_utterance(audio_source, transcriber, emit, ack),
+                "wake-word utterance",
+            )
+        finally:
+            # The wake-word scorer keeps running during our own recording
+            # (frame listeners always fire — see audio_capture.py) and can
+            # re-cross threshold on the same utterance's trailing audio.
+            # Discard that here rather than chaining straight into a second,
+            # spurious capture cycle the moment this one finishes.
+            wake_event.clear()
+            busy_lock.release()
+
+
+class ConnectionHolder:
+    """The bridge/core connection, swappable across reconnects, shared by
+    both trigger threads. Decouples "is anyone listening" from "are we
+    capturing" — `ears` keeps working either way; an utterance with nobody
+    connected is logged and dropped, not an error."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._conn: socket.socket | None = None
+
+    def set(self, conn: socket.socket) -> None:
+        with self._lock:
+            self._conn = conn
+
+    def emit(self, message: dict[str, Any]) -> None:
+        with self._lock:
+            conn = self._conn
+        if conn is None:
+            print(f"ears: no bridge/core connected, dropping {message.get('text', '')!r}")
+            return
+        try:
+            ipc.send_line(conn, message)
+        except (BrokenPipeError, ConnectionResetError):
+            print("ears: bridge/core disconnected")
+            with self._lock:
+                if self._conn is conn:
+                    self._conn = None
+
+
+def accept_loop(socket_server: socket.socket, holder: ConnectionHolder) -> None:
+    while True:
+        conn = ipc.accept_one(socket_server)
+        print("ears: bridge/core connected")
+        holder.set(conn)
+
+
+def _on_sigterm(signum: int, frame: object) -> None:
+    """launchd sends SIGTERM on stop/unload, and Python's default SIGTERM
+    disposition kills the process immediately without unwinding — so the
+    `finally: whisper_server.stop(...)` below would never run, leaking the
+    whisper-server child on every daemon restart. Routing it through the
+    same KeyboardInterrupt path Ctrl+C already uses keeps cleanup in one
+    place instead of duplicating it in a signal handler.
+
+    Ignores further SIGTERM once this fires — the Makefile's `trap 'kill 0'
+    EXIT INT TERM` sends a second one moments later (the INT trap's `kill 0`
+    triggers shell exit, which fires the EXIT trap's `kill 0` again). That
+    second delivery used to land mid-cleanup — often right inside
+    `whisper_server.stop()`'s `process.wait()` — raising a second
+    KeyboardInterrupt that aborted cleanup before it could confirm
+    whisper-server had actually died, orphaning it. Confirmed live: found
+    a whisper-server + ears.main pair still running, mic still open, a
+    full CPU-minute after the terminal showed a clean-looking shutdown
+    traceback."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    raise KeyboardInterrupt
 
 
 def main() -> None:
+    signal.signal(signal.SIGTERM, _on_sigterm)
     print("ears: starting whisper-server (model load takes a few seconds)...")
     server_process = whisper_server.start()
     try:
         whisper_server.wait_until_ready()
         print(f"ears: whisper-server ready at {whisper_server.BASE_URL}")
 
+        audio_source = ContinuousAudioSource()
         hotkey = PynputHotkey()
-        audio_source = MicAudioSource()
         transcriber = WhisperServerTranscriber()
+        detector = OpenWakeWordDetector()
+        ack = SystemAck()
+        holder = ConnectionHolder()
+        busy_lock = threading.Lock()
+        wake_event = threading.Event()
+
+        on_wake = make_wake_handler(busy_lock, wake_event)
+        audio_source.add_frame_listener(wake_word.watch(detector, on_wake))
+        audio_source.start()
+        print('ears: listening continuously — say "hey jarvis" or hold Tab')
+
+        threading.Thread(
+            target=run_hotkey_forever,
+            args=(hotkey, audio_source, transcriber, holder.emit, busy_lock),
+            daemon=True,
+        ).start()
+        threading.Thread(
+            target=run_wakeword_forever,
+            args=(wake_event, audio_source, transcriber, holder.emit, ack, busy_lock),
+            daemon=True,
+        ).start()
 
         socket_server = ipc.listen(config.SOCKET_PATH)
-        print(f"ears: listening on {config.SOCKET_PATH}, hold Tab to talk")
-
-        while True:
-            conn = ipc.accept_one(socket_server)
-            print("ears: bridge/core connected")
-            try:
-                run_forever(
-                    hotkey, audio_source, transcriber,
-                    lambda msg, conn=conn: ipc.send_line(conn, msg),
-                )
-            except (BrokenPipeError, ConnectionResetError):
-                print("ears: bridge/core disconnected, waiting for reconnect")
-                continue
+        print(f"ears: socket ready at {config.SOCKET_PATH}")
+        accept_loop(socket_server, holder)
     finally:
         whisper_server.stop(server_process)
 

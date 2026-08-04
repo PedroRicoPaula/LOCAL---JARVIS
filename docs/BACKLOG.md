@@ -29,6 +29,13 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   flow (Phase 8) is fully working and lived with. Would need its own capture/
   display constraints revisited against `SPEC.md` § 6 (the camera-session
   model), not assumed to carry over as-is. Not scheduled, not designed.
+- Persistent menu-bar indicator for camera/listening/wake state (`rumps` or
+  raw `pyobjc` `NSStatusItem`). Phase 2's "visible acknowledgement on wake"
+  used a transient macOS notification instead — real scope (a whole small
+  menu-bar app) that nothing currently requires. Worth it once there's more
+  than one thing to show ambient state for (listening, camera armed,
+  approval pending) — natural fit once Phase 7's dashboard exists, maybe
+  earlier if a transient notification proves annoying in daily use.
 
 ## Annoyances found during SOAK
 

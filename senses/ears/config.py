@@ -58,3 +58,53 @@ VAD_MODEL = Path(
     )
 )
 LANGUAGE = "en"
+
+# --- Phase 2: wake word --------------------------------------------------
+
+# 80ms frames (1280 samples at 16kHz) is openWakeWord's own recommended
+# chunk size — confirmed against the installed package, not assumed.
+WAKE_WORD_FRAME_SAMPLES = 1_280
+
+WAKE_WORD_MODEL = os.environ.get("JARVIS_WAKE_WORD_MODEL", "hey_jarvis")
+# ADR-005: pretrained default. Real starting point, not a guess — the DoD's
+# own 30-activation test is the tuning session; adjust from the scores it
+# logs, not blind. onnxruntime, not tflite (tflite-runtime has no solid
+# Apple Silicon wheel — see PROGRESS.md's Phase 2 log).
+WAKE_WORD_THRESHOLD = float(os.environ.get("JARVIS_WAKE_WORD_THRESHOLD", "0.5"))
+
+# Safety cap for wake_word.watch()'s falling-edge trigger (see that
+# module): if the score somehow never drops back below threshold, fire
+# anyway after this many consecutive above-threshold frames rather than
+# never triggering at all. One real utterance sustains ~8 frames >= 0.9
+# (confirmed empirically) — 20 frames (1.6s) is a generous multiple of that.
+WAKE_WORD_MAX_FRAMES_ABOVE = 20
+
+# Auto-stop for wake-word-triggered recording (push-to-talk's end signal is
+# the key release; there's no key here). Energy-based, not a second VAD
+# pipeline — see ADR-014's reasoning, same logic applies. Frame = 80ms:
+# ~320ms grace before silence counts (people pause right after "hey
+# jarvis"), trailing silence to confirm they're actually done, hard cap so
+# a stuck mic can't record forever.
+#
+# SILENCE_FRAMES_TO_STOP started at 10 (800ms) and cut Pedro off mid-
+# sentence on ordinary thinking/breath pauses in natural (non-scripted,
+# non-native-English-cadence) speech — confirmed live, see PROGRESS.md's
+# Phase 2 log. Raised to 25 (2.0s), confirmed fixed against sentences with
+# several internal pauses/commas. Both env-overridable so this can be
+# tuned further from real use without a code change.
+#
+# MAX_RECORDING_FRAMES started at 100 (8s), then 200 (16s) — still too
+# tight: ~40-word test sentences (~16s at natural pace) were hitting the
+# cap and getting cut right near the end, confirmed live (same long
+# sentence, cut in roughly the same place on repeated attempts — not
+# random, a hard ceiling). Raised to 400 (32s), generous headroom for a
+# genuinely long command while still bounding a stuck-mic worst case.
+MIN_SPEECH_FRAMES = 4
+SILENCE_FRAMES_TO_STOP = int(os.environ.get("JARVIS_SILENCE_FRAMES_TO_STOP", "25"))
+MAX_RECORDING_FRAMES = int(os.environ.get("JARVIS_MAX_RECORDING_FRAMES", "400"))
+SILENCE_RMS_THRESHOLD = float(os.environ.get("JARVIS_SILENCE_RMS_THRESHOLD", "150"))
+
+# Reflex-lane ack (SPEC.md § 3: <300ms budget) — a system sound, not `say`;
+# see PROGRESS.md's Phase 2 log for why.
+ACK_SOUND = os.environ.get("JARVIS_ACK_SOUND", "/System/Library/Sounds/Tink.aiff")
+ACK_NOTIFICATION_TEXT = "Listening..."

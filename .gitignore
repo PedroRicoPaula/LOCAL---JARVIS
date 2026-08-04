@@ -18,3 +18,4 @@ build/
 .archive/
 .claude/*.lock
 data/models/
+data/logs/

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jarvis.ears</string>
+
+    <!-- __REPO_ROOT__ substituted with an absolute path by `make
+         install-daemon` (see Makefile) — launchd plists can't use
+         relative paths or ~. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO_ROOT__/.venv/bin/python</string>
+        <string>-m</string>
+        <string>senses.ears.main</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__REPO_ROOT__</string>
+
+    <!-- LaunchAgent, not LaunchDaemon: a daemon runs as root outside the
+         user session and can't hold the Microphone/Accessibility/Input
+         Monitoring grants this needs. See PROGRESS.md's Phase 2 log for
+         how much trial-and-error finding the right permission category
+         cost in interactive dev mode — expect to repeat some of that here,
+         since launchd invokes a different binary than Cursor's terminal
+         did. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Not /dev/null: a background daemon's only debugging window is its
+         log. data/logs/ is gitignored. -->
+    <key>StandardOutPath</key>
+    <string>__REPO_ROOT__/data/logs/ears.log</string>
+    <key>StandardErrorPath</key>
+    <string>__REPO_ROOT__/data/logs/ears.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+</dict>
+</plist>

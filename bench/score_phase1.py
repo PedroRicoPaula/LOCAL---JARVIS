@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from senses.ears import whisper_server
-from senses.ears.audio_capture import MicAudioSource
+from senses.ears.audio_capture import ContinuousAudioSource
 from senses.ears.hotkey import PynputHotkey
 from senses.ears.transcribe import WhisperServerTranscriber
 
@@ -101,7 +101,8 @@ def main() -> int:
         whisper_server.wait_until_ready()
 
         hotkey = PynputHotkey()
-        audio_source = MicAudioSource()
+        audio_source = ContinuousAudioSource()
+        audio_source.start()
         transcriber = WhisperServerTranscriber()
 
         print(f"\nPhase 1 word-accuracy check — {len(SENTENCES)} sentences.")
@@ -115,9 +116,9 @@ def main() -> int:
             )
             input(prompt)
             hotkey.wait_for_press()
-            audio_source.start()
+            audio_source.arm(auto_stop=False)
             hotkey.wait_for_release()
-            wav_path = audio_source.stop()
+            wav_path = audio_source.disarm()
             heard = transcriber.transcribe(wav_path)
 
             wer = word_error_rate(sentence, heard)
@@ -125,6 +126,7 @@ def main() -> int:
             accuracies.append(accuracy)
             print(f'  heard: "{heard}"  ->  accuracy {accuracy * 100:.1f}%\n')
     finally:
+        audio_source.stop()
         whisper_server.stop(server_process)
 
     overall = sum(accuracies) / len(accuracies)
