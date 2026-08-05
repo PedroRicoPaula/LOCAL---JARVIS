@@ -1927,6 +1927,37 @@ rather than guessed at.
 15 new tests, 257 total, `make check` green. Full detail in
 DECISIONS.md's ADR-034.
 
+**Same day, corrected the Spotify default** (owner uses only Spotify,
+never Music.app) and then proceeded with the Gmail MCP integration
+from the 2026-08-05 research: real `core/mcp/` architecture
+(`McpRegistry`, Google's standard OAuth authorization-code flow,
+`MCP_TOOL_CALL` as a new, deliberately uniform capability -- every MCP
+tool call requires approval, never auto-run from a server's own
+self-declared "read-only" hint), a `gmail` skill that discovers the
+real tool name/argument shape at runtime rather than hardcoding a
+guess (genuinely unverifiable without a live connection), and
+`bench/gmail_authorize.ts` for the owner's one-time setup.
+
+Two real bugs found live while verifying, both fixed same day:
+`core/skills/loader.ts` kept its own separate `VALID_CAPABILITIES`/
+`VALID_LANES` lists from `shared/types.ts`'s own union types -- adding
+the new capability to the type alone wasn't enough, the skill loaded
+disabled until this second list was updated too. Fixed for good, not
+just patched: both lists are now `Record<Capability/Lane, true>` keyed
+by the full union, so a future drift is a compile error, not a silent
+disabled skill. Skills also don't auto-discover from the filesystem --
+`core/skills/registered.ts` is a hand-maintained list; `gmail` didn't
+load at all until added there.
+
+25 new tests, 284 total, `make check` green. Live-verified everything
+reachable without the owner's own Google Cloud Console setup: core
+boots cleanly with zero Gmail credentials present, "check my email"
+correctly routes to the `gmail` skill (not some other skill by
+accident), and responds honestly that Gmail isn't connected yet. The
+real authorized connection is blocked on the owner running the setup
+in `README.md`'s new "3c" section. Full detail in DECISIONS.md's
+ADR-035.
+
 ---
 
 ## Key numbers to record as we go

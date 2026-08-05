@@ -297,16 +297,19 @@ sourced research (web search against 2026-current sources), not
 guessed at. Organized cheapest/safest first.
 
 **Tier 1 — clean, official, low-risk. Worth building for real.**
-- **Gmail via Google's own official MCP server**
-  ([developers.google.com/workspace/gmail/api/guides/configure-mcp-server](https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server)) --
-  OAuth, inherits the owner's own account permissions, no ToS risk.
-  Read/search/label emails, draft (never send unreviewed -- drafting is
-  `FS_WRITE`-adjacent yellow, sending crosses into CLAUDE.md § 5's red
-  tier, "anything that sends a message to another human," and stays
-  owner-only regardless of MCP).
+- ~~Gmail via Google's own official MCP server~~ -- **built 2026-08-06**
+  (`core/mcp/`, `skills/gmail`), real code and real tests, but **not
+  live-verified yet -- blocked on the owner completing Google Cloud
+  Console setup + `bench/gmail_authorize.ts`** (`README.md`'s "3c"
+  section has the exact steps). Read-only search only; the MCP server
+  itself doesn't even expose a send scope. See ADR-035.
 - **Google Analytics via Google's own official MCP server**
   ([github.com/googleanalytics/google-analytics-mcp](https://github.com/googleanalytics/google-analytics-mcp)) --
   same OAuth model, exposes the GA4 Reporting/Admin APIs directly.
+  Reuses `core/mcp/`'s registry/executor/capability plumbing built for
+  Gmail -- deliberately not built yet, sequenced after Gmail is
+  confirmed working end to end against a real connection rather than
+  building two unverified integrations at once (ADR-035).
   Exactly the "ask my own site's analytics without opening the GA
   dashboard" ask, no risk beyond a normal `NET_READ`-tier integration.
 - ~~Spotify control~~ -- **built 2026-08-06.** `skills/media`/
@@ -445,6 +448,17 @@ design rather than requiring a new one.
 
 ## Annoyances found during SOAK
 
+- ~~`core/skills/loader.ts` kept its own `VALID_CAPABILITIES`/
+  `VALID_LANES` lists, separate from `shared/types.ts`'s own union
+  types~~ -- **fixed 2026-08-06.** Found live adding `MCP_TOOL_CALL`
+  (ADR-035): the `gmail` skill loaded disabled ("contains an unknown
+  capability") until this second, hand-kept list was also updated --
+  two lists that must be kept in sync by hand for a closed,
+  deliberately-curated set, with no error until a skill silently failed
+  to load. Fixed properly, not just patched: both lists are now
+  `Record<Capability/Lane, true>` keyed by the full union, so
+  TypeScript itself rejects the build if the two ever drift again --
+  this exact bug class can't recur silently.
 - **2026-08-04 — four real bugs from Pedro's first live `make dev`
   session with the new dashboard (fixed same day).** `shopping_list`'s
   `remove_item`/`clear_list` were `converse`-only, same gap ADR-026

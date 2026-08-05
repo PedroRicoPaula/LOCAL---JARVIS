@@ -89,6 +89,37 @@ authenticates but the account has no usable free quota (HTTP 402 on every
 model). No `CerebrasProvider` exists in this codebase for that reason --
 see ADR-031.
 
+**3c. Optional: Gmail (via Google's official Gmail MCP server)**
+
+Added 2026-08-06 (SOAK 1, ADR-035). Read-only Gmail search through the
+`gmail` skill -- searches only, never sends (the MCP server itself only
+grants `gmail.readonly` + `gmail.compose` scopes; sending anything still
+needs the owner's own click/typed approval regardless, per CLAUDE.md § 5).
+One-time setup, by hand, no code needed:
+
+1. Go to <https://console.cloud.google.com/apis/credentials>
+2. Create an OAuth client, application type **Web application**
+3. Add this exact Authorized redirect URI:
+   `http://localhost:51789/oauth/callback`
+4. Enable the **Gmail API** for the project (APIs & Services → Library)
+5. Store the client ID/secret it gives you:
+
+   ```bash
+   security add-generic-password -a "$USER" -s jarvis-google-oauth-client-id -w 'YOUR_CLIENT_ID'
+   security add-generic-password -a "$USER" -s jarvis-google-oauth-client-secret -w 'YOUR_CLIENT_SECRET'
+   ```
+
+6. Run the one-time interactive authorization (opens your browser):
+
+   ```bash
+   node --experimental-strip-types bench/gmail_authorize.ts
+   ```
+
+`core` picks up the stored refresh token next time it starts. Missing
+credentials degrade gracefully -- `core` logs "gmail MCP server not
+configured" and starts normally either way; the `gmail` skill just says
+so honestly if asked to check email before this is done.
+
 **4. Run both checks**
 
 ```bash
