@@ -101,7 +101,16 @@ One-time setup, by hand, no code needed:
 2. Create an OAuth client, application type **Web application**
 3. Add this exact Authorized redirect URI:
    `http://localhost:51789/oauth/callback`
-4. Enable the **Gmail API** for the project (APIs & Services → Library)
+4. Enable **both** of these APIs for the project (APIs & Services →
+   Library) -- found live 2026-08-06: enabling only the first one gets
+   you a working OAuth consent screen and even a working `tools/list`
+   call, but every actual tool call fails with an HTTP 403 whose body
+   literally says which one is still missing:
+   - **Gmail API**
+   - **Gmail MCP API** (`gmailmcp.googleapis.com`) -- this is the MCP
+     gateway itself, a separate API from the one above; easy to miss
+     since only the first is the "obvious" Gmail-sounding name in the
+     Library search
 5. Store the client ID/secret it gives you:
 
    ```bash

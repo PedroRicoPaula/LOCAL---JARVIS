@@ -53,6 +53,26 @@ test("callTool against an unregistered server fails honestly, never silently no-
   assert.match(result.error ?? "", /not connected/i);
 });
 
+test("register() leaves no trace if listTools() fails -- no half-registered server", async () => {
+  const connection: McpConnection = {
+    async listTools() {
+      throw new Error("backend API disabled");
+    },
+    async callTool() {
+      return { ok: true, text: "" };
+    },
+  };
+  const registry = new McpRegistry(async () => connection);
+
+  await assert.rejects(
+    registry.register({ id: "gmail", url: "https://example.invalid", getAccessToken: async () => "t" }),
+    /backend API disabled/,
+  );
+
+  assert.equal(registry.hasServer("gmail"), false);
+  assert.deepEqual(registry.listTools("gmail"), []);
+});
+
 test("register() passes each server's own getAccessToken through to the connect function, once per server", async () => {
   const seenConfigs: string[] = [];
   const registry = new McpRegistry(async (config) => {

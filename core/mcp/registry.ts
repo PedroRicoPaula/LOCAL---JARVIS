@@ -74,9 +74,16 @@ export class McpRegistry {
   }
 
   async register(config: McpServerConfig): Promise<void> {
+    // `listTools()` runs *before* either map is touched -- found live
+    // (2026-08-06): the previous order set `connections` first, so a
+    // `listTools()` failure (e.g. the backing API disabled on Google's
+    // side) left `hasServer()` reporting true forever with an empty,
+    // never-retried tool cache, instead of the registration honestly
+    // failing and being caught by the caller (`core/mcp/setup.ts`).
     const connection = await this.connectFn(config);
+    const tools = await connection.listTools();
     this.connections.set(config.id, connection);
-    this.toolCache.set(config.id, await connection.listTools());
+    this.toolCache.set(config.id, tools);
   }
 
   hasServer(serverId: string): boolean {
