@@ -2185,3 +2185,17 @@ rule (CLAUDE.md § 5b) -- same pattern the file already used for
   time pressure; the exact fix (which example, or a stronger
   disambiguation margin) needs the same live-evidence-first approach
   ADR-026/030 already used, not a blind edit.
+
+**Same-day correction (2026-08-06):** the owner clarified he uses
+*only* Spotify, never Music.app at all -- the "detect which app is
+running" design above answered the wrong question (Spotify not being
+open yet doesn't mean Music.app is wanted; `tell application "Spotify"
+to play` launches it same as any app). Simplified: `resolveTargetApp`
+now defaults to Spotify unconditionally, switching to Music.app only
+when the utterance itself names it explicitly ("apple music", "music
+app" -- deliberately requiring the app-name phrasing, not bare
+"music", so "play some music" doesn't false-positive). Pure text
+matching, synchronous, no `System Events` call and no fake needed in
+tests -- simpler than the running-app-detection version it replaced,
+not just different. 2 new tests replace the old detection-based ones;
+259 tests total, `make check` green.

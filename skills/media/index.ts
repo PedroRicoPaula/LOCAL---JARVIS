@@ -6,12 +6,18 @@
  * `fetch()` calls: reads are green by nature, only side effects are
  * gated).
  *
- * Targets Music.app or Spotify (SOAK 1, 2026-08-06) -- whichever is
- * actually running, detected once per request via `detectRunningApp`
- * and named in the `humanSummary` the owner approves, not re-detected
- * inside the executor (see `core/executors/media.ts`'s own docstring
- * for why). Music.app stays the default when neither is running --
- * preserves the original behavior for anyone not using Spotify.
+ * Targets Spotify by default (SOAK 1, 2026-08-06 -- the owner's own
+ * correction: he doesn't use Music.app at all). `resolveTargetApp`
+ * only switches to Music.app when the utterance itself names it
+ * explicitly ("apple music", "music app") -- a deterministic text
+ * check, not a runtime "which one is actually open" guess (an earlier
+ * version of this file used `System Events` for that; dropped because
+ * it answered the wrong question -- Spotify not being open yet doesn't
+ * mean the owner wants Music, `tell application "Spotify" to play`
+ * launches it same as any app). The resolved app is named in the
+ * `humanSummary` the owner approves and baked into the signed payload,
+ * not re-decided inside the executor (see `core/executors/media.ts`'s
+ * own docstring for why).
  */
 
 import { execFile } from "node:child_process";
@@ -34,22 +40,18 @@ export interface NowPlaying {
   artist: string;
 }
 
-export type DetectRunningAppFn = () => Promise<MediaApp>;
 export type GetNowPlayingFn = (app: MediaApp) => Promise<NowPlaying | null>;
 
-/** Spotify only if it's actually running -- Music.app is the fallback
- * whether Music is confirmed running or neither app answered, same
- * "boring default" this skill always had before Spotify existed. */
-async function realDetectRunningApp(): Promise<MediaApp> {
-  try {
-    const { stdout } = await execFileAsync("osascript", [
-      "-e",
-      'tell application "System Events" to return exists (application process "Spotify")',
-    ]);
-    return stdout.trim() === "true" ? "Spotify" : "Music";
-  } catch {
-    return "Music";
-  }
+// Requires "app"/"apple" alongside "music" -- bare "play some music" is
+// generic phrasing, not naming the app, and must still resolve to
+// Spotify. Only an explicit "apple music" or "music app" mention opts
+// into Music.app.
+const MUSIC_APP_PATTERN = /\b(apple\s+music|music\s+app)\b/i;
+
+/** Pure and synchronous -- no OS call, no fake needed in tests, just
+ * whatever the owner actually said this turn. */
+function resolveTargetApp(utterance: string): MediaApp {
+  return MUSIC_APP_PATTERN.test(utterance) ? "Music" : "Spotify";
 }
 
 async function realGetNowPlaying(app: MediaApp): Promise<NowPlaying | null> {
@@ -88,11 +90,11 @@ function speechForOutcome(label: string, outcome: ApprovalOutcome): string {
 
 async function proposeMedia(
   ctx: SkillContext,
-  detectRunningApp: DetectRunningAppFn,
+  utterance: string,
   command: "play" | "pause" | "next" | "previous",
   label: string,
 ): Promise<{ speech: string }> {
-  const app = await detectRunningApp();
+  const app = resolveTargetApp(utterance);
   const outcome = await ctx.propose({
     capability: "SHELL_EXEC",
     humanSummary: `${label.charAt(0).toUpperCase() + label.slice(1)} (${app})`,
@@ -133,15 +135,14 @@ async function proposeLevel(
 
 export interface MediaDeps {
   getNowPlaying: GetNowPlayingFn;
-  detectRunningApp: DetectRunningAppFn;
 }
 
-const DEFAULT_DEPS: MediaDeps = { getNowPlaying: realGetNowPlaying, detectRunningApp: realDetectRunningApp };
+const DEFAULT_DEPS: MediaDeps = { getNowPlaying: realGetNowPlaying };
 
-/** Factory so tests can inject fakes for `getNowPlaying`/
- * `detectRunningApp` instead of querying the real Music.app/Spotify/
- * System Events (CLAUDE.md § 3), same pattern as
- * `skills/weather`/`skills/launcher`. */
+/** Factory so tests can inject a fake `getNowPlaying` instead of
+ * querying the real Music.app/Spotify (CLAUDE.md § 3), same pattern as
+ * `skills/weather`/`skills/launcher`. `resolveTargetApp` needs no fake
+ * -- it's pure text matching, not an OS call. */
 export function createMediaSkill(deps: MediaDeps = DEFAULT_DEPS): Skill {
   return {
     manifest,
@@ -149,16 +150,16 @@ export function createMediaSkill(deps: MediaDeps = DEFAULT_DEPS): Skill {
     async handle(input, ctx): Promise<{ speech: string }> {
       switch (input.intent) {
         case "play_music":
-          return proposeMedia(ctx, deps.detectRunningApp, "play", "resumed playback");
+          return proposeMedia(ctx, input.utterance, "play", "resumed playback");
         case "pause_music":
-          return proposeMedia(ctx, deps.detectRunningApp, "pause", "paused playback");
+          return proposeMedia(ctx, input.utterance, "pause", "paused playback");
         case "next_track":
-          return proposeMedia(ctx, deps.detectRunningApp, "next", "skipped to the next track");
+          return proposeMedia(ctx, input.utterance, "next", "skipped to the next track");
         case "previous_track":
-          return proposeMedia(ctx, deps.detectRunningApp, "previous", "went back a track");
+          return proposeMedia(ctx, input.utterance, "previous", "went back a track");
 
         case "now_playing": {
-          const app = await deps.detectRunningApp();
+          const app = resolveTargetApp(input.utterance);
           const track = await deps.getNowPlaying(app);
           const speech = track
             ? `Now playing: ${track.name}${track.artist ? ` by ${track.artist}` : ""}.`
