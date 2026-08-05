@@ -1958,6 +1958,42 @@ real authorized connection is blocked on the owner running the setup
 in `README.md`'s new "3c" section. Full detail in DECISIONS.md's
 ADR-035.
 
+**Same SOAK, next day (2026-08-06):** owner completed the OAuth setup.
+First attempt hit Google's `403 access_denied` on the consent screen
+itself (OAuth client in "Testing" status, owner's account not yet on
+the Test users list) -- fixed on the owner's side via Cloud Console,
+not a code issue. Second attempt succeeded; refresh token stored.
+
+Live verification immediately past that found two more real problems,
+both from *actually* connecting instead of stopping at "credentials
+present":
+- **A real bug in `core/mcp/registry.ts`'s `register()`:** it recorded
+  the connection before awaiting `listTools()`, so a `listTools()`
+  failure left the server permanently half-registered --
+  `hasServer()` true, tool cache stuck empty. Fixed by reordering so a
+  failure there means the server never registers at all. New
+  regression test added.
+- **The actual cause of that failure: README's setup steps were
+  incomplete.** A raw `fetch()` against the real Gmail MCP endpoint
+  (bypassing the SDK to see the true HTTP status/body) showed Google's
+  own error: the **Gmail MCP API** (`gmailmcp.googleapis.com`) needs
+  enabling in Cloud Console *separately* from the "Gmail API" README
+  already mentioned -- two different APIs, easy to conflate. README's
+  step 4 now lists both. Also found, and worth remembering rather than
+  re-debugging blind next time: Google's `tools/list` endpoint
+  returned HTTP 403 with a *fully valid* tool-catalogue body (status
+  and body disagreeing) -- only `tools/call` gave an unambiguous
+  answer. Confirmed reproducible twice, not a network blip.
+
+285 tests total, `make check` green. **Still open:** owner needs to
+enable "Gmail MCP API" and let it propagate; the actual authorized
+`tools/call` against Gmail, and therefore `skills/gmail` end to end,
+remains unverified. The real tool catalogue captured during this
+session (visible in DECISIONS.md's ADR-036) suggests
+`findSearchTool`/`guessQueryArgName` will resolve correctly once a
+call succeeds, but that is analysis, not verification -- a follow-up
+live run is still needed. Full detail in ADR-036.
+
 ---
 
 ## Key numbers to record as we go

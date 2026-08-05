@@ -2323,3 +2323,82 @@ exact shape):
   plumbing once Gmail is confirmed working end to end -- not built
   yet, deliberately sequenced after real verification of the first
   server rather than building two unverified integrations at once.
+
+## ADR-036 — SOAK 1: Gmail OAuth completed, first live MCP call, a real registry bug and a wrong setup step found
+
+**Status:** accepted
+
+**Context.** Owner stored the real Google OAuth client ID/secret in
+Keychain and ran `bench/gmail_authorize.ts`. First attempt failed with
+Google's `403 access_denied` on the consent screen itself -- the OAuth
+client was in "Testing" publishing status and the owner's own account
+wasn't on the consent screen's Test users list yet. Fixed on the
+owner's side (Cloud Console → OAuth consent screen → Test users → add
+self), not a code issue. Second attempt completed; refresh token
+stored as `jarvis-google-oauth-refresh-token`.
+
+**What live verification found, immediately after, going further than
+ADR-035 could without a real token:**
+
+- **A real, unambiguous bug in `core/mcp/registry.ts`'s `register()`:**
+  it stored the new connection in `this.connections` *before* awaiting
+  `connection.listTools()`. When `listTools()` throws, the server is
+  left half-registered forever -- `hasServer()` reports `true` but
+  `toolCache` stays permanently empty (`listTools()` falls back to
+  `[]`), instead of the whole registration failing and being caught by
+  `core/mcp/setup.ts`'s own try/catch the way every other connection
+  failure already is. Reproduced live: connecting to the real Gmail
+  MCP server threw during `listTools()` (see below), and the isolated
+  verification script showed exactly this -- `hasServer("gmail") ===
+  true`, `listTools("gmail") === []`. Fixed by reordering: `listTools()`
+  now runs before either map is touched, so a failure there means the
+  server never registers at all. New regression test in
+  `core/mcp/tests/registry.test.ts` covers it.
+- **The actual cause of that `listTools()` failure: README's setup
+  steps were incomplete.** Step 4 said "Enable the Gmail API" --
+  necessary but not sufficient. A raw `fetch()` against
+  `https://gmailmcp.googleapis.com/mcp/v1` (bypassing the SDK, to see
+  the real HTTP status/body independent of how the SDK's own
+  `StreamableHTTPClientTransport` reports it) showed the actual server
+  response for a `tools/call`: HTTP 403 with a body reading *"Gmail MCP
+  API has not been used in project ... before or it is disabled...
+  https://console.developers.google.com/apis/api/gmailmcp.googleapis.com/overview?project=...".*
+  The MCP gateway itself (`gmailmcp.googleapis.com`) is a **separate**
+  API from the Gmail API in Google's Cloud Console library, easy to
+  miss since only the latter is the "obvious" Gmail-sounding search
+  result. README's step 4 now lists both explicitly.
+- **A genuinely strange, confirmed-reproducible Google server quirk,
+  noted for whoever debugs this integration next:** `tools/list`
+  itself returns HTTP 403 *with a fully valid, complete JSON-RPC
+  result body* (the real tool catalogue: `search_threads`,
+  `get_thread`, `get_message`, `list_drafts`, `create_draft`,
+  `list_labels`, `label_thread`, etc., with full schemas) -- status
+  and body disagree. Only `tools/call` gave an unambiguous, readable
+  answer (the "API not enabled" message above, also HTTP 403 but with
+  `isError: true` in the JSON-RPC result rather than a misleadingly
+  successful-looking `result.tools`). Confirmed reproducible across two
+  separate raw-fetch attempts, not a one-off network blip. Not a bug in
+  this codebase -- the MCP SDK's own `StreamableHTTPClientTransport`
+  reasonably treats a non-2xx status as an error and throws, which is
+  what triggered the registry bug above in the first place.
+
+**Consequences.**
+- `core/mcp/registry.ts` fixed, one new test, 285 tests total, `make
+  check` green.
+- `README.md`'s Gmail setup section corrected to name both required
+  APIs.
+- **Still not live-verified:** an actual successful `tools/call`
+  against the real Gmail MCP server, and therefore `skills/gmail`'s
+  `findSearchTool`/`guessQueryArgName` against the real catalogue.
+  Blocked on the owner enabling "Gmail MCP API" in Cloud Console and
+  waiting for it to propagate (Google's own error message says "wait a
+  few minutes"). The real tool catalogue captured during this session
+  (listed above) already confirms `findSearchTool`'s regex (`/search|
+  query|list.*(message|email|thread)/i`) matches `search_threads`
+  correctly, and its `inputSchema.properties.query` is a plain string
+  -- `guessQueryArgName` should resolve to `"query"` via the
+  single-string-property path once a real call succeeds. Worth a
+  follow-up live run once the API is enabled, rather than assuming
+  this analysis is sufficient on its own -- this project's own
+  "verify before guessing" rule applies to reading a schema by eye
+  too.
