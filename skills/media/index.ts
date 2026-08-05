@@ -5,6 +5,13 @@
  * same precedent as `system_health`'s OS reads and `weather`'s own
  * `fetch()` calls: reads are green by nature, only side effects are
  * gated).
+ *
+ * Targets Music.app or Spotify (SOAK 1, 2026-08-06) -- whichever is
+ * actually running, detected once per request via `detectRunningApp`
+ * and named in the `humanSummary` the owner approves, not re-detected
+ * inside the executor (see `core/executors/media.ts`'s own docstring
+ * for why). Music.app stays the default when neither is running --
+ * preserves the original behavior for anyone not using Spotify.
  */
 
 import { execFile } from "node:child_process";
@@ -15,16 +22,39 @@ import { manifest } from "./manifest.ts";
 
 const execFileAsync = promisify(execFile);
 
+// Duplicated from core/executors/media.ts's own MediaApp, deliberately
+// not imported from there -- a skill cannot import an executor at all
+// (CLAUDE.md § 5b, enforced by lint), not even for a type. Same
+// pattern this file already used for MediaCommand's literal union
+// below, just named this time.
+export type MediaApp = "Music" | "Spotify";
+
 export interface NowPlaying {
   name: string;
   artist: string;
 }
 
-export type GetNowPlayingFn = () => Promise<NowPlaying | null>;
+export type DetectRunningAppFn = () => Promise<MediaApp>;
+export type GetNowPlayingFn = (app: MediaApp) => Promise<NowPlaying | null>;
 
-async function realGetNowPlaying(): Promise<NowPlaying | null> {
+/** Spotify only if it's actually running -- Music.app is the fallback
+ * whether Music is confirmed running or neither app answered, same
+ * "boring default" this skill always had before Spotify existed. */
+async function realDetectRunningApp(): Promise<MediaApp> {
   try {
-    const { stdout } = await execFileAsync("osascript", ["-e", 'tell application "Music" to get {name, artist} of current track']);
+    const { stdout } = await execFileAsync("osascript", [
+      "-e",
+      'tell application "System Events" to return exists (application process "Spotify")',
+    ]);
+    return stdout.trim() === "true" ? "Spotify" : "Music";
+  } catch {
+    return "Music";
+  }
+}
+
+async function realGetNowPlaying(app: MediaApp): Promise<NowPlaying | null> {
+  try {
+    const { stdout } = await execFileAsync("osascript", ["-e", `tell application "${app}" to get {name, artist} of current track`]);
     const [name, artist] = stdout.trim().split(", ");
     if (!name) return null;
     return { name, artist: artist ?? "" };
@@ -56,11 +86,17 @@ function speechForOutcome(label: string, outcome: ApprovalOutcome): string {
   return `Couldn't ${label} -- ${outcome.detail ?? "something went wrong"}.`;
 }
 
-async function proposeMedia(ctx: SkillContext, command: "play" | "pause" | "next" | "previous", label: string): Promise<{ speech: string }> {
+async function proposeMedia(
+  ctx: SkillContext,
+  detectRunningApp: DetectRunningAppFn,
+  command: "play" | "pause" | "next" | "previous",
+  label: string,
+): Promise<{ speech: string }> {
+  const app = await detectRunningApp();
   const outcome = await ctx.propose({
     capability: "SHELL_EXEC",
-    humanSummary: label.charAt(0).toUpperCase() + label.slice(1),
-    payload: { action: "media_control" as const, command },
+    humanSummary: `${label.charAt(0).toUpperCase() + label.slice(1)} (${app})`,
+    payload: { action: "media_control" as const, app, command },
   });
   const speech = speechForOutcome(label, outcome);
   ctx.say(speech);
@@ -97,28 +133,33 @@ async function proposeLevel(
 
 export interface MediaDeps {
   getNowPlaying: GetNowPlayingFn;
+  detectRunningApp: DetectRunningAppFn;
 }
 
-/** Factory so tests can inject a fake `getNowPlaying` instead of
- * querying the real Music.app (CLAUDE.md § 3), same pattern as
+const DEFAULT_DEPS: MediaDeps = { getNowPlaying: realGetNowPlaying, detectRunningApp: realDetectRunningApp };
+
+/** Factory so tests can inject fakes for `getNowPlaying`/
+ * `detectRunningApp` instead of querying the real Music.app/Spotify/
+ * System Events (CLAUDE.md § 3), same pattern as
  * `skills/weather`/`skills/launcher`. */
-export function createMediaSkill(deps: MediaDeps = { getNowPlaying: realGetNowPlaying }): Skill {
+export function createMediaSkill(deps: MediaDeps = DEFAULT_DEPS): Skill {
   return {
     manifest,
 
     async handle(input, ctx): Promise<{ speech: string }> {
       switch (input.intent) {
         case "play_music":
-          return proposeMedia(ctx, "play", "resumed playback");
+          return proposeMedia(ctx, deps.detectRunningApp, "play", "resumed playback");
         case "pause_music":
-          return proposeMedia(ctx, "pause", "paused playback");
+          return proposeMedia(ctx, deps.detectRunningApp, "pause", "paused playback");
         case "next_track":
-          return proposeMedia(ctx, "next", "skipped to the next track");
+          return proposeMedia(ctx, deps.detectRunningApp, "next", "skipped to the next track");
         case "previous_track":
-          return proposeMedia(ctx, "previous", "went back a track");
+          return proposeMedia(ctx, deps.detectRunningApp, "previous", "went back a track");
 
         case "now_playing": {
-          const track = await deps.getNowPlaying();
+          const app = await deps.detectRunningApp();
+          const track = await deps.getNowPlaying(app);
           const speech = track
             ? `Now playing: ${track.name}${track.artist ? ` by ${track.artist}` : ""}.`
             : "Nothing seems to be playing right now.";
