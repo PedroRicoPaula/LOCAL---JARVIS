@@ -69,6 +69,28 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 
 ## Platform
 
+- **Bilingual conversation (PT-PT/English), the real implementation
+  behind the CLAUDE.md § 0.1 rule change (ADR-033, 2026-08-05).** Not
+  built yet -- ADR-033 only reversed the rule; this is the actual work:
+  - `senses/ears`: multilingual STT. A full bilingual-conversation
+    switch is a bigger, different question than the single-proper-noun
+    prompt-hint fix already shipped (ADR-026/030) -- test against the
+    owner's *real* voice, not synthetic `say` audio (synthetic testing
+    was already found unreliable for this exact class of question,
+    ADR-026).
+  - `senses/voice`: a real PT-PT TTS voice selected per response
+    language (macOS `say -v` has PT-PT options -- confirm quality, not
+    assumed).
+  - `core/persona.md` + every skill's `persona.md`: currently written
+    assuming English-only output.
+  - Skill manifest `examples`: untested assumption that intent matching
+    still works when the owner speaks Portuguese -- may need PT-PT
+    examples added alongside the English ones. Verify early.
+  - Lane classification of a Portuguese utterance: also untested,
+    worth an early benchmark pass (`bench/bench_router_lane.ts`-style)
+    before assuming the English-only internal classifier handles it.
+  Not sequenced into `ROADMAP.md` yet -- real phase-placement decision,
+  left for a dedicated conversation.
 - **MCP (Model Context Protocol) as JARVIS's tool layer — worth a real
   look before hand-building many more one-off executors.** By 2026 MCP
   is the de facto standard for agent-tool communication (Anthropic,
@@ -261,6 +283,178 @@ useful as a negative example, not a source of ideas to adopt):
   distinction (only *that* specific error type triggers fallback,
   everything else propagates) and identical request shape per provider
   are the right call here, not something to loosen.
+
+## Capability research, 2026-08-05 — MCP integrations, computer-use, camera gesture control
+
+Asked directly to research how to make JARVIS "stronger, more
+intelligent, more functional" -- specifically: read-only access to the
+owner's own analytics/email/messages without opening a browser, real
+(not just open/close) control of apps, JARVIS able to see and drive its
+own machine's UI on request (an AnyDesk/TeamViewer-style tool aimed at
+itself, not another computer), camera-based gesture control of the
+dashboard, and RAG/embeddings/graph-based memory improvements. Real,
+sourced research (web search against 2026-current sources), not
+guessed at. Organized cheapest/safest first.
+
+**Tier 1 — clean, official, low-risk. Worth building for real.**
+- **Gmail via Google's own official MCP server**
+  ([developers.google.com/workspace/gmail/api/guides/configure-mcp-server](https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server)) --
+  OAuth, inherits the owner's own account permissions, no ToS risk.
+  Read/search/label emails, draft (never send unreviewed -- drafting is
+  `FS_WRITE`-adjacent yellow, sending crosses into CLAUDE.md § 5's red
+  tier, "anything that sends a message to another human," and stays
+  owner-only regardless of MCP).
+- **Google Analytics via Google's own official MCP server**
+  ([github.com/googleanalytics/google-analytics-mcp](https://github.com/googleanalytics/google-analytics-mcp)) --
+  same OAuth model, exposes the GA4 Reporting/Admin APIs directly.
+  Exactly the "ask my own site's analytics without opening the GA
+  dashboard" ask, no risk beyond a normal `NET_READ`-tier integration.
+- **Spotify control -- not a new idea, an extension of code that
+  already exists.** `skills/media`/`core/executors/media.ts` already
+  do real play/pause/next/previous via AppleScript (`tell application
+  "Music"`) -- confirmed live, ADR-025. Spotify has the identical
+  AppleScript scripting dictionary (`tell application "Spotify" to
+  next track`, etc.) -- adding it is extending an existing, proven
+  executor pattern with a second target app, not new architecture.
+  Worth asking the owner which app he actually wants controlled before
+  building (the request used "Spotify" as the example; the code today
+  only drives Music.app).
+- **Hybrid search for `core/memory/recall.ts` -- the single cheapest,
+  highest-value change found in this research.** Confirmed by reading
+  the actual code: recall today is pure vector search
+  (`memory_vec MATCH`, `core/memory/embeddings.ts`), no keyword layer
+  at all. Published comparisons show hybrid retrieval (BM25 + vector,
+  fused by Reciprocal Rank Fusion) beating vector-only retrieval on
+  exact-token queries (names, ids, exact phrases) that pure embedding
+  search is known to miss. SQLite's `FTS5` is built in -- no new
+  dependency, same boring-by-default bar as `sqlite-vec` already
+  cleared. Concretely: add an FTS5 index alongside `memory_vec`, fuse
+  both result sets by RRF instead of vector distance alone. This is a
+  real, scoped, low-risk phase-sized piece of work, not blue-sky.
+
+**Tier 2 — real feature, real scope, needs its own design pass before building.**
+- **"Computer use" -- JARVIS seeing and driving this Mac's own UI on
+  request (the AnyDesk/TeamViewer-for-itself idea).** Confirmed
+  buildable and well-precedented: Anthropic's own Claude Computer Use
+  (shipped March 2026) does exactly this pattern for its own product --
+  permission-first (asks before touching a new app), runs in an
+  isolated VM, prompt-injection scanning, site blocklists, owner can
+  stop anytime. Reliability research is unambiguous: macOS's
+  Accessibility API (`AXUIElement`) beats vision-on-screenshots badly
+  (~50ms structured element lookups vs. ~2500ms per screenshot,
+  reading real button labels instead of guessing from pixels) --
+  several real MCP servers already do this
+  (`computer-use-mac-mcp`, `MacOS-MCP`, `ToolPiper`).
+
+  **Concrete flow the owner specified (2026-08-05), which resolves the
+  tension flagged above rather than avoiding it:** a WhatsApp
+  notification arrives → JARVIS tells the owner about it → owner says
+  "open notifications" / "reply to X's message" → JARVIS navigates and
+  reads the message → owner dictates the reply, can revise it by voice
+  ("update the message to say...") → **only on an explicit final "send
+  it" does JARVIS actually send** -- and per the updated CLAUDE.md § 5,
+  that final send is a real `Gate` proposal like any other red-tier
+  action: the *content* is drafted and revised entirely by voice, but
+  execution still requires the owner's own click (dashboard Approve)
+  or typed CLI `approve`, never a spoken "yes" alone. This is not a new
+  mechanism -- it's `docs/SKILLS.md`'s existing "propose → read back →
+  confirm → write" shape, just with the "write" step being a real
+  yellow/red-tier `Gate.propose()` instead of a direct write, and the
+  confirm loop running iteratively (draft → hear it back → revise →
+  repeat) before that final proposal is even made. Two shapes for the
+  *navigation/drafting* half specifically, not decided here:
+  1. **Bounded, per-task AX-driven actions** (JXA), each its own
+     gated capability with a clear `humanSummary` -- same pattern
+     `SHELL_EXEC`'s dispatcher (ADR-025) already uses for app/media
+     control, just extended to more apps/actions one at a time. Safer,
+     smaller, boring.
+  2. **A real "computer session,"** modeled on the camera session
+     lifecycle SPEC.md § 6 already defines (ARMED by voice, a visible
+     indicator for the whole session, an idle timeout, closed
+     explicitly) -- applied to UI control instead of the camera. A
+     genuinely bigger phase (its own ADR, its own DoD), but reuses a
+     lifecycle pattern this project already trusts rather than
+     inventing a new one.
+  Recommend starting with (1) for specific real annoyances as they
+  come up, not attempting (2) until (1) proves the pattern.
+- **Biometric owner-verification (face and/or voice) gating access to
+  "stronger" capabilities** -- the owner's own idea (2026-08-05),
+  proposed as an *extra* safety layer on top of the Gate, not a
+  replacement for it: e.g. computer-use actions only unlock when the
+  camera confirms the owner's face is present, or JARVIS only accepts
+  sensitive requests spoken in the owner's own voice. Real precedent
+  found in this session's earlier research: N.E.K.O's
+  `speaker_trust.py` (a 2379★ companion-AI project) implements exactly
+  this shape -- deterministic trust bands from verified identity, the
+  trust score itself *never* coming from model output, only from
+  code-side verification -- the same "trust never comes from a model"
+  principle CLAUDE.md § 0.5 already holds for facts and quantities,
+  extended to identity. Real scope if built: a local face-embedding
+  match (not a cloud face-ID service) and/or a voice-print/speaker-ID
+  model, both running locally, feeding a simple boolean into the Gate's
+  own decision rather than any model ever asserting "this is Pedro."
+  Good idea, adds real defense-in-depth to the computer-use entry
+  above in particular -- not scoped or sequenced yet.
+- **Camera-based hand-gesture control of the dashboard** (grab/drag a
+  widget with a pinch gesture, using the owner's own hand -- not a
+  face/person-detection feature, confirmed 2026-08-05). Technically
+  solid and well-precedented: MediaPipe Hands does real-time,
+  on-device, 21-landmark tracking from a plain webcam, macOS-
+  compatible, several existing open-source projects already map hand
+  landmarks to system control (volume, scroll, cursor movement). Fits
+  naturally as a *second* purpose for Phase 8's camera session
+  lifecycle (SPEC.md § 6) -- a bounded, ARMED, indicator-visible
+  session, just driving synthetic pointer events into the dashboard's
+  WebSocket channel instead of taking photos. Real scope: a local
+  hand-tracking process, a new gesture→pointer-event protocol,
+  dashboard-side drag handling on every widget. A Phase-8-and-later
+  idea, not urgent.
+
+**Tier 3 — real conflicts with rules this project already has for good
+reasons. Flagging explicitly rather than building around quietly.**
+- **Camera-based "measurements" directly conflict with SPEC.md § 7 /
+  CLAUDE.md § 0.5's existing, deliberate rule: vision identifies, it
+  never quantifies -- no model-derived number is ever stored as fact.**
+  This research confirms that rule is correct, not just cautious: a
+  single ordinary webcam genuinely cannot produce a trustworthy
+  measurement without camera calibration and (for real depth) a second
+  camera or dedicated depth hardware -- published error sources include
+  lighting-dependent failure below 30-40 lux, lens-distortion effects
+  without calibration, and pose-estimation error on textureless
+  surfaces. If a rough on-screen estimate is ever wanted, it has to
+  stay an `Estimate` (already in `shared/types.ts`, a bounded range
+  with a confidence, never summed, never a `Measurement`) -- never
+  presented or stored as a real number, per the existing rule.
+- **Personal WhatsApp and Instagram access have no clean path,
+  confirmed by direct research, not assumed:**
+  - Instagram: personal accounts have had **no official API access at
+    all** since the Basic Display API's end-of-life (Dec 2024). DM
+    access via the Graph API requires converting the account to
+    Business/Creator and linking a Facebook Page -- a real change to
+    what the account *is*, not a permission grant to JARVIS.
+  - WhatsApp: unofficial personal-account automation (Baileys, WAHA,
+    Evolution API) is a confirmed, active Meta ToS violation with real
+    enforcement -- typically detected within 2-8 weeks, and Meta is
+    further restricting third-party AI chatbots on WhatsApp through
+    2026. The official WhatsApp Business API has near-zero ban risk
+    but is built for approved-template business messaging, not passive
+    personal-inbox reading.
+  Neither gets built without the owner explicitly choosing to accept
+  that tradeoff (account-type conversion, or real ban risk) with eyes
+  open -- this is exactly the "stop and ask" case CLAUDE.md § 0.2/§ 9
+  describes, not a silent no and not a silent yes.
+
+**General finding, applies to any future MCP work:** real security
+research on MCP (OWASP's own MCP cheat sheet, multiple 2026 vendor
+writeups) confirms install-time trust is not enough -- the documented
+best practice is per-call inspection (tool name, arguments, data
+touched, destination, side effects) immediately before execution, with
+destructive/data-sharing calls always requiring explicit confirmation.
+This is, point for point, what `Gate.propose()`/`Gate.decide()`
+already do for every other action in this project -- confirms wrapping
+future MCP tool calls *through* the Gate (already the plan in this
+file's Platform section) rather than beside it, and validates that
+design rather than requiring a new one.
 
 ## Annoyances found during SOAK
 

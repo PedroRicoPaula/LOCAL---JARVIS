@@ -11,14 +11,32 @@ this system; the platform exists to host them.
 
 ## 0. Non-negotiables
 
-1. **Everything in English.** Code, comments, docs, prompts, TTS output, wake
-   word. No exceptions. The owner is Portuguese but has chosen English as the
-   system language for accuracy reasons. Do not "helpfully" add Portuguese.
+1. **Code, comments, docs, commit messages, and internal prompts stay
+   English. No exceptions.** Internal prompts (intent classification,
+   JSON extraction, routing, structured vision output — CLAUDE.md § 4)
+   are English regardless of what language the owner is speaking to
+   JARVIS in — small local models are measurably more reliable at
+   structured tasks in English; this is unrelated to the rule below and
+   unaffected by it.
 
-   This governs the *deliverable* only. The coding agent's chat replies in
-   this tool — summaries, mini-feedback while executing, questions — are in
-   Portuguese, by the owner's explicit request. Code blocks, commit messages,
-   and file contents inside those replies stay English regardless.
+   **JARVIS's spoken conversation (STT understanding and TTS output) is
+   bilingual: European Portuguese (PT-PT) and English, matching
+   whichever language the owner is actually speaking, including a
+   natural mid-sentence switch for a word that's more natural in the
+   other language.** This reverses the original v0.1 decision ("English
+   only, no exceptions, chosen for accuracy") — see DECISIONS.md's ADR
+   for the reversal and what it actually requires to build (STT
+   language handling, TTS voice selection, `persona.md`, skill
+   examples) — logged in `docs/BACKLOG.md`, not built yet as of this
+   entry. The wake word itself ("hey jarvis") is unaffected — it's a
+   fixed trained trigger phrase (Phase 2, openWakeWord), independent of
+   the conversational language spoken after it wakes JARVIS up.
+
+   This rule governs the *deliverable* only. The coding agent's chat
+   replies in this tool — summaries, mini-feedback while executing,
+   questions — are in Portuguese, by the owner's explicit request. Code
+   blocks, commit messages, and file contents inside those replies stay
+   English regardless.
 
 2. **Free tier only. No paid provider is built.** Every dependency must be free
    and, where possible, offline. The `ModelProvider` interface is designed so a
@@ -155,6 +173,16 @@ are three tiers and they are not negotiable by a model at runtime:
 | **Green** | `MEMORY_READ`, `FS_READ` (whitelist only), `CAMERA`, `NET_READ` | Runs automatically. Logged. |
 | **Yellow** | `FS_WRITE`, `GIT_WRITE`, `SHELL_EXEC`, `MEMORY_WRITE`, `WEBHOOK` | Requires approval. Blocks until answered or expired. |
 | **Red** | Credential access, `rm`, package publish, anything that moves money, anything that sends a message to another human | Never automatic. Never proposed by a model. Only reachable by the owner typing it. |
+
+"Only reachable by the owner typing it" survives voice-first design
+intact: the *content* of a red-tier action (e.g. a message to send) can
+be drafted and revised entirely by voice — propose → read back →
+confirm, same pattern as every skill (§ 5b) — but the actual send only
+happens on the owner's own typed/clicked approval (dashboard Approve,
+or `gate/cli.ts`'s typed `approve <id>`), never a spoken "yes" alone.
+Voice composes; a real keystroke or click still fires it. See
+`docs/BACKLOG.md`'s computer-use entry for the concrete flow this is
+designed against.
 
 Hard rules:
 

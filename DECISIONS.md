@@ -2015,3 +2015,80 @@ if wanted, not a same-session patch.
   `MEMORY_WRITE` approval will appear in the dashboard queue; approving
   it once fixes "always asks for a city" going forward. Not a bug to
   fix in code -- an approval waiting on the owner.
+
+## ADR-033 — reversing the v0.1 "English only" rule: JARVIS's spoken conversation becomes bilingual PT-PT/English
+
+**Status:** accepted
+
+**Context.** CLAUDE.md § 0.1 originally read, verbatim: "Everything in
+English. Code, comments, docs, prompts, TTS output, wake word. No
+exceptions. The owner is Portuguese but has chosen English as the
+system language for accuracy reasons." This was a real, deliberate
+v0.1 decision, not an oversight -- the stated reasoning was STT/TTS/
+model accuracy, and it held for the whole project up to this point
+(the Whisper vocabulary-hint fixes for "Ponta Delgada" and "Lagoa",
+ADR-026/030, were themselves scoped explicitly as *transcribing what
+was actually said* accurately, not as an exception to the English
+rule -- see those ADRs' own reasoning).
+
+Asked directly (2026-08-05) to reverse this: JARVIS's spoken
+conversation should understand and respond in European Portuguese
+(PT-PT) or English, matching whichever language the owner is actually
+speaking, including a natural mid-sentence switch to whichever
+language a specific word is more natural in. Flagged once, per
+CLAUDE.md § 9 ("say so, once, clearly, then follow the instruction
+unless it breaks a non-negotiable... those you refuse and explain") --
+this was a genuine § 0 non-negotiable, not a style preference, so it
+was surfaced explicitly rather than quietly built. The owner confirmed
+he wants the reversal with full awareness of what was being changed.
+
+**Decision.** CLAUDE.md § 0.1 rewritten: code, comments, docs, commit
+messages, and *internal* prompts (intent classification, JSON
+extraction, routing -- CLAUDE.md § 4) stay English unconditionally --
+that rule was never about the owner's spoken language, it's about
+small local models being measurably more reliable at structured tasks
+in English, and stays true regardless of what language the owner
+speaks. What changes is narrower and specific: STT understanding and
+TTS output for actual conversation are now bilingual PT-PT/English.
+The wake word ("hey jarvis") is explicitly unaffected -- it's a fixed
+trained trigger phrase (Phase 2, openWakeWord's own model), not part
+of "conversation," and retraining/replacing it was not asked for.
+
+**Not built yet -- this entry updates the rule, not the code.** The
+owner asked to "update the documentation" for this, and that's what
+happened here; the real implementation work is real scope, logged in
+`docs/BACKLOG.md`, likely deserving its own phase-sized pass rather
+than a quick patch:
+- `senses/ears`: either a genuine multilingual Whisper model (already
+  tried once for a single proper noun and found inconclusive-to-worse
+  against synthetic test audio, ADR-026 -- a full bilingual-conversation
+  switch is a materially different, bigger question than one place
+  name, deserves its own real test against the owner's actual voice,
+  not synthetic `say`-generated audio) or language detection + routing
+  between the current `small.en` and a PT-capable model per utterance.
+- `senses/voice`: a PT-PT-capable TTS voice selected per response
+  language (macOS `say -v` has real PT-PT voices available, per Phase
+  1's own voice selection work -- confirming a good one is real but
+  bounded research, not a new dependency).
+- `core/persona.md` and every skill's own `persona.md`: currently
+  written assuming English-only output; needs real thought about
+  whether the persona *voice* changes with language or only the words
+  do.
+- Skill manifest `examples` (`docs/SKILLS.md`'s routing data) would
+  plausibly need PT-PT phrasings added alongside the English ones for
+  intent matching to work when the owner speaks Portuguese -- untested
+  assumption, not confirmed, flagged as a real risk to verify early
+  rather than assume.
+- The lane classifier and general-conversation prompts (CLAUDE.md § 4)
+  stay English-only regardless (internal, not spoken) -- but whether an
+  English-only classifier reliably classifies a Portuguese utterance's
+  *lane* is an open, untested question worth an early benchmark pass,
+  not an assumption either way.
+
+**Consequences.** No code changed in this entry -- `CLAUDE.md` and this
+ADR are the only diffs. Real STT/TTS/persona/routing work stays open,
+tracked in `docs/BACKLOG.md`, not scheduled into `ROADMAP.md` yet
+(that's a real phase-sequencing decision -- where this lands relative
+to Phases 8-13 -- left for a dedicated conversation rather than
+decided unilaterally here, per `ROADMAP.md`'s own "nothing leaves
+BACKLOG.md without becoming a numbered phase" rule).
