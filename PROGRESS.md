@@ -1887,6 +1887,46 @@ actually completed the "what city" flow successfully yet -- no
 until he answers it once and approves the resulting `MEMORY_WRITE`.
 242 tests, `make check` green. Full detail in DECISIONS.md's ADR-032.
 
+**Same day (2026-08-05/06), asked to reverse the English-only rule
+(bilingual PT-PT/English conversation, documentation only -- see
+CLAUDE.md § 0.1 and ADR-033) and then to research and build the
+highest-value, lowest-risk items for real SOAK testing:** picked
+hybrid recall and real Spotify control.
+
+Hybrid recall (`core/memory/rrf.ts` + `core/memory/keywordSearch.ts`,
+fusing SQLite FTS5 keyword search with the existing vector search by
+Reciprocal Rank Fusion) surfaced a genuinely major, previously-
+undetected bug while being wired in: `core/main.ts` had only ever
+called `Memory.appendEvent()` for real conversation, never `Memory.
+remember()` -- meaning **semantic recall had never actually indexed a
+single real utterance or response in production since Phase 4**,
+silently, with no error (`assembleContext()`'s own graceful-degradation
+design made this indistinguishable from "nothing relevant was ever
+said"). Fixed with a new `Memory.indexEvent()`, called fire-and-forget
+right after each conversation-turn `appendEvent` (same latency
+reasoning as fact extraction, CLAUDE.md § 7). Confirmed live against a
+fresh scratch DB: `memory_vec`/`events_fts` row counts actually match
+real conversation now, where they would have stayed at zero before.
+
+Spotify control: `core/executors/media.ts` and `skills/media/index.ts`
+now detect which app is actually running (`System Events`) and target
+that one, defaulting to Music.app as before when neither is running.
+Found and fixed a real lint violation along the way -- even a
+type-only import from an executor into a skill trips CLAUDE.md § 5b's
+rule; fixed by duplicating the small `MediaApp` union in the skill
+file instead, same pattern already used for `MediaCommand`.
+
+Also found live, during the same verification pass, not caused by
+tonight's changes: "I don't eat peanuts, I'm allergic" mis-dispatched
+to `shopping_list.remove_item` -- a real embedding-example collision
+(confirmed via `routing_stats`: the lane classification itself was
+correct), same bug class as the "coffee" collision ADR-026 already
+fixed once. Not fixed this session -- logged in `docs/BACKLOG.md`
+rather than guessed at.
+
+15 new tests, 257 total, `make check` green. Full detail in
+DECISIONS.md's ADR-034.
+
 ---
 
 ## Key numbers to record as we go

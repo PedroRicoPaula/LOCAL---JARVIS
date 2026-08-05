@@ -2092,3 +2092,96 @@ tracked in `docs/BACKLOG.md`, not scheduled into `ROADMAP.md` yet
 to Phases 8-13 -- left for a dedicated conversation rather than
 decided unilaterally here, per `ROADMAP.md`'s own "nothing leaves
 BACKLOG.md without becoming a numbered phase" rule).
+
+## ADR-034 — SOAK 1: hybrid recall (and a real bug it surfaced -- semantic indexing never actually ran in production), plus Spotify control
+
+**Status:** accepted
+
+**Context.** Asked to pick up the highest-value, lowest-risk items from
+the 2026-08-05 capability research and build them for real SOAK
+testing, owner's own words: "o que vires que pode esperar fazemos mais
+à frente." Two picked: hybrid search for `core/memory/recall.ts` (the
+research's own "cheapest, highest-value" finding) and real Spotify
+control (the owner's own example of "not just open Spotify, control
+it").
+
+**Decision 1 -- hybrid recall.** `core/memory/recall.ts`'s semantic
+step (`memory_vec`, vector-only) gained a second, independent keyword
+half (`events_fts`, SQLite's built-in FTS5, new `core/memory/
+keywordSearch.ts`) fused by Reciprocal Rank Fusion (new `core/memory/
+rrf.ts`, `k=60`, the literature's own de facto default). `AssembledContext.semanticMatches`
+renamed to `recallMatches` -- "semantic" undersold it once a keyword
+half existed too. Keyword search needs no timeout guard the way the
+embedder does (`semanticTimeoutMs`) -- it's a local, synchronous SQLite
+query, no network/model round trip.
+
+**The real bug this surfaced, found while wiring the two together, not
+gone looking for:** `core/main.ts` had only ever called `Memory.
+appendEvent()` for real conversation turns, never `Memory.remember()`
+-- the one method that also calls `indexText()`/`memory_vec`. Confirmed
+directly against the real `data/jarvis.db`: `memory_vec` had never
+indexed a single real utterance or response in production. **Semantic
+recall (SPEC.md § 4 step 2, "top-k semantic matches") has been
+silently non-functional in every real conversation since Phase 4** --
+`assembleContext()` was designed to degrade gracefully when nothing
+qualifies, which is exactly what made this invisible: no error, no
+crash, indistinguishable from "genuinely nothing relevant was ever
+said." Fixed: `Memory` gained `indexEvent(event)`, the indexing half of
+`remember()` decoupled so a caller can `appendEvent` synchronously
+(needs the id immediately for the transcript broadcast/fact-extraction
+sourceEventId) and index afterward, fire-and-forget -- same latency
+reasoning `extractAndRememberFacts` already uses (CLAUDE.md § 7:
+indexing only matters for a *future* turn, must never delay today's
+response). `core/main.ts`'s two conversation-turn `appendEvent` calls
+now each fire `memory.indexEvent(...).catch(...)` right after.
+
+**Decision 2 -- Spotify control.** `core/executors/media.ts`'s
+`MediaControlPayload` gained an `app: "Music" | "Spotify"` field (both
+apps confirmed live to expose the identical AppleScript verbs).
+`skills/media/index.ts` detects which app is actually running once per
+request (`System Events`, checks for a Spotify process; defaults to
+Music.app otherwise, preserving the pre-existing behavior for anyone
+not using Spotify) *before* proposing -- the app name is baked into
+both the `humanSummary` the owner approves and the signed payload, not
+re-detected inside the executor at execution time (a real, if narrow,
+approve-time-vs-execute-time mismatch risk if the owner switched apps
+in between). `MediaApp` is duplicated in the skill file rather than
+imported from the executor -- confirmed live: even a type-only import
+from an executor trips the "a skill cannot import an executor" lint
+rule (CLAUDE.md § 5b) -- same pattern the file already used for
+`MediaCommand`'s literal union.
+
+**Consequences.**
+- 15 new tests (12 memory/recall: 5 `rrf.test.ts`, 5 `keywordSearch.
+  test.ts`, 2 new `recall.test.ts` cases proving a keyword-only match
+  --  deliberately orthogonal embeddings -- is still surfaced, and that
+  keyword matches survive an embedder timeout; 3 media: Spotify
+  targeting, plus an unknown-app rejection). 257 tests total (was 242),
+  `make check` green.
+- **Live-verified, not just unit-tested:** ran a fresh isolated
+  instance, sent two real utterances through the real `handleUtterance`
+  path, confirmed directly against the scratch DB that `memory_vec` and
+  `events_fts` both now have real rows matching real conversation --
+  before this fix, both would have stayed at 0 rows forever regardless
+  of how much was said. Spotify's own control path verified via the
+  real, safe (no audio-triggering) halves: `System Events`'s Spotify-
+  process check and Music.app's current-track read, both confirmed
+  working against this actual machine (Spotify isn't installed here,
+  confirming the fallback-to-Music default is what actually fires).
+  Deliberately did not live-test an actual `play` call -- same
+  "unexpected audio is a bigger surprise than a Calculator window"
+  reasoning ADR-025 already used once.
+- **A real, separate bug found live during this same verification, not
+  caused by tonight's changes:** "I don't eat peanuts, I'm allergic"
+  dispatched to `shopping_list.remove_item` (confirmed via
+  `routing_stats`: lane `converse`, correctly classified -- this is an
+  embedding-example collision, not a lane problem). Same bug *class*
+  ADR-026 already fixed once (the "coffee" collision) -- shopping_
+  list's `remove_item` examples ("I already bought eggs") sit close
+  enough in embedding space to a declarative "I [verb] a food item"
+  sentence to win over general conversation, and no skill actually
+  owns "state a dietary fact" as an intent. Not fixed here -- logged in
+  `docs/BACKLOG.md`'s Annoyances section rather than guessed at under
+  time pressure; the exact fix (which example, or a stronger
+  disambiguation margin) needs the same live-evidence-first approach
+  ADR-026/030 already used, not a blind edit.

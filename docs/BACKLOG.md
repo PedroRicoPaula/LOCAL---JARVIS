@@ -309,28 +309,15 @@ guessed at. Organized cheapest/safest first.
   same OAuth model, exposes the GA4 Reporting/Admin APIs directly.
   Exactly the "ask my own site's analytics without opening the GA
   dashboard" ask, no risk beyond a normal `NET_READ`-tier integration.
-- **Spotify control -- not a new idea, an extension of code that
-  already exists.** `skills/media`/`core/executors/media.ts` already
-  do real play/pause/next/previous via AppleScript (`tell application
-  "Music"`) -- confirmed live, ADR-025. Spotify has the identical
-  AppleScript scripting dictionary (`tell application "Spotify" to
-  next track`, etc.) -- adding it is extending an existing, proven
-  executor pattern with a second target app, not new architecture.
-  Worth asking the owner which app he actually wants controlled before
-  building (the request used "Spotify" as the example; the code today
-  only drives Music.app).
-- **Hybrid search for `core/memory/recall.ts` -- the single cheapest,
-  highest-value change found in this research.** Confirmed by reading
-  the actual code: recall today is pure vector search
-  (`memory_vec MATCH`, `core/memory/embeddings.ts`), no keyword layer
-  at all. Published comparisons show hybrid retrieval (BM25 + vector,
-  fused by Reciprocal Rank Fusion) beating vector-only retrieval on
-  exact-token queries (names, ids, exact phrases) that pure embedding
-  search is known to miss. SQLite's `FTS5` is built in -- no new
-  dependency, same boring-by-default bar as `sqlite-vec` already
-  cleared. Concretely: add an FTS5 index alongside `memory_vec`, fuse
-  both result sets by RRF instead of vector distance alone. This is a
-  real, scoped, low-risk phase-sized piece of work, not blue-sky.
+- ~~Spotify control~~ -- **built 2026-08-06.** `skills/media`/
+  `core/executors/media.ts` now detect whether Spotify or Music.app is
+  actually running (`System Events`) and target that one; Music.app
+  stays the default when neither is running. See ADR-034.
+- ~~Hybrid search for `core/memory/recall.ts`~~ -- **built 2026-08-06,
+  and it surfaced a real, previously-undetected bug while being wired
+  in: semantic recall had never actually indexed a single real
+  conversation turn in production (`core/main.ts` never called the
+  indexing method).** Both fixed together. See ADR-034.
 
 **Tier 2 — real feature, real scope, needs its own design pass before building.**
 - **"Computer use" -- JARVIS seeing and driving this Mac's own UI on
@@ -483,6 +470,21 @@ design rather than requiring a new one.
   guessed at -- but worth a look the moment any of them goes quiet in
   real use, rather than rediscovering the same root cause a fourth
   time. See ADR-030's closing note.
+- **Open, not fixed -- another embedding-example collision, same class
+  as the "coffee" one ADR-026 fixed (2026-08-06).** "I don't eat
+  peanuts, I'm allergic" dispatched to `shopping_list.remove_item`
+  instead of falling through to general conversation/fact extraction.
+  Confirmed via `routing_stats` this is *not* a lane-classification
+  problem -- lane was correctly `converse`; the embedding match itself
+  picked `remove_item` over anything else, most likely because its own
+  example "I already bought eggs" sits close in embedding space to any
+  declarative "I [verb] a food item" sentence. No skill actually owns
+  "state a dietary fact" as an intent (that's `converse`'s/fact-
+  extraction's job), so there's nothing to disambiguate against.
+  Needs the same live-evidence-first approach ADR-026/030 already
+  used (confirm the exact colliding example before touching anything)
+  -- not fixed here, found live during ADR-034's verification pass,
+  logged rather than guessed at under time pressure.
 - **2026-08-04 — `converse` hallucinated capabilities (fixed same day).**
   Real conversation: asked "can you create a skill?", JARVIS said yes and
   kept claiming to be building one, that it would show up on Skill
