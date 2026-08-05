@@ -4,6 +4,7 @@ import { openDb } from "../db.ts";
 import { indexText } from "../embeddings.ts";
 import { appendEvent } from "../events.ts";
 import { upsertFact } from "../facts.ts";
+import { indexKeywords } from "../keywordSearch.ts";
 import { assembleContext } from "../recall.ts";
 import { FakeEmbedder, orthogonalVector, ScriptedEmbedder } from "./fakes.ts";
 
@@ -34,7 +35,7 @@ test("a semantic match already among the recent turns is not duplicated", async 
   const ctx = await assembleContext(db, embedder, { sessionId: "s1", queryText: "query about shared content" });
 
   assert.equal(ctx.recentTurns.length, 1);
-  assert.equal(ctx.semanticMatches.length, 0);
+  assert.equal(ctx.recallMatches.length, 0);
   assert.equal(ctx.text.match(/shared content/g)?.length, 1);
 });
 
@@ -52,8 +53,46 @@ test("a semantic match from a different session is included and not duplicated",
   const ctx = await assembleContext(db, embedder, { sessionId: "current-session", queryText: "query" });
 
   assert.equal(ctx.recentTurns.length, 0);
-  assert.equal(ctx.semanticMatches.length, 1);
-  assert.equal(ctx.semanticMatches[0]?.content, "about resistors");
+  assert.equal(ctx.recallMatches.length, 1);
+  assert.equal(ctx.recallMatches[0]?.content, "about resistors");
+});
+
+test("a keyword-only match is still surfaced by hybrid recall, even when its embedding is nowhere near the query -- the actual point of adding keyword search", async () => {
+  const db = openDb(":memory:");
+  // Deliberately orthogonal vectors -- semanticSearch alone would never
+  // surface this (cosine distance ~1, well past the default 0.5 floor).
+  // Only the literal shared token "R47" should bring it back.
+  const embedder = new ScriptedEmbedder(
+    new Map([
+      ["the resistor is R47", orthogonalVector(0)],
+      ["what value is R47", orthogonalVector(1)],
+    ]),
+  );
+  const event = appendEvent(db, { kind: "utterance", actor: "owner", content: "the resistor is R47", sessionId: "old-session" });
+  await indexText(db, embedder, event.id, "the resistor is R47");
+  indexKeywords(db, event.id, "the resistor is R47");
+
+  const ctx = await assembleContext(db, embedder, { sessionId: "current-session", queryText: "what value is R47" });
+
+  assert.equal(ctx.recallMatches.length, 1);
+  assert.equal(ctx.recallMatches[0]?.content, "the resistor is R47");
+});
+
+test("keyword matches still come through when the embedder times out -- the two search paths are independent", async () => {
+  const db = openDb(":memory:");
+  const event = appendEvent(db, { kind: "utterance", actor: "owner", content: "the resistor is R47", sessionId: "old-session" });
+  indexKeywords(db, event.id, "the resistor is R47");
+
+  const neverResolvingEmbedder = { embed: () => new Promise<number[][]>(() => {}) };
+  const ctx = await assembleContext(db, neverResolvingEmbedder, {
+    sessionId: "current-session",
+    queryText: "R47",
+    semanticTimeoutMs: 30,
+  });
+
+  assert.equal(ctx.semanticTimedOut, true);
+  assert.equal(ctx.recallMatches.length, 1);
+  assert.equal(ctx.recallMatches[0]?.content, "the resistor is R47");
 });
 
 test("facts above the confidence floor are included, low-confidence ones are not", async () => {
@@ -114,7 +153,7 @@ test("a slow embedder degrades to empty semantic matches instead of blocking the
 
   assert.ok(elapsed < 500, `took ${elapsed}ms, should have bailed out around 30ms`);
   assert.equal(ctx.semanticTimedOut, true);
-  assert.deepEqual(ctx.semanticMatches, []);
+  assert.deepEqual(ctx.recallMatches, []);
   // Everything that doesn't need the embedder still comes through.
   assert.equal(ctx.recentTurns.length, 1);
   assert.equal(ctx.facts.length, 1);

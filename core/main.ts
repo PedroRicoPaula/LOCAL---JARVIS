@@ -122,6 +122,13 @@ async function main(): Promise<void> {
 
     console.log(`core: heard ${JSON.stringify(text)}`);
     const utteranceEvent = memory.appendEvent({ kind: "utterance", actor: "owner", content: text, sessionId: SESSION_ID });
+    // Fire-and-forget, same reasoning as extractAndRememberFacts below:
+    // indexing this turn only matters for a *future* turn's recall, so
+    // it must never delay today's response (CLAUDE.md § 7). Found live,
+    // SOAK 1 -- this call was missing entirely before, so real
+    // conversation was never actually indexed for semantic/keyword
+    // recall at all (see Memory.indexEvent's own docstring).
+    memory.indexEvent(utteranceEvent).catch((err) => console.error("core: failed to index utterance for recall, continuing", err));
     wsHub.broadcast({ type: "transcript", text, final: true, speaker: "owner", eventId: utteranceEvent.id });
     wsHub.broadcast({ type: "state", value: "thinking" });
     try {
@@ -173,6 +180,7 @@ async function main(): Promise<void> {
       }
       console.log(`core: said ${JSON.stringify(speech)}`);
       const responseEvent = memory.appendEvent({ kind: "response", actor: "jarvis", content: speech, sessionId: SESSION_ID });
+      memory.indexEvent(responseEvent).catch((err) => console.error("core: failed to index response for recall, continuing", err));
       wsHub.broadcast({ type: "transcript", text: speech, final: true, speaker: "jarvis", eventId: responseEvent.id });
     } catch (err) {
       // One bad utterance (a skill bug, a model failure) must not take

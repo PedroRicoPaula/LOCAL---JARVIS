@@ -13,6 +13,7 @@ import { indexText } from "./embeddings.ts";
 import { appendEvent, getEvent, recentEvents, recentEventsForSession } from "./events.ts";
 import { factsAboveConfidence, getFact, upsertFact } from "./facts.ts";
 import { recentFeedback, setFeedback } from "./feedback.ts";
+import { indexKeywords } from "./keywordSearch.ts";
 import { addObservation, getObservation } from "./observations.ts";
 import type { AssembledContext, RecallOptions } from "./recall.ts";
 import { assembleContext } from "./recall.ts";
@@ -35,18 +36,36 @@ export class Memory {
     this.db.close();
   }
 
-  /** Appends the event and indexes it for semantic recall in one step —
-   * the two are meant to always happen together for anything recall
-   * should be able to find later. Use `appendEvent` alone for events that
-   * shouldn't be semantically searchable (rare; none yet). */
+  /** Appends the event and indexes it (both halves of hybrid recall --
+   * `memory_vec` and `events_fts`) in one step — the two are meant to
+   * always happen together for anything recall should be able to find
+   * later. Use `appendEvent` + `indexEvent` separately when the caller
+   * can't afford to block on indexing before returning (an embedding
+   * call is a real, if usually small, network/model round trip — see
+   * `core/main.ts`'s own fire-and-forget use, CLAUDE.md § 7). */
   async remember(input: Omit<MemoryEvent, "id" | "ts"> & { ts?: number }): Promise<MemoryEvent> {
     const event = appendEvent(this.db, input);
-    await indexText(this.db, this.embedder, event.id, event.content);
+    await this.indexEvent(event);
     return event;
   }
 
   appendEvent(input: Omit<MemoryEvent, "id" | "ts"> & { ts?: number }): MemoryEvent {
     return appendEvent(this.db, input);
+  }
+
+  /** The indexing half of `remember()`, decoupled so a caller can
+   * `appendEvent` synchronously (get the id immediately) and index
+   * afterward without blocking on it -- found live, SOAK 1:
+   * `core/main.ts` had only ever called plain `appendEvent` for real
+   * conversation turns, never `remember`, so `memory_vec`/`events_fts`
+   * had never actually indexed a single real utterance or response in
+   * production -- semantic (and now keyword) recall silently returned
+   * nothing for real conversations the whole time, with no error to
+   * notice by (`assembleContext` degrades gracefully to recent-turns
+   * -only, indistinguishable from "genuinely nothing relevant"). */
+  async indexEvent(event: MemoryEvent): Promise<void> {
+    await indexText(this.db, this.embedder, event.id, event.content);
+    indexKeywords(this.db, event.id, event.content);
   }
 
   getEvent(id: string): MemoryEvent | null {

@@ -7,7 +7,7 @@
  * deliberately: a tokenizer is another dependency for a number that only
  * has to be a reasonable, consistent budget, not a billing-accurate one.
  * Pieces are added in SPEC.md § 4's own priority order (recent turns
- * always first, then semantic matches, then facts) and a piece that
+ * always first, then recall matches, then facts) and a piece that
  * wouldn't fit is skipped whole, never truncated mid-text — simpler to
  * reason about and to test "never exceeds the cap" against exactly.
  *
@@ -15,6 +15,16 @@
  * semantic search — `memory_vec` in this phase indexes events only; nothing
  * in the recall policy asks for semantic fact search, so it isn't built
  * ahead of a real need (CLAUDE.md § 0.6).
+ *
+ * Step 2 became hybrid (SOAK 1): `semanticSearch()` (vector, `memory_vec`)
+ * and `keywordSearch()` (lexical, `events_fts`) run in parallel and are
+ * merged by `reciprocalRankFusion()` rather than relying on vector
+ * similarity alone. Published comparisons show hybrid retrieval beating
+ * vector-only on exact-token queries (names, ids, exact phrases) that
+ * pure embedding similarity is known to miss — see `docs/BACKLOG.md`'s
+ * capability-research entry, 2026-08-05. Keyword search is local SQLite,
+ * synchronous, and fast enough to need no timeout guard of its own —
+ * only the embedder half races `semanticTimeoutMs`, same as before.
  */
 
 import type { DatabaseSync } from "node:sqlite";
@@ -23,6 +33,8 @@ import type { Embedder } from "./embeddings.ts";
 import { semanticSearch } from "./embeddings.ts";
 import { getEvent, recentEventsForSession } from "./events.ts";
 import { factsAboveConfidence } from "./facts.ts";
+import { keywordSearch } from "./keywordSearch.ts";
+import { reciprocalRankFusion } from "./rrf.ts";
 
 export interface RecallOptions {
   sessionId: string;
@@ -46,13 +58,17 @@ export interface RecallOptions {
 
 export interface AssembledContext {
   recentTurns: MemoryEvent[];
-  semanticMatches: MemoryEvent[];
+  /** Hybrid-ranked (vector + keyword, fused by RRF) matches beyond the
+   * recent-turns window -- "semantic" alone would undersell it since
+   * SOAK 1 (see this file's own docstring). */
+  recallMatches: MemoryEvent[];
   facts: Fact[];
   text: string;
   /** True if anything that would have qualified was left out for space. */
   truncated: boolean;
-  /** True if the embedding call for semantic search didn't return within
-   * `semanticTimeoutMs` — `semanticMatches` is `[]` in that case, not
+  /** True if the embedding call for vector search didn't return within
+   * `semanticTimeoutMs` — the vector half of `recallMatches` is `[]` in
+   * that case (keyword matches still come through, unaffected), not
    * "genuinely nothing matched." Surfaced rather than hidden, so a
    * confusingly memory-less reply can be told apart from a slow embed. */
   semanticTimedOut: boolean;
@@ -110,9 +126,19 @@ export async function assembleContext(
     semanticTimeoutMs,
   );
   const semanticTimedOut = matchesOrTimeout === TIMED_OUT;
-  const matches = semanticTimedOut ? [] : matchesOrTimeout;
-  const semanticMatches = matches
-    .map((m) => getEvent(db, m.refId))
+  const semanticMatches = semanticTimedOut ? [] : matchesOrTimeout;
+  // Keyword half: local SQLite, synchronous, no timeout guard needed
+  // (see this file's own docstring). Independent of whether the
+  // embedder timed out -- a slow/unreachable embedder shouldn't cost
+  // the owner keyword recall too.
+  const keywordMatches = keywordSearch(db, opts.queryText, semanticTopK);
+
+  const fusedIds = reciprocalRankFusion([
+    semanticMatches.map((m) => m.refId),
+    keywordMatches.map((m) => m.refId),
+  ]).slice(0, semanticTopK);
+  const recallMatches = fusedIds
+    .map((id) => getEvent(db, id))
     .filter((e): e is MemoryEvent => e !== null && !recentIds.has(e.id));
 
   const facts = factsAboveConfidence(db, factConfidenceFloor);
@@ -132,12 +158,12 @@ export async function assembleContext(
   }
 
   for (const e of recentTurns) tryAdd(renderEvent(e));
-  for (const e of semanticMatches) tryAdd(renderEvent(e));
+  for (const e of recallMatches) tryAdd(renderEvent(e));
   for (const f of facts) tryAdd(renderFact(f));
 
   return {
     recentTurns,
-    semanticMatches,
+    recallMatches,
     facts,
     text: included.join("\n"),
     truncated,

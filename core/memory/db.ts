@@ -107,5 +107,15 @@ export function openDb(path: string): DatabaseSync {
   db.exec(
     `CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(embedding float[${EMBEDDING_DIMENSIONS}] distance_metric=cosine, ref_id TEXT)`,
   );
+  // Keyword half of hybrid recall (SOAK 1) -- vector search alone misses
+  // exact-token queries (names, ids, exact phrases) that pure embedding
+  // similarity is known to miss; FTS5 is built into SQLite, no new
+  // dependency, same "boring by default" bar `sqlite-vec` already
+  // cleared. A standalone table, not FTS5's "external content" mode --
+  // `events.id` is a TEXT ulid, not an integer rowid, so mirroring
+  // `memory_vec`'s own "indexed alongside the write, looked up by
+  // ref_id" shape (see `keywordSearch.ts`) is simpler than fighting
+  // FTS5's rowid-linkage assumptions for no real benefit here.
+  db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(ref_id UNINDEXED, content)");
   return db;
 }

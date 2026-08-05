@@ -16,8 +16,8 @@ test("remember() both appends and indexes -- recall() can find it semantically l
 
   const ctx = await memory.recall({ sessionId: "session-2", queryText: "what do I avoid eating" });
 
-  assert.equal(ctx.semanticMatches.length, 1);
-  assert.equal(ctx.semanticMatches[0]?.content, "I avoid peanuts");
+  assert.equal(ctx.recallMatches.length, 1);
+  assert.equal(ctx.recallMatches[0]?.content, "I avoid peanuts");
   memory.close();
 });
 
