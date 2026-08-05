@@ -7,12 +7,14 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ApprovalOutcome, ProposedAction } from "../../shared/types.ts";
 import type { Gate } from "../gate/gate.ts";
+import type { McpToolLister } from "../mcp/registry.ts";
 import type { Memory } from "../memory/memory.ts";
 import type { Registry } from "../router/registry.ts";
 import { createStubCameraHandle } from "./camera.ts";
 import type { Conversation } from "./types.ts";
 import { stubPropose } from "./gate.ts";
 import { createSkillLogger } from "./logger.ts";
+import { createEmptyMcpToolLister } from "./mcp.ts";
 import { createSkillRouter } from "./skillRouter.ts";
 import { createSkillStore } from "./store.ts";
 import type { SkillContext } from "./types.ts";
@@ -31,6 +33,11 @@ export interface ContextDeps {
    * without a real `Gate` instance. Takes precedence over `gate` if both
    * are given. */
   propose?: (action: ProposedAction) => Promise<ApprovalOutcome>;
+  /** Omitted when no MCP servers are configured -- `SkillContext.mcp`
+   * falls back to the honest empty lister (`core/skills/mcp.ts`), same
+   * "not connected" default every skill already has to handle for
+   * `now_playing`-style external state. */
+  mcp?: McpToolLister;
 }
 
 export function buildSkillContext(deps: ContextDeps, skillId: string, sessionId: string): SkillContext {
@@ -47,5 +54,6 @@ export function buildSkillContext(deps: ContextDeps, skillId: string, sessionId:
     sessionId,
     now: () => Date.now(),
     log: createSkillLogger(skillId),
+    mcp: deps.mcp ?? createEmptyMcpToolLister(),
   };
 }

@@ -42,6 +42,7 @@ function buildCtx(memory: Memory, router: SkillContext["router"], conversation: 
     sessionId: "s1",
     now: () => 0,
     log: { info: () => {}, warn: () => {}, error: () => {} },
+    mcp: { hasServer: () => false, listTools: () => [] },
   };
 }
 

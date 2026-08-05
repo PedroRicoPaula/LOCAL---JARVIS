@@ -21,6 +21,7 @@ import type {
   VisionRequest,
   VisionResult,
 } from "../../shared/types.ts";
+import type { McpToolLister } from "../mcp/registry.ts";
 import type { Memory } from "../memory/memory.ts";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +90,12 @@ export interface SkillContext {
   sessionId: string;
   now(): number;
   log: Logger;
+  /** Discovery only (which MCP servers/tools exist) -- invoking one
+   * always goes through `propose({capability: "MCP_TOOL_CALL", ...})`.
+   * Empty/false when no server is registered, never a throw -- see
+   * `core/skills/mcp.ts`'s own docstring for why this differs from
+   * `camera`'s stub. */
+  mcp: McpToolLister;
 }
 
 export type SkillInitContext = Pick<SkillContext, "memory" | "store" | "log">;

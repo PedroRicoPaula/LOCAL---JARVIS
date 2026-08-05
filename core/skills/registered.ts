@@ -15,4 +15,5 @@ export const REGISTERED_SKILL_MODULES: readonly string[] = [
   "../../skills/shopping_list/index.ts",
   "../../skills/launcher/index.ts",
   "../../skills/media/index.ts",
+  "../../skills/gmail/index.ts",
 ];

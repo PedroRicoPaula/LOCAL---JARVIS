@@ -64,6 +64,7 @@ function buildContext(): SkillContext {
     sessionId: "s1",
     now: () => 0,
     log: { info: () => {}, warn: () => {}, error: () => {} },
+    mcp: { hasServer: () => false, listTools: () => [] },
   };
 }
 

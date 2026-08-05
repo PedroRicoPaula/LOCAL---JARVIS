@@ -82,7 +82,16 @@ export type Capability =
   | "FS_WRITE"
   | "GIT_WRITE"
   | "SHELL_EXEC"
-  | "WEBHOOK";
+  | "WEBHOOK"
+  // Every MCP tool call, uniformly -- deliberately not tiered per-tool
+  // by trusting a server's own self-declared `readOnlyHint`/
+  // `destructiveHint` annotations (real MCP security research, 2026-08-05
+  // capability research in docs/BACKLOG.md: those hints are the
+  // *server's* own claim, not independently verified, and CLAUDE.md § 0.5's
+  // "trust never comes from a model/external claim" reasoning applies
+  // here too). A future per-tool tier is a real design question, not
+  // assumed safe by default.
+  | "MCP_TOOL_CALL";
 // red capabilities are deliberately absent from this union. They are not
 // reachable by any code path. Adding one here is a security decision.
 

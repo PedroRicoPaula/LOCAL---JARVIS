@@ -16,6 +16,7 @@
     "typescript": "^5.6.3"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "sqlite-vec": "^0.1.9",
     "ulid": "^3.0.2",
     "ws": "^8.21.2"

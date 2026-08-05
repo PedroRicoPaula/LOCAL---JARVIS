@@ -24,6 +24,7 @@
 import { connectWithRetry, readLines, sendLine } from "./ipc.ts";
 import { generalConversationReply } from "./converse.ts";
 import { createDashboardHistory } from "./dashboardHistory.ts";
+import { createMcpToolExecutor } from "./executors/mcp.ts";
 import { createWriteFactExecutor } from "./executors/memory.ts";
 import { runShellAction } from "./executors/shell.ts";
 import { extractAndRememberFacts } from "./factExtraction.ts";
@@ -31,6 +32,7 @@ import { watchApprovalCommands } from "./gate/cli.ts";
 import { Gate } from "./gate/gate.ts";
 import { getSigningKey } from "./gate/hmac.ts";
 import { createHttpServer } from "./http.ts";
+import { setupMcpRegistry } from "./mcp/setup.ts";
 import { openDb } from "./memory/db.ts";
 import { Memory } from "./memory/memory.ts";
 import { OllamaProvider } from "./router/providers/ollama.ts";
@@ -63,9 +65,11 @@ async function main(): Promise<void> {
   const db = openDb(DB_PATH);
   const memory = new Memory(db, embedder);
   const routerRegistry = await buildRegistry();
+  const mcpRegistry = await setupMcpRegistry();
   const gate = new Gate(db, await getSigningKey(), {
     SHELL_EXEC: runShellAction,
     MEMORY_WRITE: createWriteFactExecutor(memory),
+    MCP_TOOL_CALL: createMcpToolExecutor(mcpRegistry),
   });
 
   const skillRegistry = new SkillRegistry();
@@ -145,7 +149,7 @@ async function main(): Promise<void> {
         routerRegistry,
         text,
         SESSION_ID,
-        (skillId) => buildSkillContext({ db, memory, routerRegistry, conversation, gate }, skillId, SESSION_ID),
+        (skillId) => buildSkillContext({ db, memory, routerRegistry, conversation, gate, mcp: mcpRegistry }, skillId, SESSION_ID),
       );
       memory.recordRoutingStat({
         lane: trace.lane,

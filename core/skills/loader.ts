@@ -11,18 +11,35 @@
 import type { Capability, Lane, SkillManifest } from "../../shared/types.ts";
 import type { Skill, SkillInitContext } from "./types.ts";
 
-const VALID_LANES: readonly Lane[] = ["reflex", "converse", "reason", "see", "act"];
-const VALID_CAPABILITIES: readonly Capability[] = [
-  "MEMORY_READ",
-  "FS_READ",
-  "CAMERA",
-  "NET_READ",
-  "MEMORY_WRITE",
-  "FS_WRITE",
-  "GIT_WRITE",
-  "SHELL_EXEC",
-  "WEBHOOK",
-];
+// `Record<Lane/Capability, true>` rather than a plain array literal --
+// found live (2026-08-06, ADR-035): adding `MCP_TOOL_CALL` to
+// `shared/types.ts`'s `Capability` union alone wasn't enough, this list
+// silently fell out of sync and disabled a real skill at load time with
+// no compile error. A `Record` keyed by the full union forces
+// TypeScript to reject a build the moment the two drift again --
+// missing a key here is now a type error, not a runtime mystery.
+const VALID_LANES_SET: Record<Lane, true> = {
+  reflex: true,
+  converse: true,
+  reason: true,
+  see: true,
+  act: true,
+};
+const VALID_LANES: readonly Lane[] = Object.keys(VALID_LANES_SET) as Lane[];
+
+const VALID_CAPABILITIES_SET: Record<Capability, true> = {
+  MEMORY_READ: true,
+  FS_READ: true,
+  CAMERA: true,
+  NET_READ: true,
+  MEMORY_WRITE: true,
+  FS_WRITE: true,
+  GIT_WRITE: true,
+  SHELL_EXEC: true,
+  WEBHOOK: true,
+  MCP_TOOL_CALL: true,
+};
+const VALID_CAPABILITIES: readonly Capability[] = Object.keys(VALID_CAPABILITIES_SET) as Capability[];
 
 export interface ManifestValidationResult {
   ok: boolean;

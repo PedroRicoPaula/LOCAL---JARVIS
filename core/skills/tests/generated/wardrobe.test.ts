@@ -18,6 +18,7 @@ test("happy path: handle() returns speech and calls ctx.say()", async () => {
       sessionId: "s1",
       now: () => 0,
       log: { info: () => {}, warn: () => {}, error: () => {} },
+      mcp: { hasServer: () => false, listTools: () => [] },
     },
   );
 

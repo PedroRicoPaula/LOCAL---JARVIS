@@ -5,6 +5,8 @@
  */
 
 import type { VisionRequest, VisionResult } from "../../../shared/types.ts";
+import type { McpToolInfo, McpToolLister } from "../../mcp/registry.ts";
+import { createEmptyMcpToolLister } from "../mcp.ts";
 import type { Conversation, Logger, Router, SkillContext, SkillStore } from "../types.ts";
 
 export interface FakeRouterScript {
@@ -61,6 +63,17 @@ export function fakeLogger(): Logger {
   return { info: () => {}, warn: () => {}, error: () => {} };
 }
 
+/** Simulates a specific server's discovered tools -- for skills whose
+ * behavior depends on what `ctx.mcp.listTools()` returns (e.g.
+ * `skills/gmail`, which finds a tool by name pattern rather than
+ * assuming an exact, unverified server-side tool name). */
+export function fakeMcpToolLister(toolsByServer: Record<string, McpToolInfo[]> = {}): McpToolLister {
+  return {
+    hasServer: (serverId) => serverId in toolsByServer,
+    listTools: (serverId) => toolsByServer[serverId] ?? [],
+  };
+}
+
 export interface FakeContextOptions {
   router?: Router;
   memory?: SkillContext["memory"];
@@ -68,6 +81,7 @@ export interface FakeContextOptions {
   propose?: SkillContext["propose"];
   store?: SkillStore;
   sessionId?: string;
+  mcp?: McpToolLister;
 }
 
 export function fakeSkillContext(opts: FakeContextOptions = {}): SkillContext {
@@ -88,5 +102,6 @@ export function fakeSkillContext(opts: FakeContextOptions = {}): SkillContext {
     sessionId: opts.sessionId ?? "test-session",
     now: () => 0,
     log: fakeLogger(),
+    mcp: opts.mcp ?? createEmptyMcpToolLister(),
   };
 }
