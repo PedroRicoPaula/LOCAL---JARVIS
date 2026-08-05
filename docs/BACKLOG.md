@@ -298,11 +298,24 @@ guessed at. Organized cheapest/safest first.
 
 **Tier 1 — clean, official, low-risk. Worth building for real.**
 - ~~Gmail via Google's own official MCP server~~ -- **built 2026-08-06**
-  (`core/mcp/`, `skills/gmail`), real code and real tests, but **not
-  live-verified yet -- blocked on the owner completing Google Cloud
-  Console setup + `bench/gmail_authorize.ts`** (`README.md`'s "3c"
-  section has the exact steps). Read-only search only; the MCP server
-  itself doesn't even expose a send scope. See ADR-035.
+  (`core/mcp/`, `skills/gmail`), real code and real tests. OAuth setup
+  completed 2026-08-06 -- connection and `tools/list` both work
+  (13 real tools seen, `findSearchTool`/`guessQueryArgName` confirmed
+  matching against them). **But every actual data call
+  (`search_threads`, `list_labels`, ...) fails with `"The caller does
+  not have permission"`, and this is Google's own bug, not ours or a
+  config gap:** confirmed by real, correct OAuth scopes
+  (`gmail.readonly`+`gmail.compose`, checked via `tokeninfo`), and by
+  public reports of the exact same error, same wording, on Google's
+  own Gmail MCP connector --
+  [anthropics/claude-ai-mcp#229](https://github.com/anthropics/claude-ai-mcp/issues/229),
+  [#424](https://github.com/anthropics/claude-ai-mcp/issues/424)
+  (persistent since 2026-04-20, 100% reproducible for affected
+  accounts). Nothing left to fix on our side -- `skills/gmail`
+  already degrades honestly (a failed `callTool` speaks the error
+  rather than crashing or fabricating results). Revisit by periodically
+  re-running the live check; no action item for us until Google fixes
+  it. See ADR-037.
 - **Google Analytics via Google's own official MCP server**
   ([github.com/googleanalytics/google-analytics-mcp](https://github.com/googleanalytics/google-analytics-mcp)) --
   same OAuth model, exposes the GA4 Reporting/Admin APIs directly.

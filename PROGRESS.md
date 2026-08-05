@@ -1994,6 +1994,29 @@ session (visible in DECISIONS.md's ADR-036) suggests
 call succeeds, but that is analysis, not verification -- a follow-up
 live run is still needed. Full detail in ADR-036.
 
+**Same day, follow-up:** owner enabled "Gmail MCP API," then also
+"Gmail API" on a second pass. `tools/list` now succeeds cleanly (13
+real tools, confirmed matching the analysis above). But every actual
+data call -- `search_threads`, `list_labels`, tried separately --
+fails identically with `"The caller does not have permission"`,
+despite a verified-correct, correctly-scoped OAuth token
+(`gmail.readonly` + `gmail.compose`, checked via Google's own
+`tokeninfo` endpoint). Three real fixes in a row (test users, Gmail
+MCP API, Gmail API), symptom unchanged -- stopped per CLAUDE.md § 2
+and searched for the exact error instead of guessing a fourth Cloud
+Console setting. Found it: a publicly reported, currently-open bug in
+Google's own Gmail MCP connector, same error string, same shape,
+unrelated to this project or account
+([anthropics/claude-ai-mcp#229](https://github.com/anthropics/claude-ai-mcp/issues/229),
+[#424](https://github.com/anthropics/claude-ai-mcp/issues/424)).
+Gmail integration is now code-complete, tested, and live-connected --
+OAuth, registry, tool discovery all confirmed real -- but not usable
+for actual searches until Google fixes their end. No code change
+needed: `skills/gmail` already speaks the failure honestly instead of
+crashing or faking a result. `docs/BACKLOG.md` updated to say so
+plainly instead of the old "owner setup incomplete" framing. Full
+detail in ADR-037.
+
 ---
 
 ## Key numbers to record as we go
