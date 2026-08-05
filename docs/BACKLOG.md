@@ -470,21 +470,50 @@ design rather than requiring a new one.
   guessed at -- but worth a look the moment any of them goes quiet in
   real use, rather than rediscovering the same root cause a fourth
   time. See ADR-030's closing note.
-- **Open, not fixed -- another embedding-example collision, same class
-  as the "coffee" one ADR-026 fixed (2026-08-06).** "I don't eat
-  peanuts, I'm allergic" dispatched to `shopping_list.remove_item`
-  instead of falling through to general conversation/fact extraction.
-  Confirmed via `routing_stats` this is *not* a lane-classification
-  problem -- lane was correctly `converse`; the embedding match itself
-  picked `remove_item` over anything else, most likely because its own
-  example "I already bought eggs" sits close in embedding space to any
-  declarative "I [verb] a food item" sentence. No skill actually owns
-  "state a dietary fact" as an intent (that's `converse`'s/fact-
-  extraction's job), so there's nothing to disambiguate against.
-  Needs the same live-evidence-first approach ADR-026/030 already
-  used (confirm the exact colliding example before touching anything)
-  -- not fixed here, found live during ADR-034's verification pass,
-  logged rather than guessed at under time pressure.
+- **Open, not fixed, root-caused more precisely (2026-08-06) -- not a
+  simple example collision after all, the actual mechanism is deeper.**
+  "I don't eat peanuts, I'm allergic" dispatched to `shopping_list.
+  remove_item`. First guess (logged same day, ADR-034) was an
+  embedding-example collision like the "coffee" one ADR-026 fixed --
+  investigated properly with real `mxbai-embed-large` cosine-similarity
+  tests before touching anything, and that guess was wrong in an
+  informative way:
+  - The real top-scoring example was `"take milk off the list"`
+    (0.544), not the suspected `"I already bought eggs"`.
+  - Swapping it for a deliberately different phrasing
+    (`"cross bread off the list, we have enough"`, tested to score
+    0.37-0.44 against three dietary-restriction phrasings, clearly
+    below `CANDIDATE_FLOOR` 0.5) **did not actually fix the class of
+    problem** -- re-running the full candidate set afterward, "I'm
+    lactose intolerant" then best-matched `add_item`'s "add milk to
+    the shopping list" at 0.643, *worse* than before. `shopping_list`'s
+    whole vocabulary (common groceries) inherently sits at moderate
+    cosine similarity with *any* short sentence naming a common food,
+    regardless of add/remove/list intent -- swapping one example just
+    moves which example collides, not whether the category does.
+  - The real dispatch score (0.544) never crosses `DISPATCH_SCORE`
+    (0.72) either, so this was never a hard embedding-threshold auto-
+    dispatch -- it went through `dispatch.ts`'s LLM disambiguation step
+    (`DISAMBIGUATION_SYSTEM`, which *does* have a "none" escape hatch:
+    "Pick 'none' if nothing in the list actually matches") and the
+    model positively chose `remove_item` over saying "none." Given this
+    session's own repeated findings about NIM instability forcing
+    disambiguation calls onto a much weaker fallback model, that's the
+    more likely real cause -- not the embedding shortlist itself, but a
+    degraded model failing to say "none" when it should have.
+  - The robust fix is almost certainly a counter-example in
+    `DISAMBIGUATION_SYSTEM` ("a statement about the owner's own facts/
+    preferences is not an action on any list, pick 'none'") -- the
+    same shape of fix `factExtraction.ts` already got in ADR-027 for
+    the identical failure pattern. **Deliberately not made here**:
+    `DISAMBIGUATION_SYSTEM` is a *shared* prompt across every skill's
+    disambiguation, and ADR-026 already proved once that editing a
+    shared classifier/disambiguation prompt can silently regress
+    unrelated cases elsewhere -- this needs the same benchmark-backed
+    verification that fix used, not a same-session patch. Low real
+    urgency: the live consequence here was an honest, harmless "I
+    couldn't find Peanuts on the list," not a false success or a
+    red-tier action.
 - **2026-08-04 — `converse` hallucinated capabilities (fixed same day).**
   Real conversation: asked "can you create a skill?", JARVIS said yes and
   kept claiming to be building one, that it would show up on Skill
