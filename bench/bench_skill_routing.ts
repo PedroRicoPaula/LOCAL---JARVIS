@@ -74,6 +74,9 @@ const CASES: Case[] = [
   { utterance: "como está o tempo lá fora", expected: { skillId: "weather", intentId: "current_weather" } },
   { utterance: "lembra-me de pagar a renda amanhã", expected: { skillId: "tasks", intentId: "add_task" } },
   { utterance: "abre o Cursor se faz favor", expected: { skillId: "launcher", intentId: "open_app" } },
+  // clipboard -- added 2026-08-06 (docs/BACKLOG.md Tier 1)
+  { utterance: "what did I just copy", expected: { skillId: "clipboard", intentId: "read_clipboard" } },
+  { utterance: "put this on my clipboard: call the plumber", expected: { skillId: "clipboard", intentId: "write_clipboard" } },
 ];
 
 async function main(): Promise<number> {

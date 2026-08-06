@@ -8,6 +8,7 @@
 
 import { openApp } from "./apps.ts";
 import { openUrl } from "./browser.ts";
+import { readClipboard, writeClipboard } from "./clipboard.ts";
 import { controlMedia } from "./media.ts";
 import { setBrightness, setVolume } from "./systemControls.ts";
 
@@ -25,6 +26,10 @@ export async function runShellAction(payload: unknown): Promise<{ ok: boolean; r
       return setVolume(payload);
     case "set_brightness":
       return setBrightness(payload);
+    case "read_clipboard":
+      return readClipboard(payload);
+    case "write_clipboard":
+      return writeClipboard(payload);
     default:
       return { ok: false, error: `unknown SHELL_EXEC action: ${JSON.stringify(action)}` };
   }
