@@ -158,7 +158,7 @@ async function main(): Promise<void> {
   // and self-triggered timeout events on the same connection. Only
   // started when eyes actually connected.
   if (eyesSock && cameraHandle) {
-    relayCameraStatus(eyesSock, wsHub, cameraHandle).catch((err) => console.error("core: camera status relay failed", err));
+    relayCameraStatus(eyesSock, wsHub, cameraHandle, conversation.say).catch((err) => console.error("core: camera status relay failed", err));
   }
 
   // The single utterance-handling path -- real speech from `ears` and a
@@ -290,6 +290,11 @@ async function relayVoiceStatus(voiceSock: Parameters<typeof readLines>[0], wsHu
   }
 }
 
+const CAMERA_TIMEOUT_ANNOUNCEMENT: Record<"idle" | "cap", string> = {
+  idle: "The camera timed out from being idle and closed.",
+  cap: "The camera hit its maximum session length and closed.",
+};
+
 /** Every message `eyes` sends goes through both jobs, in this order:
  * first `cameraHandle.offerEvent()` (resolves a pending arm/capture/close
  * request if this reply matches one), then an unconditional relay to the
@@ -298,11 +303,20 @@ async function relayVoiceStatus(voiceSock: Parameters<typeof readLines>[0], wsHu
  * (SPEC.md § 6: "both timeouts, both announced"). `CameraEvent`'s three
  * variants are exactly `ServerEvent`'s folded-in camera.* variants
  * (shared/types.ts), so the raw message is broadcast as-is once its
- * shape is confirmed. */
+ * shape is confirmed.
+ *
+ * "Both timeouts, both announced" (SPEC.md § 6, ROADMAP.md's Phase 8
+ * DoD: "idle timeout fires, is announced, and closes") means *spoken*,
+ * not just shown on the dashboard -- a self-triggered close with
+ * `cause !== "owner"` is the one `camera.closed` case nothing else in
+ * this turn already narrates, so it gets its own `say()` here. Found
+ * live, Phase 8's own verification pass: this was silently
+ * dashboard-only until now. */
 async function relayCameraStatus(
   eyesSock: Parameters<typeof readLines>[0],
   wsHub: ReturnType<typeof createWsHub>,
   cameraHandle: EyesEventSource,
+  say: (text: string) => void,
 ): Promise<void> {
   for await (const message of readLines(eyesSock)) {
     cameraHandle.offerEvent(message);
@@ -322,12 +336,14 @@ async function relayCameraStatus(
         path: String(message["path"]),
       });
     } else if (type === "camera.closed") {
-      const cause = message["cause"];
-      wsHub.broadcast({
-        type: "camera.closed",
-        sessionId: String(message["sessionId"]),
-        cause: cause === "owner" || cause === "idle" || cause === "cap" || cause === "error" ? cause : "error",
-      });
+      const rawCause = message["cause"];
+      const cause = rawCause === "owner" || rawCause === "idle" || rawCause === "cap" || rawCause === "error" ? rawCause : "error";
+      wsHub.broadcast({ type: "camera.closed", sessionId: String(message["sessionId"]), cause });
+      if (cause === "idle" || cause === "cap") {
+        const announcement = CAMERA_TIMEOUT_ANNOUNCEMENT[cause];
+        say(announcement);
+        wsHub.broadcast({ type: "transcript", text: announcement, final: true, speaker: "jarvis" });
+      }
     }
   }
 }

@@ -21,11 +21,15 @@ bench:
 	@echo "Run bench_local.py yourself with the models you pulled, e.g.:"
 	@echo "  python3 bench/bench_local.py qwen3:8b phi4"
 
-# voice + ears (Python) + core (Node, Phase 5b) + dashboard (Next.js dev
-# server, Phase 7) all at once. Ctrl+C stops all four (trap kills the
-# whole process group). core replaces the Phase-1-only echo bridge --
-# ears/voice are unaware of the difference, they only know "read from my
-# socket" / "write to my socket." Requires ui/'s own `npm install` to
+# voice + ears + eyes (Python) + core (Node, Phase 5b) + dashboard
+# (Next.js dev server, Phase 7) all at once. Ctrl+C stops all five (trap
+# kills the whole process group). core replaces the Phase-1-only echo
+# bridge -- ears/voice/eyes are unaware of the difference, they only know
+# "read from my socket" / "write to my socket." eyes is on-demand
+# (SPEC.md § 2) and optional at core's own boot (core/main.ts), but Phase
+# 8's plan (Task 1.7) commits to running it here for day-to-day dev and
+# verification -- not installed as a LaunchAgent yet, see
+# launchd/com.jarvis.eyes.plist's own docstring. Requires ui/'s own `npm install` to
 # have been run once (see ui/README.md).
 # PYTHONUNBUFFERED: without it, stdout is block-buffered whenever it isn't
 # a TTY (piped to a file, captured by a wrapper) and the startup/connect
@@ -43,6 +47,7 @@ dev:
 	trap '[ -f "$(EARS_PLIST)" ] && launchctl load "$(EARS_PLIST)" 2>/dev/null; kill 0' EXIT INT TERM; \
 	.venv/bin/python -m senses.voice.main & \
 	.venv/bin/python -m senses.ears.main & \
+	.venv/bin/python -m senses.eyes.main & \
 	node core/main.ts & \
 	(cd ui && npm run dev) & \
 	wait

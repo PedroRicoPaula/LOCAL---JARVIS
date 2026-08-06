@@ -10,6 +10,7 @@ data/food/*.csv
 data/food/*.json
 data/frames/*.jpg
 data/frames/*.png
+data/observations/*.jpg
 .next/
 dist/
 build/

@@ -161,6 +161,16 @@ def test_arm_creates_a_session_and_emits_camera_armed(tmp_path, monkeypatch):
     assert holder.get() is not None
     assert emitted[0]["type"] == "camera.armed"
     assert emitted[0]["reason"] == "look at this"
+    # Wire protocol is epoch-milliseconds (every timestamp in
+    # shared/types.ts is Date.now()-based) -- session.expires_at is
+    # epoch-seconds internally (time.time()'s own convention). A real
+    # bug, found live (Phase 8's own verification pass): this was sent
+    # unconverted, and the dashboard's countdown read a ~600s-away
+    # session as "0s" (epoch-seconds is ~1000x smaller than epoch-ms, so
+    # `expiresAt - Date.now()` went deeply negative and clamped to 0).
+    # 1e12 is a safe threshold: any real epoch-ms value for a date after
+    # 2001 exceeds it; a raw epoch-seconds value never does.
+    assert emitted[0]["expiresAt"] > 1_000_000_000_000
 
 
 def test_arm_while_already_armed_is_idempotent_no_second_device_open(tmp_path, monkeypatch):
@@ -179,6 +189,7 @@ def test_arm_while_already_armed_is_idempotent_no_second_device_open(tmp_path, m
 
     assert len(opened_devices) == 1
     assert emitted[0]["sessionId"] == emitted[1]["sessionId"]
+    assert emitted[1]["expiresAt"] > 1_000_000_000_000  # the idempotent re-arm path converts too
 
 
 def test_capture_without_arming_first_emits_an_honest_error():

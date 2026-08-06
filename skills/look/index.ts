@@ -17,11 +17,22 @@ import { manifest } from "./manifest.ts";
 // language the owner is speaking. Encodes SPEC.md § 7's own rule
 // ("vision identifies, it never quantifies") directly in the prompt,
 // since the model's reply is spoken close to verbatim (see `handle`
-// below) rather than rephrased through a second model call.
-const DESCRIBE_PROMPT =
-  "Describe what is in this image in one or two plain sentences. " +
+// below) rather than rephrased through a second model call. Includes
+// the owner's actual utterance, not just a generic "describe this" --
+// ROADMAP.md's Phase 8 DoD asks for describe/identify *and* "answer a
+// question about what is visible" ("is this the right cable", "does
+// this shirt match these trousers"); a fixed prompt ignoring what was
+// actually asked can't do the third one. Found live, this phase's own
+// verification pass -- the first version always asked the same generic
+// question regardless of the owner's.
+const DESCRIBE_RULES =
+  "Answer in one or two plain sentences, based only on what is actually in the image. " +
   "Identify what you see, but do not state counts, weights, sizes, or any other precise quantity -- describe qualitatively only. " +
   "If any part of the image is unclear (small text, fine detail, something partially out of frame or at an angle), say so explicitly rather than guessing.";
+
+function buildDescribePrompt(utterance: string): string {
+  return `The owner just said: "${utterance}". Answer what they're asking, based on the attached image. ${DESCRIBE_RULES}`;
+}
 
 const OBSERVATIONS_DIR = process.env["JARVIS_OBSERVATIONS_DIR"] ?? "data/observations";
 
@@ -117,7 +128,7 @@ export function createLookSkill(deps: LookDeps = DEFAULT_DEPS): Skill {
 
           let seen: VisionResult & { provider: string };
           try {
-            seen = await ctx.router.see({ imagePath: durablePath || frame.path, prompt: DESCRIBE_PROMPT, timeoutMs: 15_000 });
+            seen = await ctx.router.see({ imagePath: durablePath || frame.path, prompt: buildDescribePrompt(input.utterance), timeoutMs: 15_000 });
           } catch (err) {
             const speech = "I couldn't get a good look at that just now.";
             ctx.say(speech);

@@ -66,7 +66,22 @@ export const manifest: SkillManifest = {
         "o que vês",
         "diz-me o que é isto",
       ],
-      lanes: ["see"],
+      // Multi-lane, not just `see` -- found live (Phase 8's own
+      // verification pass): a bare "what is this" with no other context
+      // in the utterance classified as `converse` (the lane classifier
+      // reasonably reads it as a possible reference to something already
+      // discussed, per its own prompt's "recalling... things already
+      // known" converse rule, absent a stronger physical-object cue).
+      // `dispatch()` filters skill candidates to the classified lane
+      // before ever running the embedding match (core/skills/
+      // dispatch.ts), so a see-only declaration made this intent
+      // unreachable for that exact phrasing regardless of how well it
+      // scored. Same fix, same root cause class as `media.now_playing`
+      // (ADR-026/030) -- declaring `converse` here too costs nothing,
+      // the embedding match against this intent's own (camera-specific)
+      // examples still has to score above CANDIDATE_FLOOR for anything
+      // unrelated to actually dispatch here.
+      lanes: ["see", "converse"],
       requiresCamera: true,
     },
   ],

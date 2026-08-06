@@ -75,7 +75,15 @@ def handle_message(
                 "type": "camera.armed",
                 "sessionId": existing.id,
                 "reason": existing.reason,
-                "expiresAt": existing.expires_at,
+                # Wire protocol is epoch-milliseconds throughout (every
+                # timestamp in shared/types.ts is Date.now()-based) --
+                # session.expires_at is epoch-seconds internally
+                # (time.time()'s own convention, needed for is_timed_out()'s
+                # comparisons against self._now()). Converting only at the
+                # wire boundary, not internally. Found live, Phase 8's own
+                # verification pass: the dashboard's countdown read this
+                # raw and showed "0s" for a session with 600s left.
+                "expiresAt": round(existing.expires_at * 1000),
             })
             return
         reason = str(message.get("reason", ""))
@@ -91,7 +99,7 @@ def handle_message(
             "type": "camera.armed",
             "sessionId": session.id,
             "reason": session.reason,
-            "expiresAt": session.expires_at,
+            "expiresAt": round(session.expires_at * 1000),
         })
         return
 
