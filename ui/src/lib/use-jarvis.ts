@@ -78,6 +78,26 @@ export interface JarvisError {
   ts: number;
 }
 
+/** Real detail from `eyes` (via `core`'s relay), not a guess -- SPEC.md
+ * § 6: ARMED never means recording, so this is the whole live picture a
+ * dashboard needs: is it on, why, when it expires, and why it last
+ * closed. */
+export interface CameraDashboardState {
+  state: "idle" | "armed";
+  reason: string | null;
+  expiresAt: number | null;
+  lastCaptureAt: number | null;
+  lastClosedCause: "owner" | "idle" | "cap" | "error" | null;
+}
+
+const INITIAL_CAMERA_STATE: CameraDashboardState = {
+  state: "idle",
+  reason: null,
+  expiresAt: null,
+  lastCaptureAt: null,
+  lastClosedCause: null,
+};
+
 export interface JarvisDashboardState {
   connection: ConnectionState;
   connectedSince: number | null;
@@ -93,6 +113,7 @@ export interface JarvisDashboardState {
   shoppingItems: ShoppingItem[];
   metrics: DashboardMetrics | null;
   feedback: Record<string, FeedbackRating>;
+  camera: CameraDashboardState;
   decide(request: ApprovalRequest, decision: "approve" | "reject"): void;
   refreshSkills(): void;
   injectUtterance(text: string): void;
@@ -130,6 +151,7 @@ export function useJarvis(): JarvisDashboardState {
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [feedback, setFeedback] = useState<Record<string, FeedbackRating>>({});
+  const [camera, setCamera] = useState<CameraDashboardState>(INITIAL_CAMERA_STATE);
   const wsRef = useRef<WebSocket | null>(null);
 
   const refreshSkills = () => {
@@ -225,6 +247,15 @@ export function useJarvis(): JarvisDashboardState {
           case "speaking":
             setSpeaking(event.active);
             break;
+          case "camera.armed":
+            setCamera({ state: "armed", reason: event.reason, expiresAt: event.expiresAt, lastCaptureAt: null, lastClosedCause: null });
+            break;
+          case "camera.captured":
+            setCamera((prev) => ({ ...prev, lastCaptureAt: Date.now() }));
+            break;
+          case "camera.closed":
+            setCamera((prev) => ({ ...prev, state: "idle", reason: null, expiresAt: null, lastClosedCause: event.cause }));
+            break;
           case "error":
             setErrors((prev) => [...prev.slice(-19), { message: event.message, detail: event.detail, ts: event.ts }]);
             break;
@@ -305,6 +336,7 @@ export function useJarvis(): JarvisDashboardState {
     shoppingItems,
     metrics,
     feedback,
+    camera,
     decide,
     refreshSkills,
     injectUtterance,

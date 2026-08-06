@@ -45,6 +45,7 @@ export default function Home() {
     shoppingItems,
     metrics,
     feedback,
+    camera,
     decide,
     injectUtterance,
     sendFeedback,
@@ -119,7 +120,7 @@ export default function Home() {
       </div>
 
       <TestConsole onSubmit={injectUtterance} />
-      <StatusBar connection={connection} connectedSince={connectedSince} />
+      <StatusBar connection={connection} connectedSince={connectedSince} camera={camera} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ConnectionState } from "@/lib/use-jarvis";
+import type { CameraDashboardState, ConnectionState } from "@/lib/use-jarvis";
 
 const CONNECTION_LABEL: Record<ConnectionState, { text: string; color: string }> = {
   open: { text: "CONNECTED", color: "#00D4FF" },
@@ -18,7 +18,25 @@ function sessionUptime(connectedSince: number | null, now: number): string {
   return `${h}:${m}:${s}`;
 }
 
-export function StatusBar({ connection, connectedSince }: { connection: ConnectionState; connectedSince: number | null }) {
+/** ARMED never means recording (SPEC.md § 6) -- this label is only ever
+ * "idle" or "armed", ticking down to the real `expiresAt` `eyes` itself
+ * reported, not a guessed countdown. */
+function cameraLabel(camera: CameraDashboardState, now: number): { text: string; color: string } {
+  if (camera.state === "idle") return { text: "CAMERA: IDLE", color: "" };
+  const secsLeft = camera.expiresAt !== null ? Math.max(0, Math.ceil((camera.expiresAt - now) / 1000)) : null;
+  const text = secsLeft !== null ? `CAMERA: ARMED · ${secsLeft}s` : "CAMERA: ARMED";
+  return { text, color: "#00D4FF" };
+}
+
+export function StatusBar({
+  connection,
+  connectedSince,
+  camera,
+}: {
+  connection: ConnectionState;
+  connectedSince: number | null;
+  camera: CameraDashboardState;
+}) {
   const { text, color } = CONNECTION_LABEL[connection];
   const [now, setNow] = useState(() => Date.now());
 
@@ -26,6 +44,8 @@ export function StatusBar({ connection, connectedSince }: { connection: Connecti
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  const cameraStatus = cameraLabel(camera, now);
 
   return (
     <div
@@ -38,7 +58,9 @@ export function StatusBar({ connection, connectedSince }: { connection: Connecti
           <span style={{ color }}>CORE: {text}</span>
         </span>
         <span className="text-jarvis-dim">·</span>
-        <span className="text-jarvis-dim">CAMERA: IDLE</span>
+        <span className="text-jarvis-dim" style={cameraStatus.color ? { color: cameraStatus.color } : undefined} data-testid="camera-status">
+          {cameraStatus.text}
+        </span>
         <span className="text-jarvis-dim">·</span>
         <span className="text-jarvis-dim">
           SESSION <span className="text-jarvis-text">{sessionUptime(connectedSince, now)}</span>
