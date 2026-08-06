@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jarvis.eyes</string>
+
+    <!-- __REPO_ROOT__ substituted with an absolute path by `make
+         install-daemon` (see Makefile) — launchd plists can't use
+         relative paths or ~. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO_ROOT__/.venv/bin/python</string>
+        <string>-m</string>
+        <string>senses.eyes.main</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__REPO_ROOT__</string>
+
+    <!-- LaunchAgent, not LaunchDaemon: a daemon runs as root outside the
+         user session and can't hold the Camera (TCC) grant this needs.
+         The daemon itself is long-lived (listens on a socket the moment
+         it starts), but ARMED never means recording -- no frame is
+         captured until `core` sends an explicit arm/capture request
+         (SPEC.md § 6). Not wired into `make install-daemon` yet -- see
+         this phase's plan Task 1.7 scoping note; runs via `make dev` for
+         now, same as senses/voice. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Not /dev/null: a background daemon's only debugging window is its
+         log. data/logs/ is gitignored. -->
+    <key>StandardOutPath</key>
+    <string>__REPO_ROOT__/data/logs/eyes.log</string>
+    <key>StandardErrorPath</key>
+    <string>__REPO_ROOT__/data/logs/eyes.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+</dict>
+</plist>

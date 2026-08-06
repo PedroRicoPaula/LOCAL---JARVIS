@@ -22,3 +22,7 @@ pytest==8.3.3
 # and onnx variants — we use onnx, see wake_word.py for why).
 openwakeword==0.6.0
 onnxruntime==1.28.0
+
+# Phase 8: camera. cv2.VideoCapture for a single JPEG frame grab -- boring,
+# standard choice over pyobjc/AVFoundation's extra native-binding complexity.
+opencv-python==4.10.0.84
