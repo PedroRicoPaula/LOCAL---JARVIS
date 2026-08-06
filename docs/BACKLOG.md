@@ -69,28 +69,25 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 
 ## Platform
 
-- **Bilingual conversation (PT-PT/English), the real implementation
-  behind the CLAUDE.md § 0.1 rule change (ADR-033, 2026-08-05).** Not
-  built yet -- ADR-033 only reversed the rule; this is the actual work:
-  - `senses/ears`: multilingual STT. A full bilingual-conversation
-    switch is a bigger, different question than the single-proper-noun
-    prompt-hint fix already shipped (ADR-026/030) -- test against the
-    owner's *real* voice, not synthetic `say` audio (synthetic testing
-    was already found unreliable for this exact class of question,
-    ADR-026).
-  - `senses/voice`: a real PT-PT TTS voice selected per response
-    language (macOS `say -v` has PT-PT options -- confirm quality, not
-    assumed).
-  - `core/persona.md` + every skill's `persona.md`: currently written
-    assuming English-only output.
-  - Skill manifest `examples`: untested assumption that intent matching
-    still works when the owner speaks Portuguese -- may need PT-PT
-    examples added alongside the English ones. Verify early.
-  - Lane classification of a Portuguese utterance: also untested,
-    worth an early benchmark pass (`bench/bench_router_lane.ts`-style)
-    before assuming the English-only internal classifier handles it.
-  Not sequenced into `ROADMAP.md` yet -- real phase-placement decision,
-  left for a dedicated conversation.
+- ~~Bilingual conversation (PT-PT/English), the real implementation
+  behind the CLAUDE.md § 0.1 rule change (ADR-033, 2026-08-05)~~ --
+  **built 2026-08-06, ADR-039.** Multilingual STT (`whisper` `small`,
+  `-l auto`), TTS voice-per-reply (`Joana`/`Daniel`, `senses/voice/
+  language.py`), `core/persona.md` bilingual section, PT-PT examples in
+  all 9 skill manifests, and two new benchmarks
+  (`bench_router_lane_pt.ts`: 77.8% baseline -> 100% after a real,
+  measured `LANE_CLASSIFIER_SYSTEM` gap was found and fixed with no
+  English regression; `bench_skill_routing.ts`'s new PT dispatch cases:
+  93.3%). **Still open, owner-required:** real accuracy against the
+  owner's actual PT-PT accent/cadence (every test so far is synthetic
+  `say` audio or text-level) and whether Joana's voice quality is
+  acceptable for daily use -- both need the owner's own voice/ears, not
+  something further text-level work can resolve. One known, accepted
+  STT limitation: an English loanword inside a dominant-Portuguese
+  sentence ("fazer commit") gets absorbed into a similar-sounding real
+  Portuguese word ("comité") -- tried two prompt-hint fixes, neither
+  worked, documented rather than chased further (low real cost, still a
+  plausible sentence, not silence/crash).
 - **MCP (Model Context Protocol) as JARVIS's tool layer — worth a real
   look before hand-building many more one-off executors.** By 2026 MCP
   is the de facto standard for agent-tool communication (Anthropic,

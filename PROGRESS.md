@@ -2048,6 +2048,54 @@ ADR-028's already-open item rather than treated as two separate small
 bugs. Full trail in ADR-038; `docs/BACKLOG.md` updated to match. 285
 tests unchanged, `make check` green.
 
+**Same day: bilingual PT-PT/English, the real implementation (ADR-039).**
+Asked to work the full open-items list from the last status review, in
+order, deciding independently, asking only on genuine forks. Asked 3 up
+front: ship with the only installed PT-PT voice (Joana, female) or wait
+for a male one -- **ship now**; one voice per whole reply or per
+segment -- **whole reply**; add PT-PT manifest examples to all 9 skills
+now or wait for real usage -- **all now** (owner's explicit call,
+overriding the incremental default this session would have picked).
+
+Built and live-tested: `senses/ears` swapped to multilingual Whisper
+(`small`, `-l auto`, confirmed via `--help` before assuming) --
+transcribed a real PT sentence and a real EN sentence correctly via a
+scratch `whisper-server` fed real `say`-generated audio. Found and
+documented (not fixed after two real attempts) one limitation: an
+English loanword inside a Portuguese sentence gets heard as a similar
+Portuguese word ("commit" -> "comité"); a vocabulary-hint fix that
+worked for a similar problem before (ADR-026) didn't help here.
+`senses/voice` gained `language.py` (boring word/diacritic scoring, no
+new dependency) picking one voice per whole reply -- first version
+misfired on an English sentence mentioning one Portuguese place name,
+fixed by requiring PT evidence to outweigh English evidence rather than
+any diacritic being an automatic override. `core/persona.md` gained a
+bilingual section; no skill's own `persona.md` needed touching
+(inheritance already covered it, checked not assumed). All 9 skill
+manifests gained real PT-PT paraphrase examples.
+
+Built `bench/bench_router_lane_pt.ts` (PT version of the Phase 3 lane
+benchmark) before touching anything -- found a real, measured gap:
+**77.8%** PT accuracy vs. English's 97.8%. All 10 failures matched an
+existing English disambiguation rule in `LANE_CLASSIFIER_SYSTEM` that
+had no Portuguese example of the same distinction. Added the missing
+PT-PT examples next to their English counterparts (data, not prompt
+instructions -- CLAUDE.md § 4 still holds), re-ran both benchmarks per
+ADR-038's fresh lesson about verifying a shared-prompt edit both
+directions: **PT rose to 100%, English held at 97.8%** (identical to
+the pre-change baseline, no regression). Extended `bench_skill_routing.ts`
+with 6 real PT dispatch cases: **93.3%**, clears the 90% DoD bar; the
+one miss is the same class of disambiguation-margin noise the English
+suite already has one of, deliberately not chased into
+`DISAMBIGUATION_SYSTEM`.
+
+29 Python tests (up from 28), 285 TS tests unchanged, `make check`
+green. **Owner-required, not yet verified:** real accuracy against the
+owner's actual voice/accent, and whether Joana's voice quality is
+acceptable for daily use -- everything tested so far is synthetic audio
+or text-level benchmarks. Full detail in ADR-039; `docs/BACKLOG.md`'s
+bilingual entry marked built with what remains.
+
 ---
 
 ## Key numbers to record as we go

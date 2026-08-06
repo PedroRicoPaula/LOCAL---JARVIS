@@ -2572,3 +2572,139 @@ regression cases in `bench_skill_routing.ts`.
   for live smoke tests a fake can't stand in for).
 - `make check` green, `bench/` now actually type-checked going
   forward.
+
+## ADR-039 — bilingual PT-PT/English, the real implementation (ADR-033's follow-through)
+
+**Status:** accepted
+
+**Context.** ADR-033 (2026-08-05) reversed CLAUDE.md § 0.1's original
+"English only, no exceptions" rule but only changed the rule -- the real
+work (STT, TTS, persona, manifests, a live benchmark) was logged in
+`docs/BACKLOG.md` as "not built yet." Asked to work through the whole
+open list from 2026-08-05's status review, in order, deciding
+independently and asking only where a real fork needed the owner's
+input. Three such forks were asked up front and answered before any
+code was written:
+1. Only one PT-PT voice ("Joana," female) is installed on this
+   machine -- ship with it now, or wait for a male one. **Owner: ship
+   now.**
+2. A mixed-language reply -- one voice for the whole response, or
+   switch per sentence/segment. **Owner: one voice per whole response**
+   (simpler, no risk to CLAUDE.md § 7's latency budget).
+3. Add PT-PT paraphrase examples to every skill's manifest now, or wait
+   for real SOAK usage to show which ones actually need it. **Owner:
+   add to all now**, not the incremental default this session would
+   otherwise have picked (CLAUDE.md § 0.6) -- explicit owner call,
+   overriding the recommended option.
+
+**Decisions.**
+- **`senses/ears`: multilingual STT, not `small.en`.** `WHISPER_MODEL`
+  now defaults to the multilingual `small` (`ggml-small-q5_1.bin`,
+  already on disk since ADR-026's own earlier, narrower test), `LANGUAGE`
+  defaults to `"auto"` -- confirmed real via `whisper-server --help`
+  (`-l auto` runs genuine per-utterance language detection, not
+  assumed). `small.en` cannot transcribe Portuguese at all, by
+  construction; ADR-026's prior "inconclusive-to-worse" multilingual-
+  model finding was about one proper noun's phonetic accuracy against
+  synthetic English-accented audio, a different, narrower question than
+  "can it understand real Portuguese sentences" -- this rule change
+  actually requires an answer to the second question, which hadn't been
+  tested until now.
+- **Live-tested against real synthetic audio (`say -v Joana`/`say -v
+  Daniel`), not assumed from the model card:** a scratch `whisper-server`
+  instance with the new model correctly transcribed a full Portuguese
+  sentence (`language: portuguese`, diacritics correct) and a full
+  English sentence (`language: english`) with no errors. **A real,
+  known limitation found and documented, not chased further after two
+  attempts:** a single English loanword inside a dominant-Portuguese
+  sentence ("fazer commit" -- "to commit") gets phonetically absorbed
+  into a real Portuguese word ("comité") instead of transcribed as the
+  English term. Tried fixing via `WHISPER_INITIAL_PROMPT` (both a
+  per-request override and a server-startup prompt, matching the exact
+  mechanism that already fixed "Ponta Delgada, Açores" for the
+  English-only model) -- neither changed the outcome. Documented as a
+  known gap (`docs/BACKLOG.md`) rather than attempting a third,
+  increasingly speculative fix; low real cost (a mistranscribed
+  loanword still produces a plausible, mostly-correct sentence, not
+  silence or a crash).
+- **`senses/voice`: new `senses/voice/language.py`, a boring word/
+  diacritic scorer, no NLP dependency** (same reasoning as
+  `sentences.py`'s regex sentence splitter) -- picks "pt" or "en" once
+  per whole reply, from the complete text `main.py`'s `speak_text`
+  already receives before splitting into sentences for streamed
+  playback, so every sentence in one response uses the same voice
+  (owner's choice above). First version used "any diacritic anywhere ->
+  pt," found live to misfire on an English reply mentioning one
+  Portuguese place name ("Açores") -- fixed by scoring diacritics as
+  one point of PT evidence among several, requiring PT evidence to
+  strictly outweigh English stopword evidence, not an automatic
+  override. `SayBackend.speak()` gained an optional per-call `voice`
+  override (`MacSayBackend`, `FakeSayBackend` both updated) rather than
+  a constructor-only voice, since the choice is now per-response, not
+  per-process.
+- **`core/persona.md` gained a `## Language` section**; no skill's own
+  `persona.md` needed a change -- `docs/SKILLS.md` § 6's inheritance
+  rule ("silent on something, the baseline applies") already covers it,
+  and none of the 9 skill fragments said anything English-specific to
+  begin with (checked, not assumed).
+- **All 9 skills' manifests gained PT-PT paraphrase examples** (owner's
+  explicit choice above) -- written the way the owner actually speaks,
+  terse/sloppy forms included, matching `docs/SKILLS.md` § 3's existing
+  rule applied to a second language for the first time.
+- **`core/router/laneClassifier.ts`'s `LANE_CLASSIFIER_SYSTEM` gained
+  PT-PT quoted examples inline, alongside their existing English
+  counterparts -- not a translation of the prompt itself.** CLAUDE.md
+  § 4 governs the prompt's own *instructions* staying English for
+  reliability; the quoted example utterances are data the classifier
+  needs to see, same status as a manifest's own examples. **Found via a
+  new `bench/bench_router_lane_pt.ts`** (same 45 cases as
+  `bench_router_lane.ts`, natural PT-PT phrasing, not machine-translated
+  word-for-word): baseline PT accuracy was **77.8%**, well under the
+  85% bar English clears at 97.8% -- a real, measured gap, exactly what
+  `docs/BACKLOG.md` had flagged as untested and worth checking before
+  assuming the English-only classifier just worked. All 10 PT failures
+  matched an existing English disambiguation rule already in the prompt
+  that simply hadn't been shown a Portuguese example of the same
+  distinction (e.g. "resume o que acabaste de dizer" -> reflex instead
+  of converse, despite the prompt already teaching the identical
+  English case "summarise what you just told me" -> converse) -- not
+  scattered noise, a precise generalization gap. Added the matching
+  PT-PT phrase next to each relevant existing rule, using the real
+  failing sentences, not paraphrased guesses. **Re-ran both benchmarks
+  after, per ADR-038's own just-learned lesson about verifying a shared-
+  prompt edit both ways:** PT-PT rose to **100%** (45/45); English held
+  at **97.8%**, identical to the documented pre-change baseline (one
+  flaky case, "here's my lunch, help me log it" -> converse, matches
+  the existing accepted single-case variance, not a new regression).
+- **`bench_skill_routing.ts` gained 6 real PT-PT dispatch cases**
+  (paraphrases, not manifest literals) covering `brief`, `shopping_list`
+  (add + remove), `weather`, `tasks`, `launcher` -- **93.3%** (28/30),
+  clearing the 90% DoD bar. 5/6 PT cases passed cleanly; the one miss
+  (`launcher.open_app`, disambiguation said "none" at a 0.648 candidate
+  score) is the same shape of near-miss the English suite already has
+  one of in this exact run (`shopping_list.add_item` vs `.list_items`
+  at 0.680) -- ordinary disambiguation-margin noise, not a language-
+  specific gap, and deliberately not chased into
+  `DISAMBIGUATION_SYSTEM` given ADR-038's fresh evidence that prompt is
+  fragile to edit without extensive rebenchmarking.
+
+**Consequences.**
+- 29 Python tests (up from 28: new `senses/voice/tests/test_language.py`
+  plus 3 new/updated cases in `test_voice.py`), 285 TS tests unchanged
+  (no TS test file touched this ADR), `make check` green.
+- Two new committed benchmarks: `bench/bench_router_lane_pt.ts` (PT
+  lane-classification regression guard) and `bench_skill_routing.ts`'s
+  extended PT dispatch cases -- both re-runnable the moment
+  `laneClassifier.ts` or any manifest changes again, closing the loop
+  `docs/BACKLOG.md` opened ("worth an early benchmark pass... before
+  assuming the English-only classifier handles it").
+- **Still owner-required, not verified from this side (PROGRESS.md):**
+  real accuracy against the owner's own PT-PT accent and speech
+  cadence -- every test above used synthetic `say`-generated audio or
+  text-level benchmarks, the same honest limit ADR-026 already named
+  for STT work. TTS voice *quality* (does Joana sound acceptable for
+  daily use) is a judgment call needing the owner's own ears, not
+  something this session can verify from text-level testing.
+- Not touched, deliberately: `DISAMBIGUATION_SYSTEM` (ADR-038's fresh
+  lesson still holds), and no attempt at segment-level TTS voice
+  switching (owner's own choice, whole-response only for now).
