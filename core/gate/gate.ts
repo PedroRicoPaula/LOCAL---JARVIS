@@ -29,7 +29,7 @@ import type {
 } from "../../shared/types.ts";
 import { GREEN_CAPABILITIES } from "../../shared/types.ts";
 import { ensureGateSchema } from "./db.ts";
-import { sign } from "./hmac.ts";
+import { sign, verify } from "./hmac.ts";
 
 export const DEFAULT_EXPIRY_MS = 5 * 60_000; // SPEC.md SS8: "expiresAt (default 5 min)"
 
@@ -179,6 +179,26 @@ export class Gate extends EventEmitter {
     }
 
     const signed = sign(this.signingKey, row.id, row.nonce, JSON.parse(row.payload), now());
+    // Found live during a code review (2026-08-06): this signature was
+    // being created and then never checked -- `sign()`'s whole purpose
+    // (SPEC.md § 8, this file's own `Executor` type docstring above: "the
+    // already-verified payload") is to give an executor a payload it can
+    // trust came from *this* approval, not a tampered or reconstructed
+    // one. In-process today that adds no defense against an external
+    // attacker (nothing untrusted sits between sign() and the executor
+    // call), but it's cheap, matches the documented contract, and is
+    // exactly the check a future out-of-process executor (SPEC.md § 8's
+    // n8n webhook case, ROADMAP Phase 13) will actually depend on for
+    // real. Failing closed here, not just logging, so a future refactor
+    // that breaks this invariant fails loudly instead of silently.
+    if (!verify(this.signingKey, signed)) {
+      this.setState(row.id, "approved");
+      this.logAudit(row.id, "approved", {});
+      this.logAudit(row.id, "execution_failed", { error: "signature verification failed" });
+      this.emit("approval.resolved", { requestId: row.id, state: "approved" });
+      this.resolvePending(row.id, { ok: false, reason: "error", detail: "signature verification failed" });
+      return;
+    }
     const executor = this.executors[row.capability as Capability];
     if (!executor) {
       this.settlePending(row.id, "approved", { ok: true, result: signed });
