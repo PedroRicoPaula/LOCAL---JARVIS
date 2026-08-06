@@ -150,6 +150,41 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   than one thing to show ambient state for (listening, camera armed,
   approval pending) — natural fit once Phase 7's dashboard exists, maybe
   earlier if a transient notification proves annoying in daily use.
+- **Rejected/expired `MEMORY_WRITE` observation proposals leave an
+  orphaned durable image file.** Found live, Phase 8's own verification
+  pass: `skills/look`'s `describe` copies the captured frame to
+  `data/observations/<ulid>.jpg` immediately (ADR-045's own reasoning
+  for why -- the ephemeral session frame can't be relied on to survive
+  until an approval resolves). If the owner rejects the proposal, or it
+  expires unanswered, that copy is never referenced by any DB row and
+  is never cleaned up -- confirmed live (`data/observations/` had 2
+  files after a reject; `observations` table had 0 rows). Not a
+  privacy/security hole (the file was already local, already gitignored
+  as of this same finding), just a slow disk leak with no cleanup path
+  yet. A real fix needs either a TTL sweep over unreferenced files in
+  `data/observations/`, or having the `MEMORY_WRITE` executor's
+  rejection/expiry path delete the file it was never approved to keep --
+  neither built, out of this phase's scope.
+- **The dashboard test console's fire-and-forget utterance handling can
+  cross-wire a camera-touching skill's in-flight `eyes` request if two
+  utterances are injected faster than a skill turn completes.**
+  `core/main.ts`'s WS handler calls `handleUtterance(text).catch(...)`
+  without awaiting it (so a slow skill turn doesn't block other WS
+  traffic like `approval.decide`), so two rapidly-injected test-console
+  lines can run concurrently. `core/skills/camera.ts`'s `createIpcCameraHandle`
+  assumes one request in flight at a time (documented there as "shouldn't
+  happen given single-in-flight use") -- true for real voice (`ears`'s
+  own loop awaits each utterance sequentially, so this can't happen from
+  real speech), false for the test console under rapid-fire input. Found
+  live reproducing this exact race (a `capture()` call resolved with a
+  stale `camera.armed` reply meant for a different, overlapping `open()`
+  call) before isolating it to test-script pacing rather than a
+  reachable production path -- confirmed by re-running with realistic
+  human-typing-speed gaps, which never reproduces it. `ctx.ask()`'s own
+  correlator (`conversation/ipc.ts`) has the identical latent assumption
+  for the same underlying reason. A real fix (a per-utterance queue in
+  `core/main.ts`, or a request-id-tagged correlator instead of a single
+  pending slot) is real, cross-cutting scope, not attempted here.
 
 ## External research — lessons from other Jarvis-style projects
 
