@@ -191,3 +191,85 @@ test("execution failure (e.g. brightness CLI missing) is reported, not swallowed
   assert.match(result.speech, /Couldn't set brightness to 50/);
   assert.match(result.speech, /brightness.*CLI/);
 });
+
+test("set_focus_mode: 'turn on do not disturb' proposes enabled true", async () => {
+  const proposals: ProposedAction[] = [];
+  const skill = createMediaSkill(deps);
+
+  const result = await skill.handle(
+    { utterance: "turn on do not disturb", intent: "set_focus_mode", sessionId: "s1" },
+    proposingCtx(proposals),
+  );
+
+  assert.deepEqual(proposals[0]?.payload, { action: "set_focus_mode", enabled: true });
+  assert.match(result.speech, /turned Do Not Disturb on/i);
+});
+
+test("set_focus_mode: 'turn off do not disturb' proposes enabled false", async () => {
+  const proposals: ProposedAction[] = [];
+  const skill = createMediaSkill(deps);
+
+  const result = await skill.handle(
+    { utterance: "turn off do not disturb", intent: "set_focus_mode", sessionId: "s1" },
+    proposingCtx(proposals),
+  );
+
+  assert.deepEqual(proposals[0]?.payload, { action: "set_focus_mode", enabled: false });
+});
+
+test("set_focus_mode: PT-PT 'desativa o não incomodar' resolves to off, not a false positive on 'ativa'", async () => {
+  const proposals: ProposedAction[] = [];
+  const skill = createMediaSkill(deps);
+
+  await skill.handle({ utterance: "desativa o não incomodar", intent: "set_focus_mode", sessionId: "s1" }, proposingCtx(proposals));
+
+  assert.deepEqual(proposals[0]?.payload, { action: "set_focus_mode", enabled: false });
+});
+
+test("set_focus_mode: ambiguous phrasing falls back to ctx.ask()", async () => {
+  const proposals: ProposedAction[] = [];
+  const conversation = fakeConversation(["on"]);
+  const ctx = fakeSkillContext({
+    conversation,
+    propose: async (action) => {
+      proposals.push(action);
+      return { ok: true, result: null };
+    },
+  });
+  const skill = createMediaSkill(deps);
+
+  const result = await skill.handle({ utterance: "do not disturb", intent: "set_focus_mode", sessionId: "s1" }, ctx);
+
+  assert.deepEqual(proposals[0]?.payload, { action: "set_focus_mode", enabled: true });
+  assert.equal(result.speech, "Done -- turned Do Not Disturb on.");
+});
+
+test("set_focus_mode: still ambiguous after asking gives up honestly", async () => {
+  const conversation = fakeConversation(["sure"]);
+  const ctx = fakeSkillContext({ conversation });
+  const skill = createMediaSkill(deps);
+
+  const result = await skill.handle({ utterance: "do not disturb", intent: "set_focus_mode", sessionId: "s1" }, ctx);
+
+  assert.match(result.speech, /didn't catch whether/);
+});
+
+test("set_focus_mode: owner rejects, says so plainly", async () => {
+  const ctx = fakeSkillContext({ propose: async () => ({ ok: false, reason: "rejected" }) });
+  const skill = createMediaSkill(deps);
+
+  const result = await skill.handle({ utterance: "turn on do not disturb", intent: "set_focus_mode", sessionId: "s1" }, ctx);
+
+  assert.equal(result.speech, "Okay, didn't turned Do Not Disturb on.");
+});
+
+test("set_focus_mode: execution failure (shortcut not set up yet) is reported, not swallowed", async () => {
+  const ctx = fakeSkillContext({
+    propose: async () => ({ ok: false, reason: "error", detail: "couldn't find the shortcut" }),
+  });
+  const skill = createMediaSkill(deps);
+
+  const result = await skill.handle({ utterance: "turn on do not disturb", intent: "set_focus_mode", sessionId: "s1" }, ctx);
+
+  assert.match(result.speech, /couldn't find the shortcut/);
+});

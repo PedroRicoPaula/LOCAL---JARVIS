@@ -78,6 +78,8 @@ const CASES: Case[] = [
   { utterance: "what did I just copy", expected: { skillId: "clipboard", intentId: "read_clipboard" } },
   { utterance: "put this on my clipboard: call the plumber", expected: { skillId: "clipboard", intentId: "write_clipboard" } },
   { utterance: "grab a screenshot of this for me", expected: { skillId: "clipboard", intentId: "capture_screenshot" } },
+  { utterance: "turn on do not disturb for me", expected: { skillId: "media", intentId: "set_focus_mode" } },
+  { utterance: "desliga o não incomodar", expected: { skillId: "media", intentId: "set_focus_mode" } },
 ];
 
 async function main(): Promise<number> {

@@ -135,6 +135,22 @@ export const manifest: SkillManifest = {
       ],
       lanes: [...CONTROL_LANES],
     },
+    {
+      id: "set_focus_mode",
+      description: "Turn Do Not Disturb / Focus mode on or off.",
+      examples: [
+        "turn on do not disturb",
+        "enable focus mode",
+        "turn off do not disturb",
+        "disable do not disturb",
+        "stop do not disturb",
+        // PT-PT paraphrases (ADR-033)
+        "ativa o não incomodar",
+        "desativa o não incomodar",
+        "desliga o modo foco",
+      ],
+      lanes: [...CONTROL_LANES],
+    },
   ],
 
   capabilities: ["SHELL_EXEC"],

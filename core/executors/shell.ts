@@ -9,6 +9,7 @@
 import { openApp } from "./apps.ts";
 import { openUrl } from "./browser.ts";
 import { readClipboard, writeClipboard } from "./clipboard.ts";
+import { setFocusMode } from "./focusMode.ts";
 import { controlMedia } from "./media.ts";
 import { captureScreenshot } from "./screenshot.ts";
 import { setBrightness, setVolume } from "./systemControls.ts";
@@ -33,6 +34,8 @@ export async function runShellAction(payload: unknown): Promise<{ ok: boolean; r
       return writeClipboard(payload);
     case "capture_screenshot":
       return captureScreenshot(payload);
+    case "set_focus_mode":
+      return setFocusMode(payload);
     default:
       return { ok: false, error: `unknown SHELL_EXEC action: ${JSON.stringify(action)}` };
   }

@@ -54,6 +54,31 @@ function resolveTargetApp(utterance: string): MediaApp {
   return MUSIC_APP_PATTERN.test(utterance) ? "Music" : "Spotify";
 }
 
+// Bare "on"/"off" included -- the natural, expected reply to this
+// skill's own ctx.ask("Turn Do Not Disturb on or off?") follow-up is
+// exactly that one word, found live while writing this skill's own
+// tests (a scripted "on" answer didn't resolve without it). Safe here
+// specifically because this function only ever runs once dispatch has
+// already decided the utterance is about set_focus_mode -- a bare "on"
+// elsewhere in the app never reaches this code path.
+// Checked in this order deliberately: PT-PT "desativa"/"desliga" contain
+// "ativa"/"liga" as substrings, but \b word boundaries alone already
+// prevent a false match (no boundary mid-word) -- OFF checked first
+// anyway, cheap and removes any doubt.
+const FOCUS_OFF_PATTERN = /\b(turn off|disable|deactivate|stop|off)\b/i;
+const FOCUS_ON_PATTERN = /\b(turn on|enable|activate|on)\b/i;
+const FOCUS_OFF_PATTERN_PT = /\b(desativa|desliga)\b/i;
+const FOCUS_ON_PATTERN_PT = /\b(ativa|liga)\b/i;
+
+/** Pure and synchronous, same precedent as `resolveTargetApp` -- on/off
+ * is a narrow, well-known vocabulary, doesn't need a model call. `null`
+ * (genuinely ambiguous) falls back to `ctx.ask`. */
+function resolveFocusEnabled(utterance: string): boolean | null {
+  if (FOCUS_OFF_PATTERN.test(utterance) || FOCUS_OFF_PATTERN_PT.test(utterance)) return false;
+  if (FOCUS_ON_PATTERN.test(utterance) || FOCUS_ON_PATTERN_PT.test(utterance)) return true;
+  return null;
+}
+
 async function realGetNowPlaying(app: MediaApp): Promise<NowPlaying | null> {
   try {
     const { stdout } = await execFileAsync("osascript", ["-e", `tell application "${app}" to get {name, artist} of current track`]);
@@ -172,6 +197,28 @@ export function createMediaSkill(deps: MediaDeps = DEFAULT_DEPS): Skill {
           return proposeLevel(ctx, "set_volume", "volume", input.utterance);
         case "set_brightness":
           return proposeLevel(ctx, "set_brightness", "brightness", input.utterance);
+
+        case "set_focus_mode": {
+          let enabled = resolveFocusEnabled(input.utterance);
+          if (enabled === null) {
+            const answer = await ctx.ask("Turn Do Not Disturb on or off?");
+            enabled = resolveFocusEnabled(answer);
+            if (enabled === null) {
+              const speech = "I didn't catch whether that was on or off.";
+              ctx.say(speech);
+              return { speech };
+            }
+          }
+          const label = `turned Do Not Disturb ${enabled ? "on" : "off"}`;
+          const outcome = await ctx.propose({
+            capability: "SHELL_EXEC",
+            humanSummary: label.charAt(0).toUpperCase() + label.slice(1),
+            payload: { action: "set_focus_mode" as const, enabled },
+          });
+          const speech = speechForOutcome(label, outcome);
+          ctx.say(speech);
+          return { speech };
+        }
 
         default: {
           const speech = "I'm not sure what you want me to do with media.";

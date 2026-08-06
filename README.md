@@ -129,6 +129,29 @@ credentials degrade gracefully -- `core` logs "gmail MCP server not
 configured" and starts normally either way; the `gmail` skill just says
 so honestly if asked to check email before this is done.
 
+**3d. Optional: Do Not Disturb / Focus toggle**
+
+Added 2026-08-06. macOS has no public AppleScript/`defaults` control
+for Focus modes anymore -- this goes through the Shortcuts app instead,
+the only Apple-supported automation surface left for it. One-time
+setup, by hand, no code needed:
+
+1. Open **Shortcuts.app** → **+** (new shortcut)
+2. Search for the **"Set Focus"** action, add it, set it to turn **Do
+   Not Disturb** **On**
+3. Name the shortcut exactly `JARVIS Focus On` (or set
+   `JARVIS_FOCUS_ON_SHORTCUT` to whatever name you use instead)
+4. Repeat for a second shortcut, action set to **Off**, named
+   `JARVIS Focus Off` (or `JARVIS_FOCUS_OFF_SHORTCUT`)
+
+**Known gap, not yet resolved:** the first time `core` actually runs
+`shortcuts run` for real, macOS may show a permission dialog (Terminal/
+Node asking to control Shortcuts.app) -- if the `set_focus_mode`
+request seems to hang after you approve it on the dashboard, check for
+that dialog and allow it. Missing shortcuts degrade honestly -- the
+`media` skill reports "couldn't find the shortcut" rather than
+pretending it worked.
+
 **4. Run both checks**
 
 ```bash
