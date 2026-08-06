@@ -16,7 +16,8 @@
  * whatever's next in the chain.
  */
 
-import type { ChatChunk, ChatRequest, Lane } from "../../../shared/types.ts";
+import { readFile } from "node:fs/promises";
+import type { ChatChunk, ChatRequest, Lane, VisionRequest, VisionResult } from "../../../shared/types.ts";
 import type { ModelProvider, ProviderHealth } from "../provider.ts";
 import { ProviderUnavailableError } from "../provider.ts";
 import { ConcurrencyLimiter } from "../concurrencyLimiter.ts";
@@ -26,6 +27,10 @@ export interface NimConfig {
   apiKey: string;
   baseUrl?: string;
   models: Partial<Record<Lane, string>>;
+  /** Real, live-confirmed catalog id (2026-08-06, against the real
+   * `/v1/models` endpoint with the owner's own key) -- not guessed. See
+   * `core/router/wiring.ts`'s `NIM_VISION_MODEL`. */
+  visionModel?: string;
   rpm?: number;
   /** Max requests in flight at once. Default 8 — comfortably under the
    * account's observed 16-concurrent ceiling, generous for a single-owner
@@ -57,6 +62,7 @@ export class NimProvider implements ModelProvider {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly models: Partial<Record<Lane, string>>;
+  private readonly visionModel: string | undefined;
   private readonly bucket: TokenBucket;
   private readonly concurrency: ConcurrencyLimiter;
   private readonly fetchFn: typeof fetch;
@@ -65,6 +71,7 @@ export class NimProvider implements ModelProvider {
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl ?? "https://integrate.api.nvidia.com/v1";
     this.models = config.models;
+    this.visionModel = config.visionModel;
     this.lanes = Object.keys(config.models) as Lane[];
     this.bucket = new TokenBucket(config.rpm ?? 30, now);
     this.concurrency = new ConcurrencyLimiter(config.maxConcurrent ?? 8);
@@ -140,6 +147,70 @@ export class NimProvider implements ModelProvider {
     } catch (cause) {
       if (cause instanceof ProviderUnavailableError) throw cause;
       throw new ProviderUnavailableError(this.id, "stream failed", cause);
+    } finally {
+      clearTimeout(timeout);
+      this.concurrency.release();
+    }
+  }
+
+  async vision(req: VisionRequest): Promise<VisionResult> {
+    if (!this.visionModel) {
+      throw new ProviderUnavailableError(this.id, "no vision model configured");
+    }
+    if (!this.bucket.tryTake()) {
+      throw new ProviderUnavailableError(this.id, "client-side rate limit reached (30 rpm)");
+    }
+    if (!this.concurrency.tryAcquire()) {
+      throw new ProviderUnavailableError(this.id, "too many requests in flight");
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), req.timeoutMs);
+    try {
+      const imageB64 = (await readFile(req.imagePath)).toString("base64");
+      const response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.visionModel,
+          stream: false,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: req.prompt },
+                { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageB64}` } },
+              ],
+            },
+          ],
+        }),
+      });
+      if (response.status === 429) {
+        throw new ProviderUnavailableError(this.id, "HTTP 429 (rate limited by NIM)");
+      }
+      if (!response.ok) {
+        throw new ProviderUnavailableError(this.id, `vision HTTP ${response.status}`);
+      }
+      const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+      return {
+        qualitative: payload.choices?.[0]?.message?.content ?? "",
+        // NIM's chat/completions doesn't return a calibrated confidence
+        // for vision replies -- same honest midpoint default
+        // `ollama.ts`'s own vision() uses, per VisionResult's own
+        // contract in shared/types.ts. Structured extraction from a
+        // vision reply isn't attempted here either, same as ollama.ts --
+        // no caller built so far needs it (SPEC.md § 7: vision
+        // identifies, it never quantifies).
+        structured: null,
+        confidence: 0.5,
+      };
+    } catch (cause) {
+      if (cause instanceof ProviderUnavailableError) throw cause;
+      throw new ProviderUnavailableError(this.id, "vision request failed", cause);
     } finally {
       clearTimeout(timeout);
       this.concurrency.release();

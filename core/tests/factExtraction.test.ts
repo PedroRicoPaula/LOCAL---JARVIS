@@ -81,7 +81,7 @@ test("extractAndRememberFacts proposes each fact to the gate -- does not write m
   assert.equal(pending?.capability, "MEMORY_WRITE");
   assert.equal(pending?.skillId, "fact-extraction");
   assert.match(pending?.humanSummary ?? "", /prefs\.verbosity/);
-  assert.deepEqual(pending?.payload, { key: "prefs.verbosity", value: "terse", confidence: 0.8, sourceEventId: "event-1" });
+  assert.deepEqual(pending?.payload, { kind: "fact", key: "prefs.verbosity", value: "terse", confidence: 0.8, sourceEventId: "event-1" });
 
   // Settle the pending approval's own 5-minute timer before the test ends,
   // or node --test hangs waiting for it -- bit this exact class of bug

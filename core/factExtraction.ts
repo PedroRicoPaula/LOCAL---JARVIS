@@ -135,7 +135,7 @@ export async function extractAndRememberFacts(
         {
           capability: "MEMORY_WRITE",
           humanSummary: `Remember: ${fact.key} = ${fact.value}`,
-          payload: { key: fact.key, value: fact.value, confidence: fact.confidence, sourceEventId },
+          payload: { kind: "fact", key: fact.key, value: fact.value, confidence: fact.confidence, sourceEventId },
         },
         "fact-extraction",
       )

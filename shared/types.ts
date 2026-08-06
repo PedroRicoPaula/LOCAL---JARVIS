@@ -294,7 +294,12 @@ export type ServerEvent =
   | { type: "transcript"; text: string; final: boolean; speaker: "owner" | "jarvis"; eventId?: string }
   | { type: "state"; value: JarvisState }
   | { type: "speaking"; active: boolean }
-  | { type: "camera"; active: boolean }
+  /** Folded in from `CameraEvent` (below) -- the dashboard needs the same
+   * real detail (expiry, close cause) `core` gets from `eyes`, not just
+   * an on/off boolean. */
+  | { type: "camera.armed"; sessionId: string; reason: string; expiresAt: number }
+  | { type: "camera.captured"; sessionId: string; frameId: string; path: string }
+  | { type: "camera.closed"; sessionId: string; cause: "owner" | "idle" | "cap" | "error" }
   | { type: "health"; providers: Record<string, boolean> }
   /** A turn failed. Spoken to the owner too (persona.md) -- this is the
    * dashboard-visible half of the same honesty rule, not a replacement
@@ -359,7 +364,7 @@ export interface Frame {
 
 export type CameraEvent =
   | { type: "camera.armed"; sessionId: string; reason: string; expiresAt: number }
-  | { type: "camera.captured"; sessionId: string; frameId: string }
+  | { type: "camera.captured"; sessionId: string; frameId: string; path: string }
   | { type: "camera.closed"; sessionId: string; cause: "owner" | "idle" | "cap" | "error" };
 
 // ---------------------------------------------------------------------------

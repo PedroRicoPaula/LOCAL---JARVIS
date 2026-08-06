@@ -7,8 +7,11 @@
  */
 
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import type { ChatRequest } from "../../../shared/types.ts";
+import type { ChatRequest, VisionRequest } from "../../../shared/types.ts";
 import { ProviderUnavailableError } from "../provider.ts";
 import { NimProvider } from "../providers/nim.ts";
 
@@ -18,6 +21,24 @@ const REQ: ChatRequest = {
   messages: [{ role: "user", content: "hi" }],
   timeoutMs: 1000,
 };
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+/** `vision()` reads `req.imagePath` off the real filesystem (not
+ * injectable, same as `ollama.ts`'s own vision()) -- a real temp file,
+ * per CLAUDE.md § 3's "real component when a fake can't stand in." */
+async function withTempImage(fn: (imagePath: string) => Promise<void>): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), "jarvis-nim-vision-test-"));
+  const imagePath = join(dir, "frame.jpg");
+  await writeFile(imagePath, "fake-jpeg-bytes");
+  try {
+    await fn(imagePath);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
 function sseResponse(body: string, status = 200): Response {
   return new Response(body, { status, headers: { "Content-Type": "text/event-stream" } });
@@ -125,4 +146,81 @@ test("no model configured for the lane refuses without calling fetch", async () 
 
   await assert.rejects(() => drain(provider.chat(REQ)), ProviderUnavailableError);
   assert.equal(called, false);
+});
+
+// --- vision() -----------------------------------------------------------
+
+test("vision() sends the image as a base64 data URL and returns the reply as qualitative", async () => {
+  await withTempImage(async (imagePath) => {
+    let capturedBody: Record<string, unknown> | undefined;
+    const provider = new NimProvider({
+      apiKey: "k",
+      models: {},
+      visionModel: "meta/llama-3.2-11b-vision-instruct",
+      fetchFn: async (_url, init) => {
+        capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return jsonResponse({ choices: [{ message: { content: "A red mug on a desk." } }] });
+      },
+    });
+    const req: VisionRequest = { imagePath, prompt: "What is this?", timeoutMs: 5000 };
+
+    const result = await provider.vision!(req);
+
+    assert.equal(result.qualitative, "A red mug on a desk.");
+    assert.equal(result.structured, null);
+    assert.equal(result.confidence, 0.5);
+    assert.equal(capturedBody?.["model"], "meta/llama-3.2-11b-vision-instruct");
+    const messages = capturedBody?.["messages"] as { content: { type: string; text?: string; image_url?: { url: string } }[] }[];
+    const content = messages[0]!.content;
+    assert.equal(content[0]!.type, "text");
+    assert.equal(content[0]!.text, "What is this?");
+    assert.equal(content[1]!.type, "image_url");
+    assert.ok(content[1]!.image_url!.url.startsWith("data:image/jpeg;base64,"));
+  });
+});
+
+test("vision() with no visionModel configured refuses without calling fetch", async () => {
+  await withTempImage(async (imagePath) => {
+    let called = false;
+    const provider = new NimProvider({
+      apiKey: "k",
+      models: {},
+      fetchFn: async () => {
+        called = true;
+        return jsonResponse({});
+      },
+    });
+    const req: VisionRequest = { imagePath, prompt: "What is this?", timeoutMs: 5000 };
+
+    await assert.rejects(() => provider.vision!(req), ProviderUnavailableError);
+    assert.equal(called, false);
+  });
+});
+
+test("vision() HTTP 429 maps to ProviderUnavailableError", async () => {
+  await withTempImage(async (imagePath) => {
+    const provider = new NimProvider({
+      apiKey: "k",
+      models: {},
+      visionModel: "meta/llama-3.2-11b-vision-instruct",
+      fetchFn: async () => jsonResponse({}, 429),
+    });
+    const req: VisionRequest = { imagePath, prompt: "What is this?", timeoutMs: 5000 };
+
+    await assert.rejects(() => provider.vision!(req), ProviderUnavailableError);
+  });
+});
+
+test("vision() non-2xx HTTP status maps to ProviderUnavailableError", async () => {
+  await withTempImage(async (imagePath) => {
+    const provider = new NimProvider({
+      apiKey: "k",
+      models: {},
+      visionModel: "meta/llama-3.2-11b-vision-instruct",
+      fetchFn: async () => jsonResponse({}, 500),
+    });
+    const req: VisionRequest = { imagePath, prompt: "What is this?", timeoutMs: 5000 };
+
+    await assert.rejects(() => provider.vision!(req), ProviderUnavailableError);
+  });
 });

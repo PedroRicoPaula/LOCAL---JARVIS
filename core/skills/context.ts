@@ -5,7 +5,7 @@
  */
 
 import type { DatabaseSync } from "node:sqlite";
-import type { ApprovalOutcome, ProposedAction } from "../../shared/types.ts";
+import type { ApprovalOutcome, CameraHandle, ProposedAction } from "../../shared/types.ts";
 import type { Gate } from "../gate/gate.ts";
 import type { McpToolLister } from "../mcp/registry.ts";
 import type { Memory } from "../memory/memory.ts";
@@ -44,6 +44,13 @@ export interface ContextDeps {
    * every real filesystem call `ctx.fs` allows fails honestly, never a
    * silent bypass. */
   fsRoots?: readonly string[];
+  /** The real camera handle for *this* dispatch, already gated by
+   * `core/main.ts` on whether the skill being dispatched declares
+   * `CAMERA` (`docs/SKILLS.md` § 4: "capability enforcement happens at
+   * the handle, not the call site"). Omitted (tests, no CAMERA
+   * capability, or eyes not connected) falls back to the honest
+   * throwing stub -- same pattern as `mcp`/`gate` above. */
+  camera?: CameraHandle;
 }
 
 export function buildSkillContext(deps: ContextDeps, skillId: string, sessionId: string): SkillContext {
@@ -52,7 +59,7 @@ export function buildSkillContext(deps: ContextDeps, skillId: string, sessionId:
   return {
     router: createSkillRouter(deps.routerRegistry),
     memory: deps.memory,
-    camera: createStubCameraHandle(),
+    camera: deps.camera ?? createStubCameraHandle(),
     propose,
     say: deps.conversation.say,
     ask: deps.conversation.ask,

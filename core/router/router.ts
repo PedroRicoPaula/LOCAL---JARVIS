@@ -17,7 +17,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { ChatChunk, ChatRequest, RouterTrace } from "../../shared/types.ts";
+import type { ChatChunk, ChatRequest, RouterTrace, VisionRequest, VisionResult } from "../../shared/types.ts";
 import { ProviderUnavailableError } from "./provider.ts";
 import type { Registry } from "./registry.ts";
 
@@ -100,4 +100,72 @@ export async function* routeChat(
   }
 
   throw new AllProvidersFailedError(req.lane, causes);
+}
+
+/** Same "walk the chain, fall through on failure" shape as `routeChat`,
+ * simplified for a single non-streaming result -- there's no "already
+ * yielded output" case to protect against (SPEC.md § 6/§ 7: vision
+ * either answers or it doesn't, nothing is spoken until the full
+ * qualitative description comes back). A provider registered for the
+ * `"see"` lane without a `vision()` method (shouldn't happen given how
+ * `wiring.ts` registers providers, but not structurally impossible) is
+ * treated the same as any other unavailable provider -- fall through,
+ * don't crash. */
+export async function routeVision(registry: Registry, req: VisionRequest, onTrace: TraceSink = () => {}): Promise<VisionResult> {
+  const chain = registry.chainFor("see");
+  if (chain.length === 0) {
+    throw new NoProvidersRegisteredError("see");
+  }
+
+  const requestId = randomUUID();
+  const causes: unknown[] = [];
+
+  for (let depth = 0; depth < chain.length; depth++) {
+    const provider = chain[depth]!;
+    const start = performance.now();
+    try {
+      if (!provider.vision) {
+        throw new ProviderUnavailableError(provider.id, "does not implement vision()");
+      }
+      const result = await provider.vision(req);
+      onTrace({
+        requestId,
+        lane: "see",
+        providerId: provider.id,
+        costTier: provider.costTier,
+        latencyMs: performance.now() - start,
+        fallbackDepth: depth,
+        ok: true,
+      });
+      return result;
+    } catch (cause) {
+      const latencyMs = performance.now() - start;
+      if (!(cause instanceof ProviderUnavailableError)) {
+        onTrace({
+          requestId,
+          lane: "see",
+          providerId: provider.id,
+          costTier: provider.costTier,
+          latencyMs,
+          fallbackDepth: depth,
+          ok: false,
+          error: String(cause),
+        });
+        throw cause;
+      }
+      onTrace({
+        requestId,
+        lane: "see",
+        providerId: provider.id,
+        costTier: provider.costTier,
+        latencyMs,
+        fallbackDepth: depth,
+        ok: false,
+        error: cause.message,
+      });
+      causes.push(cause);
+    }
+  }
+
+  throw new AllProvidersFailedError("see", causes);
 }

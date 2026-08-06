@@ -8,7 +8,7 @@
 
 import type { VisionRequest, VisionResult } from "../../shared/types.ts";
 import type { Registry } from "../router/registry.ts";
-import { routeChat } from "../router/router.ts";
+import { routeChat, routeVision } from "../router/router.ts";
 import type { Router } from "./types.ts";
 
 export function createSkillRouter(registry: Registry): Router {
@@ -27,8 +27,8 @@ export function createSkillRouter(registry: Registry): Router {
       }
       return text;
     },
-    async see(_req: VisionRequest): Promise<VisionResult> {
-      throw new Error("ctx.router.see() is not available until Phase 8 wires a real vision provider into a lane skills can reach");
+    async see(req: VisionRequest): Promise<VisionResult> {
+      return routeVision(registry, req);
     },
   };
 }

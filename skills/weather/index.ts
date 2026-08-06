@@ -85,7 +85,7 @@ export function createWeatherSkill(deps: WeatherDeps = DEFAULT_DEPS): Skill {
           .propose({
             capability: "MEMORY_WRITE",
             humanSummary: `Remember "${place.name}" as your city for weather`,
-            payload: { key: LOCATION_FACT_KEY, value: place.name, confidence: 0.95 },
+            payload: { kind: "fact", key: LOCATION_FACT_KEY, value: place.name, confidence: 0.95 },
           })
           .catch((err) => ctx.log.error("weather: failed to propose remembering city", { err: String(err) }));
       }

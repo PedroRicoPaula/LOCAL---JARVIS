@@ -53,6 +53,12 @@ import { Registry } from "./registry.ts";
 
 export const CONVERSE_NIM_MODEL = "meta/llama-3.1-8b-instruct";
 export const REASON_NIM_MODEL = "meta/llama-3.3-70b-instruct";
+// Live-confirmed 2026-08-06 against the real `/v1/models` catalog with
+// the owner's own key (not guessed -- this project has been burned more
+// than once trusting a provider's model name ahead of checking it live),
+// and smoke-tested end to end against a real image through
+// /chat/completions. See Phase 8's plan and PROGRESS.md's log.
+export const NIM_VISION_MODEL = "meta/llama-3.2-11b-vision-instruct";
 export const CONVERSE_OLLAMA_FALLBACK_MODEL = "qwen2.5:0.5b";
 export const OLLAMA_EMBED_MODEL = "mxbai-embed-large";
 export const OLLAMA_VISION_MODEL = "moondream";
@@ -95,6 +101,7 @@ export async function buildRegistry(): Promise<Registry> {
       converse: process.env["NIM_CONVERSE_MODEL"] ?? CONVERSE_NIM_MODEL,
       reason: process.env["NIM_MODEL"] ?? REASON_NIM_MODEL,
     },
+    visionModel: process.env["NIM_VISION_MODEL"] ?? NIM_VISION_MODEL,
   });
 
   const ollama = new OllamaProvider({
@@ -119,6 +126,18 @@ export async function buildRegistry(): Promise<Registry> {
   registry.register(nim, ["converse"]);
   registry.register(nim, ["reason"]);
 
+  // see: nim first, ollama (moondream, local) second -- a real,
+  // hardware-driven deviation from SPEC.md § 6's originally stated
+  // "local Qwen3-VL first" default. Qwen3-VL's smallest locally-runnable
+  // variant is 4B (Ollama's own catalog), and ADR-001 already found this
+  // 8GB M1 can't reliably run even a 4B *text* model without
+  // OOM-thrashing -- a VLM needs more memory than an equivalent text
+  // model (vision encoder + image tokens on top), so local-first is
+  // very unlikely to win here. `ollama` stays registered as a real,
+  // benchmarked second option, not assumed working -- see this phase's
+  // plan for the full reasoning.
+  registry.register(nim, ["see"]);
+
   if (groqKey) {
     registry.register(new GroqProvider({ apiKey: groqKey, models: { converse: CONVERSE_GROQ_MODEL } }), ["converse"]);
     registry.register(new GroqProvider({ apiKey: groqKey, models: { reason: REASON_GROQ_MODEL } }), ["reason"]);
@@ -137,6 +156,7 @@ export async function buildRegistry(): Promise<Registry> {
   }
 
   registry.register(ollama, ["converse"]);
+  registry.register(ollama, ["see"]);
   registry.register(reasonOffline, ["reason"]);
   return registry;
 }

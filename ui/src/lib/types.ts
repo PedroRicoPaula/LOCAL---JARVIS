@@ -89,7 +89,9 @@ export type ServerEvent =
   | { type: "transcript"; text: string; final: boolean; speaker: "owner" | "jarvis"; eventId?: string }
   | { type: "state"; value: JarvisState }
   | { type: "speaking"; active: boolean }
-  | { type: "camera"; active: boolean }
+  | { type: "camera.armed"; sessionId: string; reason: string; expiresAt: number }
+  | { type: "camera.captured"; sessionId: string; frameId: string; path: string }
+  | { type: "camera.closed"; sessionId: string; cause: "owner" | "idle" | "cap" | "error" }
   | { type: "health"; providers: Record<string, boolean> }
   | { type: "error"; message: string; detail?: string; ts: number }
   | { type: "feedback"; eventId: string; rating: FeedbackRating };

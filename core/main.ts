@@ -22,6 +22,7 @@
  */
 
 import { connectWithRetry, readLines, sendLine } from "./ipc.ts";
+import { createIpcCameraHandle, type EyesEventSource } from "./skills/camera.ts";
 import { generalConversationReply } from "./converse.ts";
 import { createDashboardHistory } from "./dashboardHistory.ts";
 import { createMcpToolExecutor } from "./executors/mcp.ts";
@@ -51,6 +52,7 @@ import { PROJECTS_ROOT } from "../skills/launcher/index.ts";
 
 const EARS_SOCKET = process.env["JARVIS_EARS_SOCKET"] ?? "/tmp/jarvis-ears.sock";
 const VOICE_SOCKET = process.env["JARVIS_VOICE_SOCKET"] ?? "/tmp/jarvis-voice.sock";
+const EYES_SOCKET = process.env["JARVIS_EYES_SOCKET"] ?? "/tmp/jarvis-eyes.sock";
 const DB_PATH = process.env["JARVIS_DB_PATH"] ?? "data/jarvis.db";
 const DASHBOARD_PORT = Number(process.env["JARVIS_DASHBOARD_PORT"] ?? 8787);
 
@@ -66,6 +68,23 @@ async function main(): Promise<void> {
   console.log(`core: connecting to voice (${VOICE_SOCKET})`);
   const voiceSock = await connectWithRetry(VOICE_SOCKET);
   console.log("core: connected to both.");
+
+  // eyes is on-demand (SPEC.md § 2: "launchd, idle"), not always-running
+  // like ears/voice -- unlike those two, a failure to connect here must
+  // not stop `core` from booting. A camera-declaring skill fails
+  // honestly (the same stub message it always gave before Phase 8)
+  // rather than the whole assistant refusing to start over one unused
+  // sense. A handful of quick attempts, not the full ears/voice retry
+  // budget -- if eyes genuinely isn't running, waiting longer just
+  // delays boot for no benefit.
+  console.log(`core: connecting to eyes (${EYES_SOCKET})`);
+  let eyesSock: Awaited<ReturnType<typeof connectWithRetry>> | undefined;
+  try {
+    eyesSock = await connectWithRetry(EYES_SOCKET, 3, 500);
+    console.log("core: connected to eyes.");
+  } catch (err) {
+    console.warn(`core: eyes not available (${err instanceof Error ? err.message : String(err)}) -- camera-declaring skills will fail honestly until it's running`);
+  }
 
   const embedder = new OllamaProvider({ models: {}, embedModel: "mxbai-embed-large" });
   const db = openDb(DB_PATH);
@@ -90,6 +109,13 @@ async function main(): Promise<void> {
   console.log("core: skills loaded:", loadReport.loaded, "-- disabled:", loadReport.disabled);
 
   const conversation = createIpcConversation((text) => sendLine(voiceSock, { type: "speak", text }));
+
+  // Only constructed when eyes is actually connected -- `undefined`
+  // means every camera-declaring skill's `ctx.camera` falls back to the
+  // honest throwing stub (`buildSkillContext`'s own `deps.camera ??
+  // createStubCameraHandle()`), same shape as the four optional keys in
+  // `router/wiring.ts`.
+  const cameraHandle = eyesSock ? createIpcCameraHandle((message) => sendLine(eyesSock!, message)) : undefined;
 
   // Forward reference: `wsHub` needs `onUtterance` to wire the dashboard's
   // test console (SOAK 1) before `handleUtterance` itself can be defined
@@ -126,6 +152,15 @@ async function main(): Promise<void> {
   // as-is so the dashboard shows genuine progress, not a guess.
   relayVoiceStatus(voiceSock, wsHub).catch((err) => console.error("core: voice status relay failed", err));
 
+  // Same relay shape as voice, but doubles as the wire that resolves
+  // `cameraHandle`'s own pending request/reply correlation (offerEvent)
+  // -- one socket, one reader, two jobs, since eyes multiplexes replies
+  // and self-triggered timeout events on the same connection. Only
+  // started when eyes actually connected.
+  if (eyesSock && cameraHandle) {
+    relayCameraStatus(eyesSock, wsHub, cameraHandle).catch((err) => console.error("core: camera status relay failed", err));
+  }
+
   // The single utterance-handling path -- real speech from `ears` and a
   // dashboard test-console line (SOAK 1, `ClientEvent` "utterance.inject")
   // both end up here, and `core` cannot tell them apart once they do.
@@ -160,8 +195,22 @@ async function main(): Promise<void> {
         routerRegistry,
         text,
         SESSION_ID,
-        (skillId) =>
-          buildSkillContext({ db, memory, routerRegistry, conversation, gate, mcp: mcpRegistry, fsRoots: [PROJECTS_ROOT] }, skillId, SESSION_ID),
+        (skillId) => {
+          // Capability enforcement happens at the handle, not the call
+          // site (docs/SKILLS.md § 4) -- but *which* handle a skill gets
+          // is decided right here: only a skill whose own manifest
+          // declares CAMERA, and only when eyes is actually connected,
+          // gets the real one. Every other skill gets `undefined`,
+          // which `buildSkillContext` turns into the honest throwing
+          // stub on its own.
+          const skill = skillRegistry.get(skillId);
+          const camera = cameraHandle && skill?.manifest.capabilities.includes("CAMERA") ? cameraHandle : undefined;
+          return buildSkillContext(
+            { db, memory, routerRegistry, conversation, gate, mcp: mcpRegistry, fsRoots: [PROJECTS_ROOT], ...(camera ? { camera } : {}) },
+            skillId,
+            SESSION_ID,
+          );
+        },
       );
       memory.recordRoutingStat({
         lane: trace.lane,
@@ -238,6 +287,48 @@ async function relayVoiceStatus(voiceSock: Parameters<typeof readLines>[0], wsHu
   for await (const message of readLines(voiceSock)) {
     if (message["type"] !== "speaking") continue;
     wsHub.broadcast({ type: "speaking", active: Boolean(message["active"]) });
+  }
+}
+
+/** Every message `eyes` sends goes through both jobs, in this order:
+ * first `cameraHandle.offerEvent()` (resolves a pending arm/capture/close
+ * request if this reply matches one), then an unconditional relay to the
+ * dashboard -- a self-triggered idle/absolute timeout close has nothing
+ * pending to resolve, but the dashboard still needs to know about it
+ * (SPEC.md § 6: "both timeouts, both announced"). `CameraEvent`'s three
+ * variants are exactly `ServerEvent`'s folded-in camera.* variants
+ * (shared/types.ts), so the raw message is broadcast as-is once its
+ * shape is confirmed. */
+async function relayCameraStatus(
+  eyesSock: Parameters<typeof readLines>[0],
+  wsHub: ReturnType<typeof createWsHub>,
+  cameraHandle: EyesEventSource,
+): Promise<void> {
+  for await (const message of readLines(eyesSock)) {
+    cameraHandle.offerEvent(message);
+    const type = message["type"];
+    if (type === "camera.armed") {
+      wsHub.broadcast({
+        type: "camera.armed",
+        sessionId: String(message["sessionId"]),
+        reason: String(message["reason"]),
+        expiresAt: Number(message["expiresAt"]),
+      });
+    } else if (type === "camera.captured") {
+      wsHub.broadcast({
+        type: "camera.captured",
+        sessionId: String(message["sessionId"]),
+        frameId: String(message["frameId"]),
+        path: String(message["path"]),
+      });
+    } else if (type === "camera.closed") {
+      const cause = message["cause"];
+      wsHub.broadcast({
+        type: "camera.closed",
+        sessionId: String(message["sessionId"]),
+        cause: cause === "owner" || cause === "idle" || cause === "cap" || cause === "error" ? cause : "error",
+      });
+    }
   }
 }
 

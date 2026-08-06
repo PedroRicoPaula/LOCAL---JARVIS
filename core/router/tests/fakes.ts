@@ -4,7 +4,7 @@
  * world gets a fake here (CLAUDE.md § 3).
  */
 
-import type { ChatChunk, ChatRequest, CostTier, Lane } from "../../../shared/types.ts";
+import type { ChatChunk, ChatRequest, CostTier, Lane, VisionRequest, VisionResult } from "../../../shared/types.ts";
 import type { ModelProvider, ProviderHealth } from "../provider.ts";
 import { ProviderUnavailableError } from "../provider.ts";
 
@@ -22,6 +22,13 @@ export interface FakeProviderOptions {
   failWith?: Error;
   failAfterChunks?: number;
   healthOk?: boolean;
+  /** When given, this fake implements `vision()` and resolves with this
+   * result. Omitted means no `vision` method at all (structurally, same
+   * as a real provider that doesn't support the `see` lane) -- see
+   * `undefinedVisionProvider` below for a case that needs that. */
+  visionResult?: VisionResult;
+  /** Throws this from `vision()` instead of resolving `visionResult`. */
+  visionFailWith?: Error;
 }
 
 export class FakeProvider implements ModelProvider {
@@ -30,7 +37,9 @@ export class FakeProvider implements ModelProvider {
   readonly costTier: CostTier;
 
   readonly receivedRequests: ChatRequest[] = [];
+  readonly receivedVisionRequests: VisionRequest[] = [];
   callCount = 0;
+  visionCallCount = 0;
   private readonly opts: FakeProviderOptions;
 
   constructor(opts: FakeProviderOptions) {
@@ -38,7 +47,23 @@ export class FakeProvider implements ModelProvider {
     this.id = opts.id;
     this.lanes = opts.lanes;
     this.costTier = opts.costTier ?? "free-local";
+    // Assigned conditionally, not always present as a no-op -- `vision`
+    // is optional on `ModelProvider`, and `routeVision` (router.ts)
+    // treats a provider with no `vision` method as one more reason to
+    // fall through to the next in the chain. A test needs both: a fake
+    // that genuinely has no method (property absent) and one that has
+    // the method but fails.
+    if (opts.visionResult !== undefined || opts.visionFailWith !== undefined) {
+      this.vision = async (req: VisionRequest): Promise<VisionResult> => {
+        this.visionCallCount += 1;
+        this.receivedVisionRequests.push(req);
+        if (this.opts.visionFailWith) throw this.opts.visionFailWith;
+        return this.opts.visionResult!;
+      };
+    }
   }
+
+  vision?: (req: VisionRequest) => Promise<VisionResult>;
 
   async *chat(req: ChatRequest): AsyncIterable<ChatChunk> {
     this.callCount += 1;
