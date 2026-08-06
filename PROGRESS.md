@@ -2378,7 +2378,23 @@ own trace callback.
 writing them this time, unlike Tasks 1-2. `make check` green throughout.
 Committed as `7b208c9`.
 
-Task 4 (dashboard camera indicator, Playwright) not started yet.
+**Task 4 built — dashboard camera indicator.** `use-jarvis.ts` tracks
+the three `camera.*` `ServerEvent` variants into a `CameraDashboardState`
+(state/reason/expiresAt/lastCaptureAt/lastClosedCause); `status-bar.tsx`
+renders it for real -- `CAMERA: ARMED · 87s`, a live countdown against
+the real `expiresAt` `eyes` reported, replacing the hardcoded `CAMERA:
+IDLE` string that was there since Phase 7. `tsc`/lint clean on both
+`core` and `ui/`. Committed as `31cd22c`.
+
+No committed Playwright spec exists for this dashboard yet -- Phase
+7's own live-DoD verification (this same log, earlier) used Playwright
+as a plain devDependency driving real headless Chromium via a
+throwaway script against a real running `core`, not a checked-in test
+file (no `playwright.config.ts` in this repo). Same approach planned
+for this phase's own self-run verification pass, next, rather than
+introducing new permanent E2E infra as a side effect of one indicator.
+
+Self-run verification (live smoke tests, Playwright) not done yet.
 
 ---
 
