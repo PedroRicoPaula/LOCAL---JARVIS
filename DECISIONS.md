@@ -3030,3 +3030,97 @@ reported via `ReportFindings` in the conversation, not duplicated here.
   patterns (executors, audit log, capability tiers) are sound; the two
   fixed bugs were real gaps in specific, narrow places, not signs of a
   systemically weak foundation.
+
+## ADR-044 — closing out the full-codebase review: all 9 remaining findings fixed
+
+**Status:** accepted
+
+**Context.** Asked to keep going after ADR-043's Critical/High fixes --
+every remaining medium/low finding from the same review, in one
+continuous pass. All 9 fixed; none deferred.
+
+**Fixes, in the order done.**
+- **Nonce comparison, timing-safe.** `Gate.decide()`'s `row.nonce !==
+  response.nonce` replaced with `hmac.ts`'s own (now exported)
+  `timingSafeEqualStrings` -- one implementation of the fix, not two.
+- **Dead code removed.** `core/skills/conversation/cli.ts` (zero real
+  importers since `conversation/ipc.ts` shipped, confirmed by grep) --
+  deleted; `core/skills/types.ts`'s stale docstring (still describing
+  it as the seam for future wiring, when real wiring has existed for
+  several phases) corrected.
+- **A real grammar bug fixed, not just documented.**
+  `skills/media/index.ts`'s `speechForOutcome` reused one past-tense
+  label for both "Done -- X." and "didn't X" -- produced "Okay, didn't
+  turned Do Not Disturb on." on every rejected media/focus-mode action,
+  pinned as the expected string in this skill's own tests until now.
+  Now takes an optional base-form label (defaults to the past-tense one
+  where a single form already works both ways, e.g. "set volume to
+  80"). `humanSummary` also switched to the base form -- "Resume
+  playback (Spotify)" reads correctly as a pending-approval preview,
+  "Resumed playback (Spotify)" didn't.
+- **Extraction+NONE duplication shared.** New `skills/_shared/
+  extract.ts` (`extractOrNull`, `extractLines`) replaces five
+  independent reimplementations (`launcher`, `tasks`, `shopping_list`,
+  `clipboard`, `gmail`) of "call the model, NONE means nothing found" --
+  already-drifted differences (punctuation stripping, error-catching)
+  made into explicit options instead of silent divergence. Each
+  skill's own test suite run individually after its refactor, before
+  moving to the next, to keep the change behavior-preserving throughout.
+  `skills/media`'s numeric `extractLevel` stays separate on purpose --
+  different enough a job that folding it in would strain the options
+  shape.
+- **Two real coverage gaps closed, one surfaced a real bug while
+  writing the test.** `core/dashboardHistory.ts` (pure in-memory ring
+  buffer, no external dependency, had zero tests) -- straightforward.
+  `SkillRegistry.loadAll()`/`dispatch()` (the pieces it composes are
+  each tested, the aggregation logic wasn't) -- while building a
+  duplicate-manifest-id test case, found the real behavior was a
+  silent overwrite in `skillsById` with `report.loaded` still listing
+  the id twice, no way to tell which skill was actually reachable.
+  Fixed: a duplicate id is now reported disabled (the second declarer
+  loses), never silently dropped; `health` re-keyed by module path
+  (not skill id) so the disabled entry can't collide with and hide the
+  original's healthy one; `skillsById` now cleared at the start of
+  `loadAll()` too (previously only `health` was, so a second call on
+  the same instance left earlier skills dispatch-reachable after
+  `listHealth()` stopped listing them).
+- **`FS_READ`'s whitelist actually implemented**, the biggest piece:
+  new `core/skills/fs.ts` (`createGatedFs`), a real `ctx.fs` on
+  `SkillContext` enforcing CLAUDE.md § 5's denylist (`~/.ssh`, `~/.aws`,
+  `.env`, `*secret*`/`*credential*`, checked first, always) plus a
+  per-wiring allowed-roots whitelist. `core/main.ts` wires the one real
+  root that exists today (`skills/launcher`'s own `PROJECTS_ROOT`,
+  exported from there rather than duplicated). **A second real bug
+  found live while writing this file's own tests, not assumed safe:**
+  a symlink inside an allowed root pointing outside it passed a
+  lexical-only (`path.resolve()`) containment check while the OS still
+  followed the link on the actual read -- fixed with `realpathSync`
+  resolving through symlinks before both the denylist and whitelist
+  checks run. **A third bug, found migrating the one real consumer:**
+  switching `skills/launcher` from raw `readdirSync` to `ctx.fs.listDir`
+  initially lost the directories-only filter its original code had
+  (`listDir` returned bare names, no type info) -- fixed by having
+  `listDir` return `{name, isDirectory}` instead of a plain string,
+  still "names, not contents," just enough type info to filter
+  correctly.
+- **A fourth, unrelated drift bug found and fixed while wiring `ctx.fs`
+  everywhere it's needed:** `core/skills/scaffold.ts`'s own
+  `make new-skill` template still didn't include the `mcp` field
+  `SkillContext` gained in ADR-035 -- a newly scaffolded skill's
+  generated test would have failed to compile. Fixed the template and
+  the one already-generated file (`tests/generated/wardrobe.test.ts`)
+  that had been hand-patched with `mcp` after generation but would
+  still have been missing `fs`.
+
+**Consequences.**
+- 359 tests total (up from 332 after ADR-043), `make check` green
+  throughout -- every fix run and verified individually before moving
+  to the next, not batched and checked once at the end.
+- Every finding from the original review is now either fixed (all 9
+  covered here, plus the 2 from ADR-043) or -- there are no more
+  deferred items. `docs/BACKLOG.md`'s review-findings note updated to
+  reflect this.
+- Real, live verification beyond the test suite: `ctx.fs` checked
+  against the owner's actual `~/Developer/Programação` directory
+  (real project names listed correctly) and a real `~/.ssh` denial,
+  outside the fake-based tests.

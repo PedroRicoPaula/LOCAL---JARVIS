@@ -2223,6 +2223,34 @@ never logged, secrets hygiene is clean repo-wide. The two real bugs
 were narrow, specific gaps, not evidence of a weak foundation overall.
 Full detail in ADR-043.
 
+**Same day, continued through the rest of the review (ADR-044): all 9
+remaining findings fixed, none deferred.** Timing-safe nonce
+comparison; a dead file removed (`conversation/cli.ts`); a real
+grammar bug fixed (`skills/media` spoke "didn't turned Do Not Disturb
+on" on rejection, pinned as correct in its own tests); the extraction+
+NONE pattern shared across 5 skills (new `skills/_shared/extract.ts`);
+two coverage gaps closed (`dashboardHistory.ts`, `SkillRegistry.
+loadAll()`); and the biggest piece, `FS_READ`'s whitelist actually
+implemented (`core/skills/fs.ts`, a real `ctx.fs` enforcing CLAUDE.md
+§ 5's denylist plus a per-wiring allowed-roots check).
+
+Writing tests for the last two surfaced three more real bugs, not just
+coverage gaps: a duplicate manifest id silently overwrote the earlier
+skill in `SkillRegistry`; a symlink inside an allowed `ctx.fs` root
+pointing outside it bypassed a lexical-only containment check (fixed
+with `realpathSync`); and `skills/launcher`'s directories-only filter
+was silently lost migrating off raw `readdirSync` (fixed by having
+`listDir` return type info, not just names). Also found, unrelated:
+`core/skills/scaffold.ts`'s `make new-skill` template never got the
+`mcp` field `SkillContext` gained in ADR-035 -- a newly scaffolded
+skill's test would have failed to compile.
+
+359 tests total (up from 332), `make check` green throughout -- each
+fix verified individually before moving to the next. Live-verified
+`ctx.fs` against the owner's real project directory and a real
+`~/.ssh` denial, not just the fakes. Nothing from the original review
+left open. Full detail in ADR-044.
+
 ---
 
 ## Key numbers to record as we go
