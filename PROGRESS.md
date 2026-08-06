@@ -2017,6 +2017,37 @@ crashing or faking a result. `docs/BACKLOG.md` updated to say so
 plainly instead of the old "owner setup incomplete" framing. Full
 detail in ADR-037.
 
+**Same day, next task: the standing "peanuts" bug.** Asked to build
+real benchmark infrastructure before touching `DISAMBIGUATION_SYSTEM`
+rather than patch on a hunch. Found and fixed a real, separate gap
+first: `tsconfig.json` never included `bench/**`, so `make check` had
+never actually type-checked any bench script -- `bench_skill_routing.ts`
+had already drifted from `SkillContext`'s real shape (missing `mcp`)
+with nothing catching it. Fixed both.
+
+Built `bench/bench_disambiguation_fallback.ts`, forcing disambiguation
+onto the real degraded model (`qwen2.5:0.5b`) instead of the healthy
+one, since that's what the live bug actually needed. Baseline: 42.9%,
+bug reproduced cleanly. Two prompt fixes tried against it -- a worked
+counter-example, then a shorter single rule -- **neither fixed a single
+degraded-model case**, and the second one **regressed two unrelated,
+previously-correct cases** on the healthy-model benchmark. Both
+reverted; confirmed via `git diff` that `dispatch.ts` is byte-for-byte
+unchanged from before this session. Also found, warming the model up
+first still isn't enough to beat production's 3s timeout --
+`qwen2.5:0.5b` measured ~29.7s cold-load on this machine, which can't
+hold both it and the embedding model resident at once. Confirmed this
+fails safely (an honest spoken error, never a crash) by reading
+`core/main.ts`'s own try/catch, not assuming it.
+
+Net result: no prompt change shipped (both real attempts were
+benchmark-rejected, exactly the outcome ADR-026's own discipline exists
+to catch before it ships) but real, reusable diagnostic infrastructure
+kept, and the true scope of the problem is now sharper and merged into
+ADR-028's already-open item rather than treated as two separate small
+bugs. Full trail in ADR-038; `docs/BACKLOG.md` updated to match. 285
+tests unchanged, `make check` green.
+
 ---
 
 ## Key numbers to record as we go
@@ -2120,4 +2151,16 @@ detail in ADR-037.
   `converse` lane, and under the fallback it frequently misclassifies
   ordinary utterances as `see`, silently misrouting them (not just
   answering worse). See ADR-028 and `docs/BACKLOG.md`. Open, needs
-  design work, not fixed yet.
+  design work, not fixed yet. **Sharper evidence 2026-08-06 (ADR-038):**
+  a raw benchmark measured `qwen2.5:0.5b`'s cold-load alone at ~29.7s on
+  this 8GB machine — it can't stay resident alongside
+  `mxbai-embed-large` (needed every utterance), so degraded-mode
+  operation likely thrashes both models in and out of memory per
+  utterance, not just misclassifying but risking an outright timeout.
+  Confirmed this fails safely (`core/main.ts` catches it, speaks an
+  honest error, never crashes) — but the fix needs a real design
+  decision (longer timeout? batch lane-classify+disambiguate into one
+  call? local models only viable for `reflex`, never `converse`, on
+  this hardware?), not a quick patch. Two prompt-wording attempts at a
+  *related* bug (the "peanuts" misroute) were tried and benchmark-
+  rejected the same day — see below and ADR-038.

@@ -528,19 +528,41 @@ design rather than requiring a new one.
     disambiguation calls onto a much weaker fallback model, that's the
     more likely real cause -- not the embedding shortlist itself, but a
     degraded model failing to say "none" when it should have.
-  - The robust fix is almost certainly a counter-example in
-    `DISAMBIGUATION_SYSTEM` ("a statement about the owner's own facts/
-    preferences is not an action on any list, pick 'none'") -- the
-    same shape of fix `factExtraction.ts` already got in ADR-027 for
-    the identical failure pattern. **Deliberately not made here**:
-    `DISAMBIGUATION_SYSTEM` is a *shared* prompt across every skill's
-    disambiguation, and ADR-026 already proved once that editing a
-    shared classifier/disambiguation prompt can silently regress
-    unrelated cases elsewhere -- this needs the same benchmark-backed
-    verification that fix used, not a same-session patch. Low real
-    urgency: the live consequence here was an honest, harmless "I
-    couldn't find Peanuts on the list," not a false success or a
-    red-tier action.
+  - **Update 2026-08-06 (ADR-038): the suspected counter-example fix
+    was actually tried, benchmarked, and rejected -- twice.** Built
+    `bench/bench_disambiguation_fallback.ts` to force disambiguation
+    onto the real degraded model (`qwen2.5:0.5b`) instead of guessing
+    at it, and confirmed the baseline bug there (42.9% -- 3/7 fact
+    statements misrouted). Two different prompt phrasings (a worked
+    example matching `EXTRACTION_SYSTEM`'s style, then a single short
+    rule) both **failed to fix a single degraded-model case** --
+    identical 42.9% either time. Worse, the second attempt **regressed
+    two unrelated, previously-correct cases** on the healthy-model
+    benchmark (`launcher.open_project` wrongly chosen for "commit the
+    current changes" / "run the test suite") -- exactly the non-local
+    shared-prompt risk ADR-026 already named, now confirmed empirically
+    rather than theoretically. Both attempts reverted; `dispatch.ts` is
+    unchanged. Low real urgency stands (still an honest, harmless
+    failure, not a false success or red-tier action) -- but "add a
+    counter-example" is no longer the plan; see below.
+  - **The real blocker turned out bigger than prompt wording.** Warming
+    the local model up first still wasn't enough to get a real answer
+    within production's 3000ms timeout -- a raw `curl` measured
+    `qwen2.5:0.5b`'s cold-load alone at ~29.7s on this 8GB machine
+    (ADR-001), because it can't hold `mxbai-embed-large` (needed for
+    *every* utterance's embedding match) and the fallback chat model
+    resident at once. Real degraded-mode operation likely thrashes
+    between the two on every utterance, not just answering wrong but
+    potentially timing out outright. Confirmed this fails safely
+    (`core/main.ts`'s `handleUtterance` catches it, speaks an honest
+    "something went wrong," never crashes or goes silent) -- but this
+    is now the same problem as the item below, not a separate one.
+    Fold together: neither should be attempted as a quick patch again
+    without first deciding what "degraded mode" is actually allowed to
+    cost (a longer timeout? batching lane-classify and disambiguate
+    into one call? accepting local models are only viable for `reflex`,
+    never `converse`, on this hardware?) -- see ADR-038 for the full
+    verification trail.
 - **2026-08-04 — `converse` hallucinated capabilities (fixed same day).**
   Real conversation: asked "can you create a skill?", JARVIS said yes and
   kept claiming to be building one, that it would show up on Skill

@@ -2466,3 +2466,109 @@ result, exactly the behavior this situation calls for.
   coverage (25 tests from ADR-035, +1 from ADR-036's registry fix).
   This ADR closes out the *verification* work, not the code -- nothing
   here required a code change.
+
+## ADR-038 — the "peanuts" bug: two prompt fixes tried, benchmarked, both rejected -- the real problem is bigger than wording
+
+**Status:** rejected (both fix attempts) -- no code change shipped, real infrastructure built and kept
+
+**Context.** `docs/BACKLOG.md` (root-caused 2026-08-06, see the earlier
+entry) already suspected the fix: a counter-example in
+`DISAMBIGUATION_SYSTEM`, the same shape of fix ADR-027 used for
+`EXTRACTION_SYSTEM`. That entry deliberately stopped short of shipping
+it without benchmark-backed verification, per ADR-026's own lesson that
+editing a *shared* prompt can silently regress unrelated cases. This
+ADR is that verification actually being done -- and it overturns the
+suspected fix.
+
+**New infrastructure, built first, before touching the prompt at all**
+(no benchmark existed for the disambiguation step specifically --
+`bench_skill_routing.ts` grades the whole `dispatch()` pipeline but had
+never isolated the degraded-model path):
+- `tsconfig.json` now includes `bench/**/*.ts`. Found live: it didn't
+  before, so `make check`'s `tsc --noEmit` was silently never
+  type-checking any bench script -- `bench_skill_routing.ts` had
+  already drifted from `SkillContext`'s real shape (missing the `mcp`
+  field ADR-035 added) with nothing catching it. Fixed both the
+  include and the drift.
+- `bench_skill_routing.ts` gained real `shopping_list` regression cases
+  (it previously tested zero shopping_list cases despite that being
+  the skill actually implicated) and the fact-statement cases
+  ("peanuts," "lactose," two more to check generalization past diet
+  specifically) that are the actual subject of this bug.
+- **New: `bench/bench_disambiguation_fallback.ts`**, built specifically
+  because the general benchmark couldn't reproduce the bug -- against
+  the healthy primary model (`nim`), disambiguation already said
+  "none" correctly for every fact-statement case, no fix needed. The
+  live bug (ADR-034) only happened because that conversation's
+  disambiguation call had fallen through to the degraded local model
+  (`qwen2.5:0.5b`, ADR-001/ADR-028). This script forces exactly that
+  path: a `Registry` with *only* the ollama fallback provider
+  registered for `converse`, so the real weak model is what gets
+  graded, not a healthy one standing in for it.
+
+**What the degraded-model benchmark found, run before any prompt
+change (baseline):** 42.9% (3/7) -- every fact-statement case
+misrouted to a `shopping_list` intent, `disambiguated: true` in every
+failure (the model actively chose wrong, not a shortlist/embedding
+problem). Confirms the original diagnosis precisely.
+
+**Fix attempt 1 -- a counter-example matching `EXTRACTION_SYSTEM`'s
+own style** (a worked example: utterance, candidate list, the correct
+`{"choice": "none"}`, one line of reasoning). Re-ran the degraded
+benchmark: **no improvement at all**, identical 42.9%, same cases
+failing the same way.
+
+**Fix attempt 2 -- a single short rule, no worked example** ("Pick
+'none' if the user is stating a fact, preference, or allergy about
+themselves, not asking for an action"), on the theory that a 0.5B
+model attends poorly to long few-shot blocks. Re-ran: **still no
+improvement** on the degraded benchmark (same 3 cases still wrong) --
+**and a regression surfaced on the *healthy*-model benchmark**:
+`bench_skill_routing.ts` dropped from 91.7% to 87.5%, two previously-
+correct off-topic cases ("commit the current changes," "run the test
+suite") now wrongly dispatching to `launcher.open_project`. Isolated
+by reverting the prompt and re-running just those two cases (passed
+clean on the original prompt, both runs reproducible, not noise) --
+confirmed the second fix attempt caused this, not measurement noise.
+
+**A separate, more severe problem found in the process, not fixed
+here either:** warming the local chat model up first (a real call,
+generous timeout) still wasn't enough -- the very next real
+`dispatch()` call still threw `AllProvidersFailedError` inside
+`classifyLane()`, timing out at the production 3000ms limit. A raw
+`curl` to Ollama's `/api/chat` for `qwen2.5:0.5b` measured
+`load_duration: ~29.7s` -- this machine's 8GB RAM (ADR-001) cannot
+hold `mxbai-embed-large` (used for every utterance's embedding match)
+and the fallback chat model resident at the same time, so real
+degraded-mode operation likely thrashes both models in and out of
+memory on every single utterance, not just misclassifying but
+potentially timing out outright. **This fails safely, confirmed by
+reading the code, not assumed:** `core/main.ts`'s `handleUtterance`
+wraps the whole dispatch call in try/catch (lines ~138-206) and speaks
+"Something went wrong handling that, I've logged the error" rather
+than crashing or going silent -- CLAUDE.md § 6's honesty rule holds
+even here. Bad UX under a real outage, but not a lie and not a crash.
+
+**Decision.** Ship none of the two prompt-wording attempts --
+confirmed to not fix the actual failure mode and confirmed (attempt 2)
+to actively regress unrelated cases, exactly the risk ADR-026 already
+named. `DISAMBIGUATION_SYSTEM` in `core/skills/dispatch.ts` is
+unchanged from before this ADR. Keep everything else: both new/updated
+benchmark scripts (real, reusable diagnostic value regardless of this
+specific fix's outcome), the `tsconfig.json` fix, and the new
+regression cases in `bench_skill_routing.ts`.
+
+**Consequences.**
+- `docs/BACKLOG.md`'s "peanuts" entry updated: now says two real fixes
+  were tried and benchmark-rejected, not just diagnosed. The right fix
+  is no longer "a prompt counter-example" -- it's tangled up with
+  ADR-028's already-open, already-flagged-as-needing-design-work
+  degraded-mode reliability problem, now with sharper evidence
+  (measured ~30s cold-load, a plausible timeout/crash path, not just
+  "sometimes misclassifies"). Revisit both together, not as two
+  separate small patches.
+- 285 tests unchanged (no test file touched -- this was benchmark-only
+  verification against real models, per CLAUDE.md § 3's own carve-out
+  for live smoke tests a fake can't stand in for).
+- `make check` green, `bench/` now actually type-checked going
+  forward.
