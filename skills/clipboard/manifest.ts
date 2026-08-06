@@ -13,6 +13,15 @@
  * every lane real phrasing lands on rather than fight the classifier.
  * `read_clipboard` stays `converse`-only: its examples are all questions
  * ("what's on my clipboard"), confirmed classifying correctly.
+ * `capture_screenshot` declares `act` and `see` too, alongside
+ * `converse` -- `act` for the same imperative-command reasoning as
+ * `write_clipboard`; `see` found live (2026-08-06, via
+ * `bench_skill_routing.ts`): "grab a screenshot of this for me"
+ * classifies as `see` (the classifier reads "grab .. of this" as
+ * vision-adjacent phrasing, despite this being a screen capture, not a
+ * camera request) -- confirmed via a real embedding-candidate check
+ * (0.958, an excellent match, filtered out purely by the lane
+ * mismatch) before concluding this was a lane-declaration gap.
  */
 
 import type { SkillManifest } from "../../shared/types.ts";
@@ -50,6 +59,20 @@ export const manifest: SkillManifest = {
         "põe isto na área de transferência: comprar leite",
       ],
       lanes: ["converse", "act"],
+    },
+    {
+      id: "capture_screenshot",
+      description: "Take an interactive screenshot (the owner selects the area) and copy it to the clipboard.",
+      examples: [
+        "take a screenshot",
+        "screenshot this",
+        "capture the screen",
+        "grab a screenshot of this",
+        // PT-PT paraphrases (ADR-033)
+        "tira uma captura de ecrã",
+        "captura o ecrã",
+      ],
+      lanes: ["converse", "act", "see"],
     },
   ],
 

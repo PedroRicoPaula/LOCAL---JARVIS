@@ -49,6 +49,17 @@ function writeSpeechForOutcome(text: string, outcome: ApprovalOutcome): string {
   return `I couldn't copy that -- ${outcome.detail ?? "something went wrong"}.`;
 }
 
+function screenshotSpeechForOutcome(outcome: ApprovalOutcome): string {
+  // "Sent," not "captured" -- screencapture exits the same way whether
+  // the owner completed the selection or pressed Escape to cancel
+  // (core/executors/screenshot.ts's own docstring), so this never claims
+  // more certainty than it has.
+  if (outcome.ok) return "Sent to your clipboard, if you finished selecting an area.";
+  if (outcome.reason === "rejected") return "Okay, not taking a screenshot.";
+  if (outcome.reason === "expired") return "The screenshot request expired before you answered.";
+  return `I couldn't take that screenshot -- ${outcome.detail ?? "something went wrong"}.`;
+}
+
 export const skill: Skill = {
   manifest,
 
@@ -79,6 +90,17 @@ export const skill: Skill = {
           payload: { action: "write_clipboard" as const, text: trimmed },
         });
         const speech = writeSpeechForOutcome(trimmed, outcome);
+        ctx.say(speech);
+        return { speech };
+      }
+
+      case "capture_screenshot": {
+        const outcome = await ctx.propose({
+          capability: "SHELL_EXEC",
+          humanSummary: "Take an interactive screenshot and copy it to the clipboard",
+          payload: { action: "capture_screenshot" as const },
+        });
+        const speech = screenshotSpeechForOutcome(outcome);
         ctx.say(speech);
         return { speech };
       }

@@ -77,6 +77,7 @@ const CASES: Case[] = [
   // clipboard -- added 2026-08-06 (docs/BACKLOG.md Tier 1)
   { utterance: "what did I just copy", expected: { skillId: "clipboard", intentId: "read_clipboard" } },
   { utterance: "put this on my clipboard: call the plumber", expected: { skillId: "clipboard", intentId: "write_clipboard" } },
+  { utterance: "grab a screenshot of this for me", expected: { skillId: "clipboard", intentId: "capture_screenshot" } },
 ];
 
 async function main(): Promise<number> {

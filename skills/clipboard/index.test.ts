@@ -123,6 +123,38 @@ test("write_clipboard: execution failure is reported, not swallowed", async () =
   assert.match(result.speech, /couldn't copy/);
 });
 
+test("capture_screenshot: proposes SHELL_EXEC, speaks a non-overclaiming success", async () => {
+  const proposals: ProposedAction[] = [];
+  const ctx = fakeSkillContext({
+    propose: async (action) => {
+      proposals.push(action);
+      return { ok: true, result: {} };
+    },
+  });
+
+  const result = await skill.handle({ utterance: "take a screenshot", intent: "capture_screenshot", sessionId: "s1" }, ctx);
+
+  assert.deepEqual(proposals[0]?.payload, { action: "capture_screenshot" });
+  assert.equal(proposals[0]?.capability, "SHELL_EXEC");
+  assert.match(result.speech, /clipboard/);
+});
+
+test("capture_screenshot: owner rejects, says so plainly", async () => {
+  const ctx = fakeSkillContext({ propose: async () => ({ ok: false, reason: "rejected" }) });
+
+  const result = await skill.handle({ utterance: "take a screenshot", intent: "capture_screenshot", sessionId: "s1" }, ctx);
+
+  assert.equal(result.speech, "Okay, not taking a screenshot.");
+});
+
+test("capture_screenshot: execution failure is reported, not swallowed", async () => {
+  const ctx = fakeSkillContext({ propose: async () => ({ ok: false, reason: "error", detail: "timed out" }) });
+
+  const result = await skill.handle({ utterance: "take a screenshot", intent: "capture_screenshot", sessionId: "s1" }, ctx);
+
+  assert.match(result.speech, /couldn't take that screenshot/);
+});
+
 test("an unknown intent is refused honestly, never silently no-ops", async () => {
   const ctx = fakeSkillContext({});
 
