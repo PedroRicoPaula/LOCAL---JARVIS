@@ -2253,6 +2253,59 @@ left open. Full detail in ADR-044.
 
 ---
 
+### Phase 8 — in progress, 2026-08-06
+
+Camera sessions + `look`. Full plan (Context + Tasks 1-4) approved
+before starting; see the plan's own research notes for the real
+findings behind it (NIM vision as primary provider on this hardware,
+not local Qwen3-VL -- ADR-001's 8GB-RAM finding generalizes; camera
+on/off has to be a real multi-lane skill, not the dead `RulesProvider`
+regex rules; `CameraEvent` folds into `ServerEvent`, replacing the
+unused `{type:"camera", active:boolean}` placeholder).
+
+**Task 1 built and tested — `senses/eyes`, the camera daemon.** Same
+shape as `senses/ears`: `config.py`, `capture.py` (`OpenCvCameraDevice`,
+real `cv2.VideoCapture`), `session.py` (the `IDLE -> ARMED -> CAPTURE ->
+ARMED -> IDLE` state machine, `SPEC.md` § 6 / ADR-010 -- pure class,
+injected `CameraDevice` and clock), `main.py` (Unix socket daemon loop +
+background self-triggered timeout thread), `fakes.py`, 19 tests, no
+camera/network required. `launchd/com.jarvis.eyes.plist` shipped as a
+template only (not wired into `make install-daemon` this phase, same as
+`senses/voice` today -- runs via `make dev`).
+
+Three real bugs caught by careful re-reading before ever running a
+test, not by test failure -- worth recording as real quirks:
+
+- A leftover `field(default_factory=list)` line in a plain (non-
+  `@dataclass`) class -- `field()` is only valid inside a `@dataclass`
+  body. Copy-paste residue from drafting `Frame` as a dataclass first.
+- **The real one, worth remembering generally:** `CameraSession.
+  __init__`'s first draft used `idle_timeout_s: float = IDLE_TIMEOUT_S`
+  -- a directly-imported config constant as a parameter *default*.
+  Python binds a default value once, at function-definition (import)
+  time, so a test's `monkeypatch.setattr("senses.eyes.config.
+  IDLE_TIMEOUT_S", ...)` would never reach an already-bound default --
+  the monkeypatch changes the module attribute, but the function's
+  signature already captured the old value. Fix: `X: float | None =
+  None` sentinel parameters, resolved via fresh `config.ATTR` lookups
+  inside `__init__`'s body. Same reasoning as `core/gate/gate.ts`'s own
+  injectable-`now`-callback pattern, just a Python-specific trap on top
+  (a closure reads a name each call; a default parameter reads it once,
+  at def time). Any future `senses/*` module taking a config value as a
+  parameter default should use this pattern from the start.
+- A second-order bug from fixing the above: two lines still referenced
+  the raw (now possibly-`None`) parameter instead of the resolved local
+  variable, which would `TypeError` on `None + float` the first time a
+  caller relied on the default.
+
+`ruff check` and `.venv/bin/pytest senses/eyes/` both run clean (19
+passed); full `make check` green. Committed as `812077d`.
+
+Tasks 2-4 (core wiring, vision providers, the `look` skill, dashboard)
+not started yet.
+
+---
+
 ## Key numbers to record as we go
 
 | Metric | Target | Actual | Phase |
