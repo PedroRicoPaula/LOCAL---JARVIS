@@ -30,18 +30,49 @@ export class SkillRegistry {
     embedder: Embedder,
     modulePaths: readonly string[] = REGISTERED_SKILL_MODULES,
   ): Promise<SkillLoadReport> {
+    // Cleared at the start, not just `health` -- found live in a code
+    // review (2026-08-06) while adding this method its first real test:
+    // `skillsById` previously persisted across calls, so a second
+    // `loadAll()` on the same instance would leave earlier skills
+    // dispatch-reachable (`get`/`list`/`dispatch`) even though
+    // `listHealth()` no longer listed them -- a real, if currently
+    // unexercised (loadAll is only ever called once in practice),
+    // inconsistency between what the dashboard reports and what
+    // actually runs.
+    this.skillsById.clear();
     const report: SkillLoadReport = { loaded: [], disabled: [] };
+    // Keyed by module path, not skill id -- found live in the same
+    // review, immediately after fixing the collision below: keying by
+    // `id` meant a duplicate-id's "disabled" health entry silently
+    // overwrote the *original* skill's "loaded" one (same Map key),
+    // so a perfectly working skill would show as disabled on the
+    // dashboard just because something else later declared the same
+    // id. Every module path is unique per call by construction, so this
+    // can't collide the same way; `listHealth()`'s return shape
+    // (`[...health.values()]`) is unaffected either way.
     const health = new Map<string, SkillHealth>();
     for (const path of modulePaths) {
       const result = await loadSkill(path, buildInitCtx);
       if (result.status === "loaded") {
         const { id, version } = result.skill.manifest;
+        // A duplicate manifest id (a real, plausible copy-paste mistake)
+        // previously overwrote the earlier skill in `skillsById`
+        // silently -- `report.loaded` still listed the id twice, so
+        // "which skill is actually reachable" had no honest answer.
+        // The second one to declare an id loses, reported the same way
+        // any other load failure is -- never a silent overwrite.
+        if (this.skillsById.has(id)) {
+          const error = `duplicate skill id "${id}" -- another loaded skill already declares it`;
+          report.disabled.push({ id, error });
+          health.set(path, { id, version: "unknown", status: "disabled", lastError: error });
+          continue;
+        }
         this.skillsById.set(id, result.skill);
         report.loaded.push(id);
-        health.set(id, { id, version, status: "loaded", loadedAt: Date.now() });
+        health.set(path, { id, version, status: "loaded", loadedAt: Date.now() });
       } else {
         report.disabled.push({ id: result.id, error: result.error });
-        health.set(result.id, { id: result.id, version: "unknown", status: "disabled", lastError: result.error });
+        health.set(path, { id: result.id, version: "unknown", status: "disabled", lastError: result.error });
       }
     }
     this.health = health;
