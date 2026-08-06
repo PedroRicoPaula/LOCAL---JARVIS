@@ -6,6 +6,7 @@
 
 import { ulid } from "ulid";
 import type { Skill, SkillContext, SkillInitContext } from "../../core/skills/types.ts";
+import { extractOrNull } from "../_shared/extract.ts";
 import { manifest } from "./manifest.ts";
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS skill_tasks_items (
@@ -25,14 +26,11 @@ interface TaskRow {
   text: string;
 }
 
-async function extractTaskText(ctx: SkillContext, utterance: string): Promise<string | null> {
-  const raw = await ctx.router.complete("converse", EXTRACT_SYSTEM, utterance, { maxTokens: 40 });
-  // Trailing punctuation from the model reads oddly once this project's
-  // own "Added: <text>." wraps it again ("Added: drink coffee at 9am..")
-  // -- found live.
-  const trimmed = raw.trim().replace(/[.!?]+$/, "");
-  if (!trimmed || trimmed.toUpperCase() === "NONE") return null;
-  return trimmed;
+// Trailing punctuation from the model reads oddly once this project's
+// own "Added: <text>." wraps it again ("Added: drink coffee at 9am..")
+// -- found live.
+function extractTaskText(ctx: SkillContext, utterance: string): Promise<string | null> {
+  return extractOrNull(ctx, EXTRACT_SYSTEM, utterance, { maxTokens: 40, stripTrailingPunctuation: true });
 }
 
 async function addTask(input: { utterance: string }, ctx: SkillContext): Promise<{ speech: string }> {

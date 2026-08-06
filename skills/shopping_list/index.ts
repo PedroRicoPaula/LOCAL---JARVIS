@@ -5,6 +5,7 @@
 
 import { ulid } from "ulid";
 import type { Skill, SkillContext, SkillInitContext } from "../../core/skills/types.ts";
+import { extractLines } from "../_shared/extract.ts";
 import { manifest } from "./manifest.ts";
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS skill_shopping_list_items (
@@ -32,15 +33,9 @@ interface ItemRow {
   text: string;
 }
 
-async function extractItems(ctx: SkillContext, utterance: string): Promise<string[]> {
-  const raw = await ctx.router.complete("converse", EXTRACT_SYSTEM, utterance, { maxTokens: 60 });
-  const trimmed = raw.trim();
-  if (!trimmed || trimmed.toUpperCase() === "NONE") return [];
-  return trimmed
-    .split("\n")
-    // Same trailing-punctuation cosmetic fix as skills/tasks -- found live.
-    .map((line) => line.trim().replace(/[.!?]+$/, ""))
-    .filter((line) => line.length > 0 && line.toUpperCase() !== "NONE");
+// Same trailing-punctuation cosmetic fix as skills/tasks -- found live.
+function extractItems(ctx: SkillContext, utterance: string): Promise<string[]> {
+  return extractLines(ctx, EXTRACT_SYSTEM, utterance, { maxTokens: 60, stripTrailingPunctuation: true });
 }
 
 async function addItem(input: { utterance: string }, ctx: SkillContext): Promise<{ speech: string }> {

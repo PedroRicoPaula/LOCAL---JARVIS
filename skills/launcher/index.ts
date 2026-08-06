@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ApprovalOutcome } from "../../shared/types.ts";
 import type { Skill, SkillContext } from "../../core/skills/types.ts";
+import { extractOrNull } from "../_shared/extract.ts";
 import { manifest } from "./manifest.ts";
 
 const PROJECTS_ROOT = process.env["JARVIS_PROJECTS_ROOT"] ?? join(homedir(), "Developer", "Programação");
@@ -45,13 +46,10 @@ for well-known sites/companies (e.g. "GitHub" -> https://github.com). No
 quotes, no extra words. If nothing resembling a website is stated,
 respond with exactly: NONE`;
 
-async function extractName(ctx: SkillContext, system: string, utterance: string): Promise<string | null> {
-  const raw = await ctx.router.complete("converse", system, utterance, { maxTokens: 20 }).catch(() => "");
-  // Trailing punctuation on an app name would reach `open -a "X."` --
-  // stripped the same way skills/tasks found it needed live.
-  const trimmed = raw.trim().replace(/[.!?]+$/, "");
-  if (!trimmed || trimmed.toUpperCase() === "NONE") return null;
-  return trimmed;
+// Trailing punctuation on an app name would reach `open -a "X."` --
+// stripped the same way skills/tasks found it needed live.
+function extractName(ctx: SkillContext, system: string, utterance: string): Promise<string | null> {
+  return extractOrNull(ctx, system, utterance, { maxTokens: 20, stripTrailingPunctuation: true, catchErrors: true });
 }
 
 function speechForOutcome(app: string, outcome: ApprovalOutcome): string {

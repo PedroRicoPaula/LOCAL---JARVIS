@@ -19,6 +19,7 @@
 
 import type { McpJsonSchema, McpToolInfo } from "../../core/mcp/registry.ts";
 import type { Skill, SkillContext } from "../../core/skills/types.ts";
+import { extractOrNull } from "../_shared/extract.ts";
 import { manifest } from "./manifest.ts";
 
 const SEARCH_TOOL_PATTERN = /search|query|list.*(message|email|thread)/i;
@@ -54,9 +55,7 @@ applies (e.g. "from:john invoice"). No prose, no quotes, no leading
 is:unread`;
 
 async function extractQuery(ctx: SkillContext, utterance: string): Promise<string> {
-  const raw = await ctx.router.complete("converse", QUERY_EXTRACT_SYSTEM, utterance, { maxTokens: 30 }).catch(() => "is:unread");
-  const trimmed = raw.trim();
-  return trimmed || "is:unread";
+  return (await extractOrNull(ctx, QUERY_EXTRACT_SYSTEM, utterance, { maxTokens: 30, catchErrors: true })) ?? "is:unread";
 }
 
 export const skill: Skill = {

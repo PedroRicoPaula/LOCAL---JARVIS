@@ -8,6 +8,7 @@
 
 import type { ApprovalOutcome } from "../../shared/types.ts";
 import type { Skill, SkillContext } from "../../core/skills/types.ts";
+import { extractOrNull } from "../_shared/extract.ts";
 import { manifest } from "./manifest.ts";
 
 const EXTRACT_TEXT_SYSTEM = `Extract the literal text the owner wants copied to their clipboard, from
@@ -21,11 +22,8 @@ exactly: NONE`;
 // long clipboard is summarized by length rather than read in full.
 const MAX_SPOKEN_CHARS = 400;
 
-async function extractText(ctx: SkillContext, utterance: string): Promise<string | null> {
-  const raw = await ctx.router.complete("converse", EXTRACT_TEXT_SYSTEM, utterance, { maxTokens: 200 }).catch(() => "");
-  const trimmed = raw.trim();
-  if (!trimmed || trimmed.toUpperCase() === "NONE") return null;
-  return trimmed;
+function extractText(ctx: SkillContext, utterance: string): Promise<string | null> {
+  return extractOrNull(ctx, EXTRACT_TEXT_SYSTEM, utterance, { maxTokens: 200, catchErrors: true });
 }
 
 function readSpeechForOutcome(outcome: ApprovalOutcome): string {
