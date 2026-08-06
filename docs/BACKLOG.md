@@ -51,9 +51,12 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   screen" needs actual OCR on top (macOS's own Vision framework can do
   this via `shortcuts run` or a small native call — needs its own
   research, not assumed easy).
-- **Clipboard read/write** — `pbpaste`/`pbcopy`, built-in, trivial.
-  "What's on my clipboard" (read, green) / "copy X for me" (write,
-  bounded SHELL_EXEC-style action).
+- ~~Clipboard read/write~~ — **built 2026-08-06, ADR-041**
+  (`skills/clipboard`). Both read and write go through `SHELL_EXEC`
+  (yellow, not green as first sketched here -- clipboard content is
+  arbitrary and could be sensitive, no way to whitelist it in advance).
+  Found and fixed a real lane-declaration bug the same day (`write_clipboard`
+  needed both `converse` and `act`, same pattern as `launcher`/`media`).
 - **Focus Mode toggle** — research (2026-08-04) found direct AppleScript
   control of macOS Focus modes has real limitations (no clean scriptable
   property, unlike volume) — same honesty concern as brightness before

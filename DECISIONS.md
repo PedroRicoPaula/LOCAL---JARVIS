@@ -2788,3 +2788,50 @@ either trusting an unreliable model or giving up entirely.
   rule set like lane classification's 5 fixed categories) -- a bigger
   ask, not attempted here without the owner deciding it's worth that
   scope.
+
+## ADR-041 — `clipboard` skill: read/write, both gated, a real lane-declaration bug found and fixed the same day
+
+**Status:** accepted
+
+**Context.** Item 3 of the 2026-08-05 status review's ordered list:
+`docs/BACKLOG.md`'s Tier 1 backlog, starting with the items already
+flagged as trivial/no-research-needed (`pbpaste`/`pbcopy`, both
+built into macOS).
+
+**Decisions.**
+- **Both `read_clipboard` and `write_clipboard` go through `SHELL_EXEC`
+  (yellow, requires approval), neither is a green auto-run.** Unlike
+  `system_health`'s CPU/disk reads (inherently non-sensitive), clipboard
+  content is arbitrary and unpredictable -- it could be a password or
+  token just copied. `FS_READ`'s whitelist model (CLAUDE.md § 5) exists
+  for exactly this reasoning; there's no way to whitelist clipboard
+  content in advance since it's different every time, so it isn't
+  auto-approved either.
+- **`core/executors/clipboard.ts`: `pbpaste` via the existing injectable
+  `execFile` pattern (`apps.ts`'s own convention), `pbcopy` via a real
+  `spawn` + stdin write** -- `pbcopy` reads from stdin, not args, and
+  the promisified `execFile` has no stdin option (that's
+  `execFileSync`-only), so this is a genuinely different shape, not
+  copy-pasted from `apps.ts`.
+- **A real bug found via `bench_skill_routing.ts`, not guessed at:**
+  `write_clipboard` was declared `converse`-only; "copy this for me"/
+  "put this on my clipboard" actually classify as `act` (the lane
+  classifier reads "copy"/"put" as command verbs), making the intent
+  unreachable in practice -- confirmed by directly inspecting the real
+  embedding candidates (`clipboard.write_clipboard` scored 0.701,
+  correctly a top candidate) versus the real dispatched lane (`act`,
+  confirmed via a direct `classifyLane` call) before concluding this
+  was a lane-declaration gap and not an embedding problem. Same root
+  pattern already fixed for `launcher`/`media` (ADR-026) and
+  `shopping_list` (ADR-030) -- declared `[converse, act]`, verified
+  fixed by re-running the same benchmark (93.8%, up from 90.6%).
+  `read_clipboard` stays `converse`-only -- its question-phrased
+  examples classify correctly, confirmed rather than assumed.
+
+**Consequences.**
+- 11 new tests (`core/executors/tests/clipboard.test.ts`,
+  `skills/clipboard/index.test.ts`), `make check` green.
+- Live-verified the real `pbcopy`/`pbpaste` round trip outside the
+  fake-based tests, including UTF-8/emoji content -- not assumed from
+  the fakes passing alone.
+- `docs/BACKLOG.md`'s clipboard item marked built.

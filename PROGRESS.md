@@ -2125,6 +2125,28 @@ English and Portuguese.
 needs real per-skill logic, a bigger ask than lane classification's
 fixed 5 categories. Full detail in ADR-040.
 
+**Same day, item 3: `clipboard` skill (ADR-041).** First of the Tier 1
+backlog items, `pbpaste`/`pbcopy` -- built-in, no research needed unlike
+Focus Mode or Home Assistant (still open, the latter needs asking the
+owner whether he even has smart-home devices). Both read and write
+route through `SHELL_EXEC`, not a green auto-run as the backlog note
+first sketched -- clipboard content is arbitrary and could be
+sensitive, same reasoning `FS_READ`'s whitelist already uses.
+
+Found and fixed a real bug the same way as the others today: ran the
+new skill through `bench_skill_routing.ts` before calling it done, and
+`write_clipboard` ("copy this for me," "put this on my clipboard")
+turned out unreachable -- the lane classifier reads "copy"/"put" as
+command verbs (`act`), but the intent was declared `converse`-only.
+Confirmed the real cause (not guessed) by inspecting real embedding
+candidates and the real classified lane directly before fixing: same
+pattern already named in ADR-026/ADR-030. Declared both lanes, verified
+93.8% on the benchmark, up from 90.6%.
+
+11 new tests, `make check` green. Live-verified the real `pbcopy`/
+`pbpaste` round trip (including emoji) outside the fakes. `docs/
+BACKLOG.md`'s clipboard item marked built.
+
 ---
 
 ## Key numbers to record as we go
