@@ -106,26 +106,37 @@ async function extractLevel(ctx: SkillContext, kind: string, utterance: string):
   return Math.round(n);
 }
 
-function speechForOutcome(label: string, outcome: ApprovalOutcome): string {
-  if (outcome.ok) return `Done -- ${label}.`;
-  if (outcome.reason === "rejected") return `Okay, didn't ${label}.`;
-  if (outcome.reason === "expired") return `The request to ${label} expired before you answered.`;
-  return `Couldn't ${label} -- ${outcome.detail ?? "something went wrong"}.`;
+// `pastLabel` fits "Done -- ${pastLabel}." (a completed action);
+// `baseLabel` fits every other branch, all of which are about an
+// action that did *not* happen ("didn't resume playback", "couldn't
+// resume playback", "the request to resume playback expired") and
+// need the base/infinitive form, not the past tense. Found live in a
+// code review (2026-08-06): reusing one past-tense label for both
+// produced "Okay, didn't turned Do Not Disturb on." -- pinned as the
+// expected string in this file's own tests until then. Defaults
+// `baseLabel` to `pastLabel` for the callers where one form already
+// works for both (e.g. "set volume to 80" reads fine either way).
+function speechForOutcome(pastLabel: string, outcome: ApprovalOutcome, baseLabel: string = pastLabel): string {
+  if (outcome.ok) return `Done -- ${pastLabel}.`;
+  if (outcome.reason === "rejected") return `Okay, didn't ${baseLabel}.`;
+  if (outcome.reason === "expired") return `The request to ${baseLabel} expired before you answered.`;
+  return `Couldn't ${baseLabel} -- ${outcome.detail ?? "something went wrong"}.`;
 }
 
 async function proposeMedia(
   ctx: SkillContext,
   utterance: string,
   command: "play" | "pause" | "next" | "previous",
-  label: string,
+  pastLabel: string,
+  baseLabel: string,
 ): Promise<{ speech: string }> {
   const app = resolveTargetApp(utterance);
   const outcome = await ctx.propose({
     capability: "SHELL_EXEC",
-    humanSummary: `${label.charAt(0).toUpperCase() + label.slice(1)} (${app})`,
+    humanSummary: `${baseLabel.charAt(0).toUpperCase() + baseLabel.slice(1)} (${app})`,
     payload: { action: "media_control" as const, app, command },
   });
-  const speech = speechForOutcome(label, outcome);
+  const speech = speechForOutcome(pastLabel, outcome, baseLabel);
   ctx.say(speech);
   return { speech };
 }
@@ -157,6 +168,9 @@ async function proposeLevel(
   ctx.say(speech);
   return { speech };
 }
+// (`label` is already tense-invariant here -- "set volume to 80" reads
+// correctly both as "Done -- set volume to 80." and "didn't set volume
+// to 80.", so proposeLevel doesn't need two forms.)
 
 export interface MediaDeps {
   getNowPlaying: GetNowPlayingFn;
@@ -175,13 +189,13 @@ export function createMediaSkill(deps: MediaDeps = DEFAULT_DEPS): Skill {
     async handle(input, ctx): Promise<{ speech: string }> {
       switch (input.intent) {
         case "play_music":
-          return proposeMedia(ctx, input.utterance, "play", "resumed playback");
+          return proposeMedia(ctx, input.utterance, "play", "resumed playback", "resume playback");
         case "pause_music":
-          return proposeMedia(ctx, input.utterance, "pause", "paused playback");
+          return proposeMedia(ctx, input.utterance, "pause", "paused playback", "pause playback");
         case "next_track":
-          return proposeMedia(ctx, input.utterance, "next", "skipped to the next track");
+          return proposeMedia(ctx, input.utterance, "next", "skipped to the next track", "skip to the next track");
         case "previous_track":
-          return proposeMedia(ctx, input.utterance, "previous", "went back a track");
+          return proposeMedia(ctx, input.utterance, "previous", "went back a track", "go back a track");
 
         case "now_playing": {
           const app = resolveTargetApp(input.utterance);
@@ -209,13 +223,14 @@ export function createMediaSkill(deps: MediaDeps = DEFAULT_DEPS): Skill {
               return { speech };
             }
           }
-          const label = `turned Do Not Disturb ${enabled ? "on" : "off"}`;
+          const pastLabel = `turned Do Not Disturb ${enabled ? "on" : "off"}`;
+          const baseLabel = `turn Do Not Disturb ${enabled ? "on" : "off"}`;
           const outcome = await ctx.propose({
             capability: "SHELL_EXEC",
-            humanSummary: label.charAt(0).toUpperCase() + label.slice(1),
+            humanSummary: baseLabel.charAt(0).toUpperCase() + baseLabel.slice(1),
             payload: { action: "set_focus_mode" as const, enabled },
           });
-          const speech = speechForOutcome(label, outcome);
+          const speech = speechForOutcome(pastLabel, outcome, baseLabel);
           ctx.say(speech);
           return { speech };
         }

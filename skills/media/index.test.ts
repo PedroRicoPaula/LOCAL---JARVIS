@@ -82,7 +82,7 @@ test("owner rejects a media command: says so, not a false success", async () => 
 
   const result = await skill.handle({ utterance: "pause", intent: "pause_music", sessionId: "s1" }, ctx);
 
-  assert.equal(result.speech, "Okay, didn't paused playback.");
+  assert.equal(result.speech, "Okay, didn't pause playback.");
 });
 
 test("now_playing reads Spotify by default, no propose involved", async () => {
@@ -260,7 +260,7 @@ test("set_focus_mode: owner rejects, says so plainly", async () => {
 
   const result = await skill.handle({ utterance: "turn on do not disturb", intent: "set_focus_mode", sessionId: "s1" }, ctx);
 
-  assert.equal(result.speech, "Okay, didn't turned Do Not Disturb on.");
+  assert.equal(result.speech, "Okay, didn't turn Do Not Disturb on.");
 });
 
 test("set_focus_mode: execution failure (shortcut not set up yet) is reported, not swallowed", async () => {
