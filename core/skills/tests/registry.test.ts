@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { FakeEmbedder } from "../../memory/tests/fakes.ts";
-import { fakeStore } from "./fakes.ts";
+import { fakeSkillContext, fakeStore } from "./fakes.ts";
 import { SkillRegistry } from "../registry.ts";
 
 const GOOD = "./tests/fixtures/goodSkill.ts";
@@ -94,19 +94,7 @@ test("dispatch() delegates to the real dispatch pipeline built from loadAll()'s 
   // FakeEmbedder is a real (if simple) bag-of-words embedder, so this
   // scores a near-perfect match against itself, well clear of
   // DISPATCH_SCORE with no other candidate to disambiguate against.
-  const { outcome } = await registry.dispatch(embedder, routerRegistry, "hello", "s1", () => ({
-    router: { complete: async () => "", see: async () => { throw new Error("not used"); } },
-    memory: undefined as never,
-    camera: { state: "idle", async open() { throw new Error("not used"); } },
-    propose: async () => ({ ok: false, reason: "rejected" }),
-    say: () => {},
-    ask: async () => "",
-    store: fakeStore(),
-    sessionId: "s1",
-    now: () => 0,
-    log: { info() {}, warn() {}, error() {} },
-    mcp: { hasServer: () => false, listTools: () => [] },
-  }));
+  const { outcome } = await registry.dispatch(embedder, routerRegistry, "hello", "s1", () => fakeSkillContext());
 
   assert.equal(outcome.outcome, "dispatched");
   if (outcome.outcome === "dispatched") assert.equal(outcome.result.speech, "ok");

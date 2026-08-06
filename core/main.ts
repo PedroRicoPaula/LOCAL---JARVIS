@@ -42,6 +42,12 @@ import { createIpcConversation } from "./skills/conversation/ipc.ts";
 import { SkillRegistry } from "./skills/registry.ts";
 import { createSkillStore } from "./skills/store.ts";
 import { createWsHub } from "./ws.ts";
+// The one real FS_READ root today -- imported from the skill that
+// actually needs it (not duplicated as a second constant here), wired
+// into every skill's context uniformly since `ctx.fs` itself is what
+// enforces the real boundary, same as `ctx.mcp`/`ctx.camera` are always
+// present regardless of which skill declared the matching capability.
+import { PROJECTS_ROOT } from "../skills/launcher/index.ts";
 
 const EARS_SOCKET = process.env["JARVIS_EARS_SOCKET"] ?? "/tmp/jarvis-ears.sock";
 const VOICE_SOCKET = process.env["JARVIS_VOICE_SOCKET"] ?? "/tmp/jarvis-voice.sock";
@@ -154,7 +160,8 @@ async function main(): Promise<void> {
         routerRegistry,
         text,
         SESSION_ID,
-        (skillId) => buildSkillContext({ db, memory, routerRegistry, conversation, gate, mcp: mcpRegistry }, skillId, SESSION_ID),
+        (skillId) =>
+          buildSkillContext({ db, memory, routerRegistry, conversation, gate, mcp: mcpRegistry, fsRoots: [PROJECTS_ROOT] }, skillId, SESSION_ID),
       );
       memory.recordRoutingStat({
         lane: trace.lane,

@@ -12,6 +12,7 @@ import type { Memory } from "../memory/memory.ts";
 import type { Registry } from "../router/registry.ts";
 import { createStubCameraHandle } from "./camera.ts";
 import type { Conversation } from "./types.ts";
+import { createGatedFs } from "./fs.ts";
 import { stubPropose } from "./gate.ts";
 import { createSkillLogger } from "./logger.ts";
 import { createEmptyMcpToolLister } from "./mcp.ts";
@@ -38,6 +39,11 @@ export interface ContextDeps {
    * "not connected" default every skill already has to handle for
    * `now_playing`-style external state. */
   mcp?: McpToolLister;
+  /** `FS_READ`'s allowed roots -- see `fs.ts`'s own docstring. Omitted
+   * (tests, or a deployment with no FS_READ-declaring skill) means
+   * every real filesystem call `ctx.fs` allows fails honestly, never a
+   * silent bypass. */
+  fsRoots?: readonly string[];
 }
 
 export function buildSkillContext(deps: ContextDeps, skillId: string, sessionId: string): SkillContext {
@@ -55,5 +61,6 @@ export function buildSkillContext(deps: ContextDeps, skillId: string, sessionId:
     now: () => Date.now(),
     log: createSkillLogger(skillId),
     mcp: deps.mcp ?? createEmptyMcpToolLister(),
+    fs: createGatedFs(deps.fsRoots ?? []),
   };
 }

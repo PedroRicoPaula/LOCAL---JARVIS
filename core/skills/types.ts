@@ -21,6 +21,7 @@ import type {
   VisionRequest,
   VisionResult,
 } from "../../shared/types.ts";
+import type { GatedFs } from "./fs.ts";
 import type { McpToolLister } from "../mcp/registry.ts";
 import type { Memory } from "../memory/memory.ts";
 
@@ -96,6 +97,11 @@ export interface SkillContext {
    * `core/skills/mcp.ts`'s own docstring for why this differs from
    * `camera`'s stub. */
   mcp: McpToolLister;
+  /** `FS_READ`'s real enforcement -- see `fs.ts`'s own docstring. Always
+   * present (same convention as `camera`/`mcp`); a skill given no
+   * allowed roots gets an honest, always-denying accessor rather than a
+   * missing field. */
+  fs: GatedFs;
 }
 
 export type SkillInitContext = Pick<SkillContext, "memory" | "store" | "log">;

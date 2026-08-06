@@ -11,6 +11,7 @@
 
 import { openDb } from "../core/memory/db.ts";
 import { Memory } from "../core/memory/memory.ts";
+import { createGatedFs } from "../core/skills/fs.ts";
 import { createEmptyMcpToolLister } from "../core/skills/mcp.ts";
 import { OllamaProvider } from "../core/router/providers/ollama.ts";
 import { buildRegistry } from "../core/router/wiring.ts";
@@ -113,6 +114,7 @@ async function main(): Promise<number> {
     now: () => 0,
     log: { info() {}, warn() {}, error() {} },
     mcp: createEmptyMcpToolLister(),
+    fs: createGatedFs([]),
   });
 
   let correct = 0;

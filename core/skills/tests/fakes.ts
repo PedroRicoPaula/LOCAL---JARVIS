@@ -6,6 +6,7 @@
 
 import type { VisionRequest, VisionResult } from "../../../shared/types.ts";
 import type { McpToolInfo, McpToolLister } from "../../mcp/registry.ts";
+import { createGatedFs } from "../fs.ts";
 import { createEmptyMcpToolLister } from "../mcp.ts";
 import type { Conversation, Logger, Router, SkillContext, SkillStore } from "../types.ts";
 
@@ -82,6 +83,10 @@ export interface FakeContextOptions {
   store?: SkillStore;
   sessionId?: string;
   mcp?: McpToolLister;
+  /** Real roots `ctx.fs` may access -- defaults to none (an honest,
+   * always-denying accessor), same "no real access unless explicitly
+   * configured" default `buildSkillContext` itself uses. */
+  fsRoots?: readonly string[];
 }
 
 export function fakeSkillContext(opts: FakeContextOptions = {}): SkillContext {
@@ -103,5 +108,6 @@ export function fakeSkillContext(opts: FakeContextOptions = {}): SkillContext {
     now: () => 0,
     log: fakeLogger(),
     mcp: opts.mcp ?? createEmptyMcpToolLister(),
+    fs: createGatedFs(opts.fsRoots ?? []),
   };
 }

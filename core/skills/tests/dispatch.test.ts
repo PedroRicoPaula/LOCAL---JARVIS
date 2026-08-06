@@ -65,6 +65,7 @@ function buildContext(): SkillContext {
     now: () => 0,
     log: { info: () => {}, warn: () => {}, error: () => {} },
     mcp: { hasServer: () => false, listTools: () => [] },
+    fs: { listDir: () => { throw new Error("not used"); }, readFile: () => { throw new Error("not used"); } },
   };
 }
 

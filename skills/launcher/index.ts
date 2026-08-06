@@ -4,12 +4,13 @@
  * -- this skill never touches `core/executors/apps.ts` directly (it
  * can't; ESLint blocks the import) and never assumes something happened
  * just because it asked. `listProjectDirs` is only ever a directory
- * *listing* (names, not contents) under one fixed root -- CLAUDE.md § 5's
- * "FS_READ is whitelist, not blacklist" applied even before a formal
- * enforcement mechanism exists for it.
+ * *listing* (names, not contents) under one fixed root, through
+ * `ctx.fs.listDir` -- CLAUDE.md § 5's "FS_READ is whitelist, not
+ * blacklist" now has a real enforcement mechanism behind it
+ * (`core/skills/fs.ts`), not just the convention this comment used to
+ * describe before it existed.
  */
 
-import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ApprovalOutcome } from "../../shared/types.ts";
@@ -17,15 +18,20 @@ import type { Skill, SkillContext } from "../../core/skills/types.ts";
 import { extractOrNull } from "../_shared/extract.ts";
 import { manifest } from "./manifest.ts";
 
-const PROJECTS_ROOT = process.env["JARVIS_PROJECTS_ROOT"] ?? join(homedir(), "Developer", "Programação");
+// Exported so `core/main.ts` can wire this exact root into
+// `buildSkillContext`'s `fsRoots` -- one source of truth for "what this
+// skill is actually allowed to see," not a value duplicated between the
+// skill and its own capability grant.
+export const PROJECTS_ROOT = process.env["JARVIS_PROJECTS_ROOT"] ?? join(homedir(), "Developer", "Programação");
 
-export type ListProjectDirsFn = () => string[];
+export type ListProjectDirsFn = (ctx: SkillContext) => string[];
 
-function realListProjectDirs(): string[] {
+function realListProjectDirs(ctx: SkillContext): string[] {
   try {
-    return readdirSync(PROJECTS_ROOT, { withFileTypes: true })
-      .filter((d) => d.isDirectory() && !d.name.startsWith("."))
-      .map((d) => d.name);
+    return ctx.fs
+      .listDir(PROJECTS_ROOT)
+      .filter((entry) => entry.isDirectory && !entry.name.startsWith("."))
+      .map((entry) => entry.name);
   } catch {
     return [];
   }
@@ -103,7 +109,7 @@ export function createLauncherSkill(deps: LauncherDeps = { listProjectDirs: real
         }
 
         case "list_projects": {
-          const dirs = deps.listProjectDirs();
+          const dirs = deps.listProjectDirs(ctx);
           const speech =
             dirs.length === 0
               ? "I couldn't find any projects."
@@ -114,7 +120,7 @@ export function createLauncherSkill(deps: LauncherDeps = { listProjectDirs: real
 
         case "open_project": {
           const name = (await extractName(ctx, EXTRACT_PROJECT_SYSTEM, input.utterance)) ?? (await ctx.ask("Which project?"));
-          const dirs = deps.listProjectDirs();
+          const dirs = deps.listProjectDirs(ctx);
           const q = name.trim().toLowerCase();
           const matches = dirs.filter((d) => d.toLowerCase().includes(q) || q.includes(d.toLowerCase()));
 
