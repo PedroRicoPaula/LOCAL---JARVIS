@@ -28,21 +28,27 @@ import type { ShoppingItem, TaskItem } from "../shared/types.ts";
 
 const DAYS_30_MS = 30 * 24 * 60 * 60 * 1000;
 
+// `ui/` runs on its own Next.js port (3000, `next dev`/`next start`), a
+// different origin from this server's own port -- the browser needs an
+// explicit allow-origin, but a wildcard ("*", found live in a security
+// review 2026-08-06) let *any* site the owner has open fetch() this API
+// cross-origin: conversation history, pending approvals, tasks, shopping
+// list. `core/main.ts` binding to 127.0.0.1 narrows *who* can reach the
+// port; this narrows *which origin* a browser will allow to use it --
+// both matter, neither replaces the other. Env-overridable the same way
+// `JARVIS_DASHBOARD_PORT` is, for the rare case the UI runs elsewhere.
+export const ALLOWED_ORIGIN = process.env["JARVIS_DASHBOARD_ORIGIN"] ?? "http://localhost:3000";
+
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const data = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(data) });
   res.end(data);
 }
 
-// CORS is safe here: every response is either the owner's own conversation
-// history, a pending-approval summary, or their own tasks/shopping list --
-// never a credential -- and the dashboard is the only intended caller
-// (localhost-only in practice), but the browser still needs the header
-// since `ui/` runs on its own Next.js dev port, a different origin from
-// this server's port. `DELETE`/non-GET methods trigger a real CORS
-// preflight (OPTIONS), unlike the GET-only routes this had before SOAK 1.
+// `DELETE`/non-GET methods trigger a real CORS preflight (OPTIONS),
+// unlike the GET-only routes this had before SOAK 1.
 function withCors(res: ServerResponse): void {
-  res.setHeader("access-control-allow-origin", "*");
+  res.setHeader("access-control-allow-origin", ALLOWED_ORIGIN);
   res.setHeader("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader("access-control-allow-headers", "content-type");
 }

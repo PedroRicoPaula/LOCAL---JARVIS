@@ -12,6 +12,7 @@
 
 import type { Server as HttpServer } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
+import { ALLOWED_ORIGIN } from "./http.ts";
 import type { Gate } from "./gate/gate.ts";
 import type { Memory } from "./memory/memory.ts";
 import type { ClientEvent, ServerEvent } from "../shared/types.ts";
@@ -31,7 +32,21 @@ export interface WsHub {
  * unchanged, so an injected line and a real transcribed one are
  * indistinguishable once they land. */
 export function createWsHub(httpServer: HttpServer, gate: Gate, memory: Memory, onUtterance: (text: string) => void): WsHub {
-  const wss = new WebSocketServer({ server: httpServer });
+  // Found live in a security review (2026-08-06): without this, `ws`
+  // accepts a connection from *any* origin, and the message handler below
+  // processes "approval.decide" from whatever connects with zero further
+  // auth -- a page in another browser tab (any origin at all) could open
+  // this socket, read the `nonce` broadcast in every real "approval.new"
+  // event, and approve a pending yellow-tier action itself. This is a
+  // browser-enforced check (a raw non-browser client can still lie about
+  // its Origin header), not a cryptographic one -- real defense-in-depth
+  // needs a shared local auth token too; tracked as a follow-up, not
+  // blocking this fix, which closes the actual live exploit path (any
+  // webpage the owner has open forging an approval with no interaction).
+  const wss = new WebSocketServer({
+    server: httpServer,
+    verifyClient: (info: { origin: string }) => info.origin === ALLOWED_ORIGIN,
+  });
 
   function broadcast(event: ServerEvent): void {
     const payload = JSON.stringify(event);

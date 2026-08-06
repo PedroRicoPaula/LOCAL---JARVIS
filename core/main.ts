@@ -102,7 +102,12 @@ async function main(): Promise<void> {
   const wsHub = createWsHub(httpServer, gate, memory, (text) => {
     handleUtterance(text).catch((err) => console.error("core: injected utterance failed, continuing", err));
   });
-  await new Promise<void>((resolve) => httpServer.listen(DASHBOARD_PORT, resolve));
+  // "127.0.0.1", not omitted -- found live in a security review (2026-08-06):
+  // omitting the host makes Node bind every interface, not loopback only,
+  // so anything on the same LAN could reach the dashboard API/WebSocket.
+  // See core/http.ts's `ALLOWED_ORIGIN` and core/ws.ts's `verifyClient` for
+  // the matching origin checks this alone doesn't replace.
+  await new Promise<void>((resolve) => httpServer.listen(DASHBOARD_PORT, "127.0.0.1", resolve));
   console.log(`core: dashboard listening on :${DASHBOARD_PORT}`);
 
   // Concurrent with the ears loop below, not before/after it -- until
