@@ -3226,3 +3226,87 @@ fully settled by the plan.
   asserted the pre-`kind`-field payload shape.
 - `skills/look` (the skill that actually uses any of this) is Task 3,
   not yet built as of this ADR.
+
+**Addendum, same day: Tasks 3-4 built, then a real live-verification
+pass (real camera, real NIM vision, real dashboard via Playwright)
+found and fixed four more real bugs the unit test suite never could
+have caught.**
+
+`skills/look` (Task 3: `open_camera`/`close_camera`/`describe`) and the
+dashboard camera indicator (Task 4: `use-jarvis.ts` + `status-bar.tsx`)
+built and unit-tested clean on the first pass -- no bugs found writing
+them, per `PROGRESS.md`'s own log. The real bugs only surfaced once the
+*actual* stack ran: `senses/eyes` as a real subprocess, a real macOS
+camera capture, a real NIM vision call, `core` wired to all of it, and
+Playwright driving the real dashboard against that real `core` --
+`make dev`'s own missing `senses.eyes.main` line (fixed the same pass)
+had silently meant this exact combination was never once exercised
+before.
+
+**Found and fixed, in the order discovered:**
+
+1. **Wire-protocol unit mismatch.** `senses/eyes/main.py` sent
+   `expiresAt` as epoch-*seconds* (`time.time()`'s own convention);
+   every other timestamp on the wire (`shared/types.ts`, `Date.now()`
+   throughout) is epoch-*milliseconds*. The dashboard's own countdown
+   read a real 600-second-away session as "0s". No test anywhere
+   asserted on this field's value, only its presence. Fixed at the wire
+   boundary in `main.py` (`round(expires_at * 1000)`); internal
+   timeout math stays in seconds, matching `time.time()`. Two new
+   pytest assertions lock in the millisecond scale.
+2. **Lane-filter dead intent.** A bare "what is this" classified as
+   `converse`, not `see` -- confirmed live via the Thought Stream
+   showing `[CONVERSE] converse: no skill matched, falling back to
+   general conversation`, meaning the general-conversation fallback
+   *fabricated a plausible-sounding answer* ("This is the dashboard
+   for the skills I'm currently running") with zero camera involvement
+   at all, silently. `core/skills/dispatch.ts` filters skill candidates
+   to the classified lane before the embedding match ever runs, so
+   `describe`'s `lanes: ["see"]`-only declaration made it structurally
+   unreachable for that phrasing regardless of how well it scored.
+   Identical root cause and identical fix to `media.now_playing`
+   (ADR-026/030): declare `["see", "converse"]`. Re-verified live --
+   correctly dispatches now, `[SEE] see: dispatched look.describe
+   (disambiguated)` on a second real run.
+3. **Fixed vision prompt ignored the actual question.** ROADMAP.md's
+   Phase 8 DoD names three things `look` should do: describe, identify,
+   and *answer a question about what is visible*. The first version's
+   `DESCRIBE_PROMPT` was one fixed string regardless of what the owner
+   said -- asking "is there a person visible in this room" would have
+   gotten the same generic description as "what is this." Fixed by
+   folding `input.utterance` into the prompt. Live-verified: the same
+   question above got a real, specific, correct answer about an
+   actual person in frame.
+4. **Timeout closed silently.** SPEC.md § 6 and ROADMAP.md's DoD both
+   say idle/absolute timeout must be *announced*; `relayCameraStatus`
+   broadcast the dashboard event but never called `conversation.say()`.
+   Fixed with a plain-language announcement on any self-triggered
+   (`cause !== "owner"`) close, spoken and added to the transcript.
+   Live-verified with an 8s idle timeout: "The camera timed out from
+   being idle and closed." appeared in the real conversation log at
+   the real moment the real session expired.
+
+**Two more real findings, deliberately not fixed this phase (scope
+discipline, `docs/BACKLOG.md` has both in full):** a rejected/expired
+observation proposal's durable image copy is never cleaned up (a slow
+disk leak, not a security issue); and the dashboard test console's
+fire-and-forget utterance handling can cross-wire `camera.ts`'s
+single-pending-request correlator if two utterances are injected
+faster than a skill turn completes -- reproduced once, then confirmed
+it requires unrealistic (sub-second, scripted) pacing and is not
+reachable from real voice input (`ears`'s own loop awaits each
+utterance sequentially). `ctx.ask()`'s identical correlator shape has
+the same latent assumption, unfixed for the same reason.
+
+**Also found and fixed in passing:** `data/observations/` (the new
+durable-copy directory) wasn't in `.gitignore` -- two real captures
+from this exact testing showed up as untracked files.
+
+Full live-verification trail -- the standalone `senses/eyes` subprocess
+test (real socket protocol, honest `CameraPermissionError` before
+permission was granted), the real NIM and Ollama vision calls side by
+side (`moondream` returned empty output on the production prompt but
+answered correctly on a simpler one -- a real, measured data point
+behind this phase's NIM-primary decision, not just ADR-001's
+a-priori hardware hypothesis), and the full core+eyes+dashboard
+Playwright run -- recorded in `PROGRESS.md`'s Phase 8 closing log.

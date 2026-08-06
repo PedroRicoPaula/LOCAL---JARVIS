@@ -2253,7 +2253,7 @@ left open. Full detail in ADR-044.
 
 ---
 
-### Phase 8 — in progress, 2026-08-06
+### Phase 8 — complete, 2026-08-06
 
 Camera sessions + `look`. Full plan (Context + Tasks 1-4) approved
 before starting; see the plan's own research notes for the real
@@ -2394,7 +2394,110 @@ file (no `playwright.config.ts` in this repo). Same approach planned
 for this phase's own self-run verification pass, next, rather than
 introducing new permanent E2E infra as a side effect of one indicator.
 
-Self-run verification (live smoke tests, Playwright) not done yet.
+**Self-run verification pass — done, four real bugs found and fixed.**
+Every check below was run against the real stack, not fakes: a real
+`senses/eyes` subprocess, the real macOS camera, real NIM/Ollama vision
+calls, and the real dashboard driven by Playwright against a real
+running `core`. Full bug-by-bug detail in ADR-045's addendum; summary
+here.
+
+- **`senses/eyes` standalone, real subprocess.** Real Unix socket, real
+  client connection, a real `arm` request that genuinely tried to open
+  the camera and got an honest `CameraPermissionError` back over the
+  wire (permission not yet granted at that point) -- exactly the
+  designed failure path, not a crash. SIGTERM shutdown traceback
+  confirmed as the same accepted, documented behavior `senses/ears`
+  already has (not a new bug).
+- **Vision providers, side by side, same real test image.** NIM
+  (`meta/llama-3.2-11b-vision-instruct`) answered correctly and fast.
+  Ollama (`moondream`) returned **empty output** on the skill's actual
+  production prompt (a multi-instruction description+honesty prompt),
+  twice, consistently -- but answered correctly on a simpler
+  single-sentence prompt. Real, measured confirmation of what ADR-001
+  only hypothesized from hardware alone: this machine's local vision
+  path is fragile, not just slower. NIM-primary was already the
+  decision; this is the live data point behind it.
+- **The full stack, live, via Playwright.** Stood up real `eyes`, real
+  `core` (fake `ears`/`voice` stub servers standing in for the
+  microphone specifically -- reusing the real `senses/ipc.py` protocol,
+  so `core`'s own connection logic was still fully real), and the real
+  dashboard, then drove `open_camera` → `describe` → reject → 
+  `close_camera` and a second real `describe` with a targeted question
+  through to a real idle-timeout close, all through the dashboard's
+  test console (SOAK 1's own "indistinguishable from real speech"
+  design). Confirmed live: the camera indicator ticks a real countdown
+  and returns to idle; a rejected `MEMORY_WRITE` observation proposal
+  clears from the queue with zero `observations` rows written; the
+  ephemeral session frame is gone from `data/frames/` after an
+  unapproved close.
+- **Four real bugs found this way, all fixed same session** (full
+  detail in ADR-045's addendum): an epoch-seconds/epoch-milliseconds
+  unit mismatch on the wire (`expiresAt` showed "0s" for a session with
+  600s left); `describe` silently unreachable for "what is this"
+  because of the classified-lane-filters-before-matching order in
+  `dispatch.ts` (same class of bug as `media.now_playing`,
+  ADR-026/030) -- worse, the general-conversation fallback then
+  fabricated a plausible-sounding answer with no camera involvement at
+  all, silently; the vision prompt ignored the owner's actual question,
+  so "answer a question about what is visible" (ROADMAP.md's own DoD
+  wording) wasn't really implemented; and idle/absolute timeout closed
+  the camera without ever *announcing* it, contradicting SPEC.md § 6
+  and the DoD directly. None of these were reachable from the unit
+  test suite -- each needed the real process boundary (a real wire
+  message, a real lane classification, a real vision call, a real
+  timeout firing) to surface at all.
+- **Two more real findings, deliberately left open** (scope discipline,
+  full detail in `docs/BACKLOG.md`): a rejected/expired observation's
+  durable image copy is never cleaned up (disk leak, not a security
+  issue); the dashboard test console's fire-and-forget utterance
+  handling can theoretically cross-wire `camera.ts`'s single-request
+  correlator under sub-second scripted pacing -- confirmed not
+  reachable from real voice (ears' loop is sequential), so treated as a
+  known test-console limitation, not a production bug.
+- Also fixed in passing: `make dev` never actually started
+  `senses.eyes.main` despite Task 1.7's own plan committing to that;
+  `data/observations/` wasn't gitignored.
+
+**Owner-required, explicitly not attempted:**
+- The ten real test images for description-accuracy (ROADMAP.md's DoD)
+  -- needs real objects/lighting/framing only Pedro can provide. (What
+  *was* verified live: a real capture of a real person in a real room
+  produced an accurate, correctly-hedged description -- a good sign,
+  not a substitute for the full ten-image check.)
+- Judging whether the local-vs-NIM vision quality/latency tradeoff
+  feels right in real day-to-day use, beyond this session's one-shot
+  side-by-side.
+- Real end-to-end voice tests (actual spoken "turn on the camera" /
+  "what am I holding", not the test console) -- everything this session
+  verified through the test console is architecturally the same path a
+  transcribed utterance takes, but the owner's own voice/mic/accent
+  hasn't touched any of this yet.
+- "Close the camera during analysis pre-empts within 2s"
+  (ROADMAP.md's own DoD wording) was not verified and, on inspection,
+  isn't really implemented as a true interrupt -- `ears`'s own loop
+  processes one utterance at a time, so a real spoken "close the
+  camera" can't literally arrive *during* an in-flight `describe()`
+  call the way the DoD wording implies; there's no cancellation
+  mechanism in `skills/look`. Flagging honestly rather than claiming
+  this is done -- if genuine mid-analysis barge-in matters, it needs
+  real design work (a `cancel()` implementation, per `docs/SKILLS.md`
+  § 4's optional hook, currently unused by any skill in this project).
+
+**A real, deliberate deviation from ROADMAP.md's own Phase 8 bullet,
+already decided and documented before this pass (ADR-045, this
+phase's plan): "see lane: local Qwen3-VL → NIM VLM fallback" is not
+what got built.** NIM is primary, Ollama (`moondream`, not Qwen3-VL --
+smallest Qwen3-VL variant needs more than this 8GB machine already
+struggles to give a text model, per ADR-001) is the secondary,
+benchmarked-not-assumed-working path. This session's live vision
+comparison (above) is the first *measured* confirmation of that call,
+not just the hardware hypothesis it was originally based on.
+
+`make check`: 384 tests (`node --test`), 48 (`pytest senses/`, all
+three daemons -- 19 of them `senses/eyes`), `tsc`/`ruff`/ESLint/UI
+build all green throughout every commit this phase. Commits:
+`812077d`, `450902e`, `99ea64a`, `a7c0320`, `7b208c9`, `c5dcb3a`,
+`31cd22c`, `981a467`, `7835c97`, `b47d539` on `phase/08-camera-look`.
 
 ---
 
