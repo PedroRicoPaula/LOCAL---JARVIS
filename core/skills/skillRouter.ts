@@ -27,8 +27,12 @@ export function createSkillRouter(registry: Registry): Router {
       }
       return text;
     },
-    async see(req: VisionRequest): Promise<VisionResult> {
-      return routeVision(registry, req);
+    async see(req: VisionRequest): Promise<VisionResult & { provider: string }> {
+      let provider = "unknown";
+      const result = await routeVision(registry, req, (trace) => {
+        if (trace.ok) provider = trace.providerId;
+      });
+      return { ...result, provider };
     },
   };
 }

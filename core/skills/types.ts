@@ -34,7 +34,11 @@ export interface Router {
    * skill calls `ctx.say()` separately for what the owner actually hears,
    * so it wants a full string back here, not a chunk stream. */
   complete(lane: "converse" | "reason", system: string, userText: string, opts?: { maxTokens?: number }): Promise<string>;
-  see(req: VisionRequest): Promise<VisionResult>;
+  /** `provider` (which `ModelProvider.id` actually served this) is
+   * folded in here rather than left to `RouterTrace` alone -- an
+   * `Observation` row (shared/types.ts) requires a `provider` string,
+   * and a skill writing one has no other way to learn it. */
+  see(req: VisionRequest): Promise<VisionResult & { provider: string }>;
 }
 
 // ---------------------------------------------------------------------------

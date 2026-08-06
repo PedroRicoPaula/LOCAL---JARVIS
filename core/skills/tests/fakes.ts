@@ -4,7 +4,7 @@
  * host test builds its context from here.
  */
 
-import type { VisionRequest, VisionResult } from "../../../shared/types.ts";
+import type { CameraHandle, CameraSession, Frame, VisionRequest, VisionResult } from "../../../shared/types.ts";
 import type { McpToolInfo, McpToolLister } from "../../mcp/registry.ts";
 import { createGatedFs } from "../fs.ts";
 import { createEmptyMcpToolLister } from "../mcp.ts";
@@ -14,6 +14,10 @@ export interface FakeRouterScript {
   completeReturns?: string | ((lane: string, system: string, userText: string) => string);
   completeThrows?: Error;
   seeReturns?: VisionResult;
+  seeThrows?: Error;
+  /** Which provider "served" `seeReturns` -- defaults to a fixed fake id,
+   * override when a test cares (e.g. an `Observation.provider` assertion). */
+  seeProvider?: string;
 }
 
 export function fakeRouter(script: FakeRouterScript = {}): Router & { calls: { system: string; userText: string }[] } {
@@ -26,8 +30,9 @@ export function fakeRouter(script: FakeRouterScript = {}): Router & { calls: { s
       if (typeof script.completeReturns === "function") return script.completeReturns(_lane, system, userText);
       return script.completeReturns ?? "";
     },
-    async see(_req: VisionRequest): Promise<VisionResult> {
-      if (script.seeReturns) return script.seeReturns;
+    async see(_req: VisionRequest): Promise<VisionResult & { provider: string }> {
+      if (script.seeThrows) throw script.seeThrows;
+      if (script.seeReturns) return { ...script.seeReturns, provider: script.seeProvider ?? "fake-provider" };
       throw new Error("fakeRouter: no seeReturns scripted");
     },
   };
@@ -64,6 +69,48 @@ export function fakeLogger(): Logger {
   return { info: () => {}, warn: () => {}, error: () => {} };
 }
 
+/** A working camera, scripted with the frames `capture()` should hand
+ * back in order (last one repeats once exhausted, same "repeat the
+ * last, most tests just care that a call happened" convention
+ * `senses/eyes/fakes.py`'s own `FakeCameraDevice` already uses). Real
+ * enough for a skill test to exercise open -> capture -> close without
+ * a real device or socket -- `docs/SKILLS.md` § 7's own worked example
+ * names this exact helper. */
+export function fakeCamera(frames: readonly Frame[]): CameraHandle & { closedSessionIds: string[] } {
+  let state: CameraHandle["state"] = "idle";
+  let captureCount = 0;
+  const closedSessionIds: string[] = [];
+
+  return {
+    get state(): CameraHandle["state"] {
+      return state;
+    },
+    closedSessionIds,
+    async open(reason: string): Promise<CameraSession> {
+      state = "armed";
+      const id = "fake-session";
+      const openedAt = 0;
+      return {
+        id,
+        openedAt,
+        expiresAt: openedAt + 600_000,
+        idleUntil: openedAt + 120_000,
+        reason,
+        async capture(): Promise<Frame> {
+          if (frames.length === 0) throw new Error("fakeCamera: no frames scripted");
+          const frame = frames[Math.min(captureCount, frames.length - 1)]!;
+          captureCount += 1;
+          return frame;
+        },
+        async close(): Promise<void> {
+          state = "idle";
+          closedSessionIds.push(id);
+        },
+      };
+    },
+  };
+}
+
 /** Simulates a specific server's discovered tools -- for skills whose
  * behavior depends on what `ctx.mcp.listTools()` returns (e.g.
  * `skills/gmail`, which finds a tool by name pattern rather than
@@ -87,6 +134,11 @@ export interface FakeContextOptions {
    * always-denying accessor), same "no real access unless explicitly
    * configured" default `buildSkillContext` itself uses. */
   fsRoots?: readonly string[];
+  /** Defaults to a handle whose `open()` always throws -- same "no real
+   * access unless explicitly configured" default every other optional
+   * dependency here uses. Pass `fakeCamera([...])` for a skill under
+   * test that declares `CAMERA`. */
+  camera?: CameraHandle;
 }
 
 export function fakeSkillContext(opts: FakeContextOptions = {}): SkillContext {
@@ -94,7 +146,7 @@ export function fakeSkillContext(opts: FakeContextOptions = {}): SkillContext {
   return {
     router: opts.router ?? fakeRouter(),
     memory: opts.memory as SkillContext["memory"],
-    camera: {
+    camera: opts.camera ?? {
       state: "idle",
       async open() {
         throw new Error("fake: camera not available in this test");
