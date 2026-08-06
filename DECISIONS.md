@@ -2835,3 +2835,33 @@ built into macOS).
   fake-based tests, including UTF-8/emoji content -- not assumed from
   the fakes passing alone.
 - `docs/BACKLOG.md`'s clipboard item marked built.
+
+**Addendum, same day: `capture_screenshot` added to this same skill**
+(`docs/BACKLOG.md`'s "Screenshot -> clipboard" item; the OCR half of
+that item is a separate, not-yet-researched follow-up, not built here).
+`screencapture -i -c` -- interactive selection (the owner drags to pick
+a region, on top of the gate's own `SHELL_EXEC` approval -- two real
+confirmations before a pixel is captured), straight to the clipboard,
+no file ever touches disk.
+
+**A real gap found live, not assumed fixed:** a non-interactive test
+capture (`screencapture -c -m`) exited 0, but `osascript -e 'clipboard
+info'` showed the clipboard still held stale text afterward, not image
+data -- consistent with this machine's Screen Recording permission
+(System Settings -> Privacy & Security) not yet being granted to
+whatever process runs this. `screencapture` gives no distinguishing
+exit code between "captured" and "cancelled/blocked," so the executor
+and the skill's spoken response both say "sent," never "captured" --
+owner-required to grant the permission and confirm live once done.
+
+**Lane declaration needed both `act` and `see`, not just `act`:** "grab
+a screenshot of this for me" classified as `see` (the classifier reads
+"grab .. of this" as vision-adjacent phrasing, despite this being a
+screen capture, not a camera request) -- confirmed via a real
+embedding-candidate check (0.958, an excellent match, filtered out
+purely by the lane mismatch) before concluding this was a lane gap and
+fixing it the same way as `write_clipboard`'s own fix above.
+`bench_skill_routing.ts` now covers this case too; one unrelated flake
+seen mid-session (`weather.current_weather` briefly missed, passed
+clean on immediate retry) confirmed as live-model run-to-run noise, not
+a regression -- `skills/weather` wasn't touched this session.

@@ -45,12 +45,15 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   exists to prevent. Real UI-scripting research needed before this is
   buildable at all (macOS Accessibility API access to a specific text
   field inside Cursor) — not scoped yet.
-- **Screenshot -> clipboard/OCR** — `screencapture -c` is a built-in
-  macOS CLI (no AppleScript, no new dependency), pairs naturally with
-  the same `execFile`-no-shell pattern. "Read me the error on my
-  screen" needs actual OCR on top (macOS's own Vision framework can do
-  this via `shortcuts run` or a small native call — needs its own
-  research, not assumed easy).
+- ~~Screenshot -> clipboard~~ — **built 2026-08-06** (`skills/clipboard`'s
+  `capture_screenshot`, ADR-041 addendum), `screencapture -i -c`. Real
+  gap found live: this machine's Screen Recording permission isn't
+  granted yet (a non-interactive test capture didn't actually land
+  image data on the clipboard) — owner-required to grant it in System
+  Settings and confirm live. **OCR on top is still not built** — "read
+  me the error on my screen" needs macOS's own Vision framework (via
+  `shortcuts run` or a small native call) on top of the screenshot,
+  needs its own research, not assumed easy.
 - ~~Clipboard read/write~~ — **built 2026-08-06, ADR-041**
   (`skills/clipboard`). Both read and write go through `SHELL_EXEC`
   (yellow, not green as first sketched here -- clipboard content is

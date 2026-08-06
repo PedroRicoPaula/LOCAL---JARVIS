@@ -2147,6 +2147,24 @@ pattern already named in ADR-026/ADR-030. Declared both lanes, verified
 `pbpaste` round trip (including emoji) outside the fakes. `docs/
 BACKLOG.md`'s clipboard item marked built.
 
+**Same day, next Tier 1 item: `capture_screenshot` added to the same
+skill.** `screencapture -i -c` -- interactive selection, straight to
+clipboard, no file touches disk. Found a real gap live, not assumed
+fixed: a non-interactive test capture exited 0 but the clipboard held
+stale text afterward, not image data -- this machine's Screen Recording
+permission likely isn't granted yet, and `screencapture` gives no
+distinguishing exit code for that case, so both the executor and the
+skill's speech say "sent," never "captured." Owner-required: grant the
+permission, confirm live once done.
+
+Needed both `act` and `see` lanes, not just `act` -- "grab a screenshot
+of this for me" classified as `see` (confirmed via a real embedding
+check first: 0.958 match, filtered out purely by lane mismatch, not an
+embedding problem). Same fix pattern as `write_clipboard` earlier
+today. `make check` green; also corrected a stale ~29.7s figure still
+sitting in this file's own "Known issues" section (already fixed in
+the SOAK-1 log above, missed here until now).
+
 ---
 
 ## Key numbers to record as we go
@@ -2244,22 +2262,22 @@ BACKLOG.md`'s clipboard item marked built.
   regardless, but any *other* brew-installed tool used ad hoc (not through
   this project's own config) may silently be the slower Rosetta build.
   `which -a <tool>` before trusting one's provenance.
-- **When NIM is unreachable, the `converse` fallback (`qwen2.5:0.5b`)
-  degrades further than ADR-001 originally checked** — live-reproduced
+- ~~When NIM is unreachable, the `converse` fallback (`qwen2.5:0.5b`)
+  degrades further than ADR-001 originally checked~~ — **lane
+  classification half fixed 2026-08-06, ADR-040.** Live-reproduced
   2026-08-04 (SOAK 1): lane classification itself runs on the
-  `converse` lane, and under the fallback it frequently misclassifies
-  ordinary utterances as `see`, silently misrouting them (not just
-  answering worse). See ADR-028 and `docs/BACKLOG.md`. Open, needs
-  design work, not fixed yet. **Sharper evidence 2026-08-06 (ADR-038):**
-  a raw benchmark measured `qwen2.5:0.5b`'s cold-load alone at ~29.7s on
-  this 8GB machine — it can't stay resident alongside
-  `mxbai-embed-large` (needed every utterance), so degraded-mode
-  operation likely thrashes both models in and out of memory per
-  utterance, not just misclassifying but risking an outright timeout.
-  Confirmed this fails safely (`core/main.ts` catches it, speaks an
-  honest error, never crashes) — but the fix needs a real design
-  decision (longer timeout? batch lane-classify+disambiguate into one
-  call? local models only viable for `reflex`, never `converse`, on
-  this hardware?), not a quick patch. Two prompt-wording attempts at a
-  *related* bug (the "peanuts" misroute) were tried and benchmark-
-  rejected the same day — see below and ADR-038.
+  `converse` lane, and under the fallback it frequently misclassified
+  ordinary utterances as `see`, silently misrouting them. Root-caused
+  further 2026-08-06 (ADR-038/040): the failure is a fast-but-wrong
+  answer, not a hang -- a one-off ~29.7s cold-load measurement that day
+  was a disk-cache artifact, re-verified live as landing within the
+  existing 3s budget (`core/main.ts` already fails safely regardless,
+  an honest spoken error, never a crash). Fixed via
+  `core/router/laneHeuristic.ts`: `classifyLane` now prefers a
+  no-model, bilingual heuristic over trusting the `ollama` fallback's
+  own JSON specifically -- live-verified against the real provider, the
+  exact documented misroute now resolves correctly. **Still open:**
+  `disambiguate()`'s equivalent gap (the "peanuts" misroute, ADR-038,
+  two prompt-wording attempts tried and benchmark-rejected) -- needs
+  real per-skill logic, a bigger ask than lane classification's fixed 5
+  categories, not attempted.
