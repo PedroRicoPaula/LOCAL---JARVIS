@@ -29,7 +29,7 @@ import type {
 } from "../../shared/types.ts";
 import { GREEN_CAPABILITIES } from "../../shared/types.ts";
 import { ensureGateSchema } from "./db.ts";
-import { sign, verify } from "./hmac.ts";
+import { sign, timingSafeEqualStrings, verify } from "./hmac.ts";
 
 export const DEFAULT_EXPIRY_MS = 5 * 60_000; // SPEC.md SS8: "expiresAt (default 5 min)"
 
@@ -163,7 +163,7 @@ export class Gate extends EventEmitter {
   async decide(response: ApprovalResponse, now: () => number = Date.now): Promise<void> {
     const row = this.getApprovalRow(response.requestId);
 
-    if (!row || row.state !== "pending" || row.nonce !== response.nonce) {
+    if (!row || row.state !== "pending" || !timingSafeEqualStrings(row.nonce, response.nonce)) {
       this.logAudit(response.requestId, "rejected", { reason: "replay" });
       return;
     }

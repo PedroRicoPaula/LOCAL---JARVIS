@@ -72,10 +72,13 @@ export function verify(key: string, execution: SignedExecution): boolean {
   return timingSafeEqualStrings(expected, execution.signature);
 }
 
-/** Plain `===` on a signature comparison leaks timing information about
- * how many leading bytes matched -- a real (if narrow) side channel for
- * something whose whole job is proving the signer had the key. */
-function timingSafeEqualStrings(a: string, b: string): boolean {
+/** Plain `===` on a signature (or nonce) comparison leaks timing
+ * information about how many leading bytes matched -- a real (if
+ * narrow) side channel for something whose whole job is proving the
+ * caller had the right value. Exported for `gate.ts`'s own nonce check
+ * (found live, 2026-08-06 security review: it used a plain `!==`) --
+ * same reasoning, same fix, no reason for two implementations. */
+export function timingSafeEqualStrings(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i++) {

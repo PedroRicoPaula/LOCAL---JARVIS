@@ -38,11 +38,11 @@ export interface Router {
 
 // ---------------------------------------------------------------------------
 // Conversation — say()/ask(), the live half of SkillContext (docs/SKILLS.md
-// § 4). No real voice-loop wiring (core <-> senses/ears/voice over IPC)
-// exists yet in any phase's checklist — see PROGRESS.md's Phase 5 log.
-// This is the seam a future integration phase plugs a real implementation
-// into; `conversation/cli.ts` is a genuine (not fake) stdio implementation
-// usable today for manual testing of the skill host end to end.
+// § 4). `conversation/ipc.ts`'s `createIpcConversation` is the real
+// implementation, wired in `core/main.ts` to the actual senses/ears/voice
+// sockets. `conversation/cli.ts` (the original, pre-IPC stdio stand-in used
+// for manual testing before real wiring existed) was deleted 2026-08-06 --
+// dead code once ipc.ts shipped, found in a code review.
 // ---------------------------------------------------------------------------
 
 export interface Conversation {
