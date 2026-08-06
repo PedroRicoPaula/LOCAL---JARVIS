@@ -2096,6 +2096,35 @@ acceptable for daily use -- everything tested so far is synthetic audio
 or text-level benchmarks. Full detail in ADR-039; `docs/BACKLOG.md`'s
 bilingual entry marked built with what remains.
 
+**Same day, item 2 of the status-review list: degraded-mode lane
+classification (ADR-040).** Asked directly how to handle the known,
+open ADR-028 gap. Before proposing anything, re-verified this same
+day's own earlier, more alarmed finding (a ~30s cold-load figure from
+ADR-038) live: a script matching `core/main.ts`'s exact try/catch,
+against a genuinely cold model, answered within the existing 3s budget
+twice in a row -- the 30s figure was a one-off disk-cache artifact, not
+real steady-state behavior. Corrected both ADR-038's and this earlier
+entry's own record rather than let a wrong number stand. The real,
+confirmed failure mode is ADR-028's original one: fast, but wrong
+("add butter to the shopping list" -> `see`).
+
+Offered 3 options (fail honest / no-model heuristic / leave as-is);
+owner chose the heuristic -- keep some real capability during a total
+outage rather than fail outright. Built `core/router/laneHeuristic.ts`
+(boring bilingual regex rules, same spirit as `reflex`'s own
+`RulesProvider`, defaults to `converse` when unsure since that fails
+softer than a wrong `reflex`/`see`/`act` guess). `classifyLane` now
+tracks which provider actually answered and prefers the heuristic over
+trusting `ollama`'s own JSON specifically -- every other provider
+unchanged. Live-verified against the real `OllamaProvider`, not just
+fakes: the exact documented bug case now resolves correctly, in both
+English and Portuguese.
+
+294 tests (up from 285), `make check` green. Still open, not attempted:
+`disambiguate()`'s own equivalent gap (the "peanuts" misroute) --
+needs real per-skill logic, a bigger ask than lane classification's
+fixed 5 categories. Full detail in ADR-040.
+
 ---
 
 ## Key numbers to record as we go

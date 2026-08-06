@@ -560,6 +560,15 @@ design rather than requiring a new one.
     into one call? accepting local models are only viable for `reflex`,
     never `converse`, on this hardware?) -- see ADR-038 for the full
     verification trail.
+    **Correction, 2026-08-06 (ADR-040): the ~29.7s figure was a one-off
+    cold-disk-cache artifact, not steady-state behavior.** Re-verified
+    with `core/main.ts`'s own exact try/catch shape against a genuinely
+    cold model (confirmed via `/api/ps`): real answers land within the
+    existing 3s budget twice in a row (3089ms, 3545ms). The actual,
+    confirmed failure mode is this entry's own original one below
+    (fast but wrong), not a hang -- fixed for lane classification via a
+    no-model heuristic, see the entry below and ADR-040. No timeout
+    change was needed.
 - **2026-08-04 — `converse` hallucinated capabilities (fixed same day).**
   Real conversation: asked "can you create a skill?", JARVIS said yes and
   kept claiming to be building one, that it would show up on Skill
@@ -610,12 +619,26 @@ design rather than requiring a new one.
   open Facebook?"), so `dispatch` filtered out the correct skill before
   scoring ever ran. Very likely the real explanation behind several of
   the owner's own live routing failures beyond what ADR-026 already
-  fixed. Candidate fixes, none built yet: a non-LLM heuristic fallback
-  for lane classification specifically (rules-based, same spirit as the
-  `reflex` lane's own `RulesProvider`), retry/backoff before falling
-  back to the tiny model, or benchmarking whether a slightly larger
-  local model is viable now vs. when ADR-001 last checked. See ADR-028.
-  Related: the same tiny-model conditions also made
+  fixed. ~~Candidate fix: a non-LLM heuristic fallback for lane
+  classification (rules-based, same spirit as the `reflex` lane's own
+  `RulesProvider`)~~ -- **built 2026-08-06, ADR-040.**
+  `classifyLane` now prefers `core/router/laneHeuristic.ts`'s guess over
+  trusting the `ollama` fallback's own JSON, live-verified against the
+  real provider: "add butter to the shopping list" now correctly
+  resolves to `converse` under total-outage conditions, was `see`.
+  **Correction to this entry's own earlier ADR-038 addendum:** a
+  one-off ~30s cold-load measurement that day was a disk-cache
+  artifact, not steady-state behavior -- re-verified with `core/main.ts`'s
+  exact try/catch shape against a genuinely cold model
+  (`keep_alive=0`, confirmed via `/api/ps`): real answers land within
+  the existing 3s budget, consistent with this entry's own original
+  finding (wrong answers, not hangs). No timeout/latency fix was
+  needed; the heuristic addresses the actual observed failure
+  (confidently wrong, not slow). `disambiguate()`'s own equivalent gap
+  (the "peanuts" misroute, ADR-038) is a separate, still-open problem --
+  a heuristic disambiguator needs real per-skill logic, not a small
+  fixed rule set like lane classification's 5 categories, and wasn't
+  attempted. Related: the same tiny-model conditions also made
   `core/factExtraction.ts` produce mostly garbage facts (5 of 6 in one
   live run) — safely caught by ADR-027's gate fix, not a new gap, but
   worth knowing the approval queue may see a burst of nonsense during
