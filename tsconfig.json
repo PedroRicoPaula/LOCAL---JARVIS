@@ -19,6 +19,6 @@
       "@shared/*": ["./shared/*"]
     }
   },
-  "include": ["shared/**/*.ts", "core/**/*.ts", "skills/**/*.ts"],
+  "include": ["shared/**/*.ts", "core/**/*.ts", "skills/**/*.ts", "bench/**/*.ts"],
   "exclude": ["node_modules", "ui", "dist"]
 }

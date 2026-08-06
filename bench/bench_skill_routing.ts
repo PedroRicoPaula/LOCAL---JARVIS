@@ -11,6 +11,7 @@
 
 import { openDb } from "../core/memory/db.ts";
 import { Memory } from "../core/memory/memory.ts";
+import { createEmptyMcpToolLister } from "../core/skills/mcp.ts";
 import { OllamaProvider } from "../core/router/providers/ollama.ts";
 import { buildRegistry } from "../core/router/wiring.ts";
 import { SkillRegistry } from "../core/skills/registry.ts";
@@ -41,6 +42,27 @@ const CASES: Case[] = [
   { utterance: "commit the current changes", expected: "none" },
   { utterance: "is it going to rain tomorrow", expected: "none" },
   { utterance: "run the test suite", expected: "none" },
+  // shopping_list -- real intents, paraphrases of the manifest examples,
+  // added 2026-08-06 alongside the fact-statement cases below so a
+  // DISAMBIGUATION_SYSTEM prompt fix can be checked for regressions on
+  // the skill it's actually meant to keep working, not just on what it's
+  // meant to now refuse (ADR-038).
+  { utterance: "can you add cheese to the shopping list", expected: { skillId: "shopping_list", intentId: "add_item" } },
+  { utterance: "we're almost out of rice", expected: { skillId: "shopping_list", intentId: "add_item" } },
+  { utterance: "what's still on the shopping list", expected: { skillId: "shopping_list", intentId: "list_items" } },
+  { utterance: "take the rice off the shopping list, I bought it", expected: { skillId: "shopping_list", intentId: "remove_item" } },
+  { utterance: "clear out the whole shopping list", expected: { skillId: "shopping_list", intentId: "clear_list" } },
+  // fact/preference statements about the owner -- should never dispatch
+  // to shopping_list (or anywhere else); real bug found live 2026-08-04
+  // (ADR-034), root-caused 2026-08-06 (docs/BACKLOG.md): the model's
+  // disambiguation step chose shopping_list.remove_item for a dietary
+  // fact instead of saying "none". "Peanuts"/"lactose" are the two
+  // phrasings actually seen live; the other two check the fix
+  // generalizes past diet specifically, not just those two words.
+  { utterance: "I don't eat peanuts, I'm allergic", expected: "none" },
+  { utterance: "I'm lactose intolerant", expected: "none" },
+  { utterance: "I hate mushrooms, always have", expected: "none" },
+  { utterance: "my favorite fruit is mango", expected: "none" },
 ];
 
 async function main(): Promise<number> {
@@ -73,6 +95,7 @@ async function main(): Promise<number> {
     sessionId: "bench",
     now: () => 0,
     log: { info() {}, warn() {}, error() {} },
+    mcp: createEmptyMcpToolLister(),
   });
 
   let correct = 0;
