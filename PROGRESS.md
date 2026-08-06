@@ -2351,7 +2351,34 @@ observations, vision providers.** Full reasoning in ADR-045; summary:
 One stale test fixed in the same pass (`factExtraction.test.ts` still
 asserted the pre-`kind` payload shape). Committed as `99ea64a`.
 
-Tasks 3-4 (the `look` skill, dashboard) not started yet.
+**Task 3 built and tested — `skills/look`.** Three intents:
+`open_camera`/`close_camera` (multi-lane -- `["converse", "act",
+"reflex"]`, the proven `launcher`/`media` pattern) and `describe` (`see`
+lane, `requiresCamera: true`). `describe` copies the captured frame to
+`data/observations/` immediately (before anything is proposed --
+ADR-045's reasoning), speaks the vision reply right away, then
+fire-and-forget proposes remembering it. `close_camera` has no direct
+way to reach "the current session" from `CameraHandle` alone (`open()`
+only ever returns a *new* `CameraSession` object) -- resolved by relying
+on eyes' own idempotent re-arm (confirmed already built in Task 1):
+calling `open()` again when already armed returns the live session
+without touching the device, so `close_camera` checks `ctx.camera.state`
+first (skip entirely if already idle) and otherwise re-opens then closes
+that same live session.
+
+Found while wiring the skill: `Router.see()` had no way to tell a skill
+*which* provider actually served a vision request, but `Observation`
+requires a `provider: string` field -- fixed by having `see()` return
+`VisionResult & { provider: string }`, sourced from `routeVision()`'s
+own trace callback.
+
+`core/skills/tests/fakes.ts` gained `fakeCamera(frames)` (the helper
+`docs/SKILLS.md` § 7 already named) and an optional `camera` override on
+`fakeSkillContext`. 10 new tests, all passing first run -- no bugs found
+writing them this time, unlike Tasks 1-2. `make check` green throughout.
+Committed as `7b208c9`.
+
+Task 4 (dashboard camera indicator, Playwright) not started yet.
 
 ---
 
