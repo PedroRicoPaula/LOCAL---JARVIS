@@ -30,8 +30,11 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 - ~~System controls: volume, brightness~~ — **built 2026-08-04**,
   `skills/media`. Volume is real (built-in AppleScript); brightness
   needs `brew install brightness` (not installed on this machine, not
-  installed automatically — reports the gap plainly instead). Do Not
-  Disturb toggle still open, not built.
+  installed automatically — reports the gap plainly instead). ~~Do Not
+  Disturb toggle~~ — **built 2026-08-06, ADR-042**, via Shortcuts.app
+  (`shortcuts run`), the only Apple-supported automation surface left
+  for Focus modes. Owner-required setup (README's "3d") and a live
+  permission-dialog check, both still open.
 - **Voice-authored Cursor/Claude Code prompts, with the owner still
   pressing send** — asked about directly (2026-08-04): JARVIS types a
   drafted prompt into Cursor's Claude Code panel via macOS UI scripting,
@@ -60,18 +63,19 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   arbitrary and could be sensitive, no way to whitelist it in advance).
   Found and fixed a real lane-declaration bug the same day (`write_clipboard`
   needed both `converse` and `act`, same pattern as `launcher`/`media`).
-- **Focus Mode toggle** — research (2026-08-04) found direct AppleScript
-  control of macOS Focus modes has real limitations (no clean scriptable
-  property, unlike volume) — same honesty concern as brightness before
-  building it: verify what's actually reliable before promising it, not
-  after.
-- **Home Assistant integration (Wyoming protocol), if the owner has any
-  smart home devices** — Home Assistant + Wyoming is 2026's mature,
-  free, fully-local stack for exactly this (Whisper/Piper/openWakeWord
-  are the same tools already in `senses/ears`); JARVIS could speak to a
-  local Home Assistant instance instead of reinventing device control.
-  Conditional on owning smart-home devices in the first place — ask
-  before scoping further, don't assume.
+- ~~Focus Mode toggle~~ — see the Do Not Disturb entry above (same
+  thing, built together 2026-08-06, ADR-042). Research (2026-08-04)
+  correctly found direct AppleScript control has real limitations (no
+  clean scriptable property, unlike volume); the real fix was
+  Shortcuts.app, not AppleScript at all.
+- **Home Assistant integration (Wyoming protocol)** — Home Assistant +
+  Wyoming is 2026's mature, free, fully-local stack for exactly this
+  (Whisper/Piper/openWakeWord are the same tools already in
+  `senses/ears`); JARVIS could speak to a local Home Assistant instance
+  instead of reinventing device control. **Confirmed 2026-08-06: owner
+  does have smart-home devices, but not a priority right now** — stays
+  in the backlog, revisit when it's actually wanted rather than
+  scoping further speculatively.
 
 ## Platform
 

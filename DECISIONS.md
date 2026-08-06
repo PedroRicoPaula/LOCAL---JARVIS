@@ -2865,3 +2865,69 @@ fixing it the same way as `write_clipboard`'s own fix above.
 seen mid-session (`weather.current_weather` briefly missed, passed
 clean on immediate retry) confirmed as live-model run-to-run noise, not
 a regression -- `skills/weather` wasn't touched this session.
+
+## ADR-042 — Do Not Disturb / Focus toggle, via Shortcuts.app, not AppleScript
+
+**Status:** accepted
+
+**Context.** Last Tier 1 backlog item asked for this SOAK, after
+confirming with the owner whether to continue (yes) and whether he has
+smart-home devices (yes, but Home Assistant stays deprioritized, not
+built). `docs/BACKLOG.md` already had real research on record
+(2026-08-04): direct AppleScript control of Focus modes has no clean
+scriptable property, unlike volume/brightness -- re-confirmed rather
+than re-litigated before building anything.
+
+**Decisions.**
+- **Goes through the Shortcuts app's "Set Focus" action (`shortcuts run
+  <name>`), the only Apple-supported automation surface left for Focus
+  modes** -- macOS removed the old single Do Not Disturb toggle's
+  scriptable property when it introduced the modern Focus system; there
+  is no public AppleScript dictionary or `defaults` key for this
+  anymore. `/usr/bin/shortcuts` confirmed present on this machine.
+- **Real, owner-required one-time setup, same shape as
+  `bench/gmail_authorize.ts`'s dance:** the owner creates two named
+  Shortcuts.app shortcuts (`JARVIS Focus On`/`JARVIS Focus Off`, each a
+  single "Set Focus" action, names overridable via env vars) --
+  `README.md`'s new "3d" section has the exact steps. Missing shortcuts
+  degrade honestly (`shortcuts run` on a nonexistent name fails with a
+  clear "couldn't find the shortcut," reported as-is, not swallowed).
+- **A real gap found live, not resolved from this side:** a direct
+  interactive-shell `shortcuts run <nonexistent name>` returns almost
+  instantly with a clear error. The exact same command through this
+  file's own `execFile` call, from a plain Node process, hung with no
+  output past 15+ seconds -- stopped manually rather than left running.
+  Likely cause, not confirmed (no way to from this side): macOS's TCC
+  permission system gating a *new* process's first attempt to drive
+  Shortcuts.app, waiting on a system dialog this process can't see or
+  click. Documented in the code and README rather than assumed away --
+  owner-required: run `core` for real, watch for a permission dialog
+  the first time this fires, grant it, confirm live end to end.
+- **A second real bug found live, this time in the skill itself, while
+  writing its own tests:** the natural single-word reply to this
+  skill's own `ctx.ask("Turn Do Not Disturb on or off?")` follow-up
+  ("on" or "off" alone) wasn't recognized by `resolveFocusEnabled` --
+  only compound phrases ("turn on," "enable") matched. Fixed by adding
+  bare "on"/"off" to the pattern, safe specifically because this
+  function only ever runs after dispatch has already routed to
+  `set_focus_mode` -- a bare "on" elsewhere in the app never reaches
+  this code path.
+- **Lane declaration reused `media`'s existing `CONTROL_LANES`
+  (`converse`, `act`, `reflex`) without incident** -- unlike
+  `clipboard`'s two lane-declaration bugs earlier today, this one
+  passed `bench_skill_routing.ts` clean on the first try (both an
+  English and a PT-PT case), likely because it's declared inside a
+  skill whose lane coverage was already hardened by ADR-026's original
+  fix.
+
+**Consequences.**
+- 12 new tests (`core/executors/tests/focusMode.test.ts`,
+  `skills/media/index.test.ts`), `make check` green.
+- `docs/BACKLOG.md`'s Do Not Disturb and Focus Mode entries (previously
+  two separate bullets) marked built and cross-referenced as the same
+  work.
+- **Not yet live-verified end to end:** the owner hasn't created the
+  real shortcuts yet, and the `execFile` hang means even the mechanism
+  itself needs a real, watched first run rather than a blind "should
+  work now." This is the least-verified of today's four features for
+  exactly that reason -- flagged plainly, not glossed over.

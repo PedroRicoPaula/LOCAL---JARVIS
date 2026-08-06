@@ -2165,6 +2165,31 @@ today. `make check` green; also corrected a stale ~29.7s figure still
 sitting in this file's own "Known issues" section (already fixed in
 the SOAK-1 log above, missed here until now).
 
+**Same day, last Tier 1 item confirmed with the owner first: Do Not
+Disturb / Focus toggle (ADR-042).** Asked two things before building:
+smart-home devices (owner has some, but Home Assistant stays
+deprioritized, not built) and whether to keep going today (yes). Built
+on `docs/BACKLOG.md`'s own 2026-08-04 research (AppleScript has no
+clean Focus-mode property) -- the real answer is Shortcuts.app's own
+"Set Focus" action via `shortcuts run`, the only Apple-supported
+automation surface left for this. Owner needs to create two named
+shortcuts once (`README.md`'s new "3d").
+
+Two real bugs found live: the natural single-word reply ("on"/"off"
+alone) to this skill's own follow-up question wasn't recognized, only
+compound phrases were -- fixed, caught while writing this skill's own
+tests. Separately, a direct shell `shortcuts run` returns almost
+instantly, but the exact same call through this file's own `execFile`
+hung with no output past 15+ seconds -- stopped manually, documented as
+a likely TCC permission-dialog gap rather than resolved, since there's
+no way to see or click a system dialog from this side.
+
+12 new tests, `make check` green. This is the least-verified of
+today's four features on purpose, not by oversight -- the owner hasn't
+created the real shortcuts yet, and the `execFile` hang means even the
+underlying mechanism needs a real, watched first run. Full detail in
+ADR-042.
+
 ---
 
 ## Key numbers to record as we go
