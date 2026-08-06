@@ -35,6 +35,10 @@ export const manifest: SkillManifest = {
         "open Finder",
         "start Terminal",
         "open Spotify",
+        // PT-PT paraphrases (ADR-033)
+        "abre o Cursor",
+        "abre o Finder",
+        "abre a calculadora",
       ],
       lanes: ["converse", "act"],
     },
@@ -46,6 +50,9 @@ export const manifest: SkillManifest = {
         "list my projects",
         "show me my projects",
         "what's in my dev folder",
+        // PT-PT paraphrases (ADR-033)
+        "que projetos é que eu tenho",
+        "mostra-me os meus projetos",
       ],
       lanes: ["converse"],
     },
@@ -57,6 +64,9 @@ export const manifest: SkillManifest = {
         "open Jarvis in Cursor",
         "open my Jarvis project",
         "load the Jarvis project",
+        // PT-PT paraphrases (ADR-033)
+        "abre o projeto Jarvis no Cursor",
+        "abre o meu projeto Jarvis",
       ],
       lanes: ["converse", "act"],
     },
@@ -69,6 +79,10 @@ export const manifest: SkillManifest = {
         "look up the weather forecast online",
         "go to google.com",
         "open the NVIDIA build website",
+        // PT-PT paraphrases (ADR-033)
+        "abre o github.com",
+        "vai ao google.com",
+        "procura a previsão do tempo online",
       ],
       lanes: ["converse", "act"],
     },

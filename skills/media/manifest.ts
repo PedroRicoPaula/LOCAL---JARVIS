@@ -28,31 +28,72 @@ export const manifest: SkillManifest = {
     {
       id: "play_music",
       description: "Resume/start music playback.",
-      examples: ["play music", "resume the music", "play the song", "start playing music"],
+      examples: [
+        "play music",
+        "resume the music",
+        "play the song",
+        "start playing music",
+        // PT-PT paraphrases (ADR-033)
+        "põe música",
+        "toca música",
+        "continua a música",
+      ],
       lanes: [...CONTROL_LANES],
     },
     {
       id: "pause_music",
       description: "Pause music playback.",
-      examples: ["pause the music", "pause", "stop the music", "pause music"],
+      examples: [
+        "pause the music",
+        "pause",
+        "stop the music",
+        "pause music",
+        // PT-PT paraphrases (ADR-033)
+        "põe a música em pausa",
+        "para a música",
+      ],
       lanes: [...CONTROL_LANES],
     },
     {
       id: "next_track",
       description: "Skip to the next track.",
-      examples: ["next song", "skip this song", "next track", "play the next one"],
+      examples: [
+        "next song",
+        "skip this song",
+        "next track",
+        "play the next one",
+        // PT-PT paraphrases (ADR-033)
+        "próxima música",
+        "salta esta música",
+      ],
       lanes: [...CONTROL_LANES],
     },
     {
       id: "previous_track",
       description: "Go back to the previous track.",
-      examples: ["previous song", "go back a track", "play the last song", "previous track"],
+      examples: [
+        "previous song",
+        "go back a track",
+        "play the last song",
+        "previous track",
+        // PT-PT paraphrases (ADR-033)
+        "música anterior",
+        "volta à música de trás",
+      ],
       lanes: [...CONTROL_LANES],
     },
     {
       id: "now_playing",
       description: "Report what's currently playing.",
-      examples: ["what's playing", "what song is this", "what's this song", "what am I listening to"],
+      examples: [
+        "what's playing",
+        "what song is this",
+        "what's this song",
+        "what am I listening to",
+        // PT-PT paraphrases (ADR-033)
+        "que música é esta",
+        "o que está a tocar",
+      ],
       // Read-only, no camera involved -- but the lane classifier reads
       // "what's playing"/"what song is this" as `see` (something about
       // "what's on screen" phrasing). Tried fixing via a prompt example
@@ -67,13 +108,31 @@ export const manifest: SkillManifest = {
     {
       id: "set_volume",
       description: "Set the system output volume.",
-      examples: ["set the volume to 50", "turn the volume to 30", "mute", "max volume", "volume 20"],
+      examples: [
+        "set the volume to 50",
+        "turn the volume to 30",
+        "mute",
+        "max volume",
+        "volume 20",
+        // PT-PT paraphrases (ADR-033)
+        "põe o volume a 50",
+        "sem som",
+        "aumenta o volume",
+      ],
       lanes: [...CONTROL_LANES],
     },
     {
       id: "set_brightness",
       description: "Set the screen brightness.",
-      examples: ["set brightness to 50", "brightness to 80", "dim the screen to 20", "brighten the screen to full"],
+      examples: [
+        "set brightness to 50",
+        "brightness to 80",
+        "dim the screen to 20",
+        "brighten the screen to full",
+        // PT-PT paraphrases (ADR-033)
+        "põe o brilho a 50",
+        "escurece o ecrã",
+      ],
       lanes: [...CONTROL_LANES],
     },
   ],

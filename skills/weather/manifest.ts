@@ -23,6 +23,11 @@ export const manifest: SkillManifest = {
         "weather today",
         "do I need a jacket",
         "what's it like outside",
+        // PT-PT paraphrases (ADR-033)
+        "como está o tempo",
+        "vai chover",
+        "está frio lá fora",
+        "preciso de casaco",
       ],
       lanes: ["converse"],
     },

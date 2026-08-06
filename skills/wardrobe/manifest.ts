@@ -19,6 +19,10 @@ export const manifest: SkillManifest = {
         "does this match",
         "wardrobe",
         "help me pick an outfit",
+        // PT-PT paraphrases (ADR-033)
+        "o que é que eu visto",
+        "isto combina",
+        "ajuda-me a escolher roupa",
       ],
       // Real wardrobe (docs/BACKLOG.md) needs to look at actual clothing --
       // the lane classifier correctly sends "does this shirt go with these

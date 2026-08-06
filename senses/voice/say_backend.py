@@ -10,11 +10,18 @@ from senses.voice.config import SAY_BIN, SAY_VOICE
 
 
 class SayBackend(Protocol):
-    def speak(self, sentence: str) -> None:
+    def speak(self, sentence: str, voice: str | None = None) -> None:
         """Blocks until the sentence has finished playing — that's what
         makes sentence-by-sentence streaming work: the caller moves on to
         the next sentence exactly when this one ends, no separate audio
-        queue needed for Phase 1's scale."""
+        queue needed for Phase 1's scale.
+
+        `voice`, if given, overrides the backend's default for this one
+        call — ADR-033's bilingual TTS: `main.py`'s `speak_text` picks one
+        voice for the whole response (`language.detect_language`) and
+        passes it into every sentence of that response, never the
+        constructor default. Omitted (tests, Phase 1's original callers)
+        falls back to the backend's own configured voice, unchanged."""
         ...
 
 
@@ -23,9 +30,10 @@ class MacSayBackend:
         self._say_bin = say_bin
         self._voice = voice
 
-    def speak(self, sentence: str) -> None:
+    def speak(self, sentence: str, voice: str | None = None) -> None:
         cmd = [self._say_bin]
-        if self._voice:
-            cmd += ["-v", self._voice]
+        chosen = voice if voice is not None else self._voice
+        if chosen:
+            cmd += ["-v", chosen]
         cmd.append(sentence)
         subprocess.run(cmd, check=True)

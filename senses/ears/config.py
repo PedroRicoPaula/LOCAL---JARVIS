@@ -37,18 +37,23 @@ WHISPER_SERVER_BIN = os.environ.get(
 WHISPER_SERVER_HOST = os.environ.get("JARVIS_WHISPER_SERVER_HOST", "127.0.0.1")
 WHISPER_SERVER_PORT = int(os.environ.get("JARVIS_WHISPER_SERVER_PORT", "8123"))
 
-# small.en, not large-v3-turbo (ADR-003's original pick): whisper.cpp
-# processes a fixed ~30s context window regardless of utterance length, so
-# encode cost is roughly constant per model — measured ~2.05s per request
-# for large-v3-turbo on this M1 even with the model warm in memory, over
-# the DoD's 1.5s budget on its own. small.en: ~0.46s warm, and accuracy on
-# the Phase 1 test sentences was indistinguishable (both got every word
-# right; large-v3-turbo has no accuracy edge worth 1.6s here). See
-# PROGRESS.md's Phase 1 log and DECISIONS.md ADR-003's amendment.
+# Multilingual `small`, not `small.en` (ADR-003/ADR-026's original pick):
+# ADR-033 reversed CLAUDE.md § 0.1's English-only rule for the spoken
+# deliverable specifically -- JARVIS now understands PT-PT and English,
+# including a mid-sentence switch. `small.en` cannot transcribe Portuguese
+# at all, by construction, no amount of prompt-hint tuning changes that
+# (ADR-026's own multilingual-model test was narrowly about one proper
+# noun's phonetic accuracy against synthetic English-accented audio, not
+# "can it understand real Portuguese sentences" -- a different question
+# this rule change now actually requires an answer to). Same size tier as
+# `small.en` (both ~190MB, ADR-026 already downloaded this one and left it
+# on disk for exactly this), so the latency profile measured for `small.en`
+# is the right expectation going in -- real confirmation is still an
+# owner-required check (PROGRESS.md), not assumed from that alone.
 WHISPER_MODEL = Path(
     os.environ.get(
         "JARVIS_WHISPER_MODEL",
-        REPO_ROOT / "data/models/whisper/ggml-small.en-q5_1.bin",
+        REPO_ROOT / "data/models/whisper/ggml-small-q5_1.bin",
     )
 )
 VAD_MODEL = Path(
@@ -57,7 +62,19 @@ VAD_MODEL = Path(
         REPO_ROOT / "data/models/whisper/ggml-silero-v5.1.2.bin",
     )
 )
-LANGUAGE = "en"
+# "auto", not a fixed "pt"/"en": whisper-server's own --help confirms
+# `-l auto` runs real per-request language detection (not assumed --
+# checked against the installed binary). A fixed language would mistranscode
+# whichever language wasn't picked; auto-detect is what a genuinely
+# bilingual, code-switching owner needs. Whisper's language detection runs
+# once per utterance (the whole clip), not per word -- a single sentence
+# that's mostly English with one Portuguese word (or vice versa) is
+# detected as whichever language dominates, and the minority word is
+# transcribed under that language's rules. Real accuracy on genuine
+# mid-sentence code-switching is unverified until tested against the
+# owner's own real speech (see PROGRESS.md) -- this is the mechanism, not
+# a guarantee.
+LANGUAGE = os.environ.get("JARVIS_WHISPER_LANGUAGE", "auto")
 
 # whisper.cpp's `--prompt` biases recognition toward specific vocabulary
 # without changing the model or its language setting -- found live: the

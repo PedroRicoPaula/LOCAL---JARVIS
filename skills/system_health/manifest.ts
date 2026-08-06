@@ -35,6 +35,10 @@ export const manifest: SkillManifest = {
         "how's the machine running",
         "system status",
         "is my pc ok",
+        // PT-PT paraphrases (ADR-033)
+        "como está o meu computador",
+        "quanta memória estou a usar",
+        "verifica o espaço em disco",
       ],
       lanes: ["converse", "see", "act"],
     },

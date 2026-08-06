@@ -25,6 +25,11 @@ export const manifest: SkillManifest = {
         "any unread emails",
         "check gmail for something from Sarah about the trip",
         "is there an email from the bank",
+        // PT-PT paraphrases (ADR-033)
+        "vê se tenho email novo",
+        "tenho algum email do banco",
+        "procura no gmail um email da Sarah",
+        "tenho emails por ler",
       ],
       lanes: ["converse", "act"],
     },

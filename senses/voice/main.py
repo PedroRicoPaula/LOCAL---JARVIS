@@ -12,6 +12,7 @@ import socket
 
 from senses import ipc
 from senses.voice import config
+from senses.voice.language import detect_language
 from senses.voice.say_backend import MacSayBackend, SayBackend
 from senses.voice.sentences import split_sentences
 
@@ -20,9 +21,15 @@ def speak_text(text: str, backend: SayBackend) -> None:
     """Splits on sentence boundaries so the backend starts on the first
     complete sentence rather than waiting for the whole text — CLAUDE.md
     § 7's streaming rule, applied even though Phase 1's source (the echo
-    handler) hands over the full text at once."""
+    handler) hands over the full text at once.
+
+    Language is detected once, from the whole response, not per sentence
+    — the owner's own choice (2026-08-06): one voice for the whole reply,
+    not a switch mid-response, so every sentence in this call uses the
+    same pick even if a later sentence would score differently alone."""
+    voice = config.SAY_VOICE_PT if detect_language(text) == "pt" else config.SAY_VOICE
     for sentence in split_sentences(text):
-        backend.speak(sentence)
+        backend.speak(sentence, voice=voice)
 
 
 def run_forever(backend: SayBackend, conn: socket.socket) -> None:

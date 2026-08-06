@@ -23,6 +23,13 @@ export const manifest: SkillManifest = {
         "what do I need to know today",
         "brief me",
         "what's going on",
+        // PT-PT paraphrases (ADR-033) -- same terse/sloppy register as
+        // the English ones above, not textbook translations.
+        "bom dia",
+        "põe-me a par",
+        "o que se passa",
+        "resumo do dia",
+        "o que preciso de saber hoje",
       ],
       lanes: ["converse"],
     },

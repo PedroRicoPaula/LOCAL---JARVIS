@@ -167,6 +167,21 @@ acceleration. `senses/ears/config.py` already points at the native path
 explicitly, so the project works either way — but anything you run ad hoc
 outside it might not.
 
+`senses/ears/config.py` also expects the multilingual Whisper model at
+`data/models/whisper/ggml-small-q5_1.bin` (ADR-039: bilingual PT-PT/
+English STT, `-l auto`) — `data/models/` is gitignored, so a fresh clone
+needs to fetch it once:
+
+```bash
+mkdir -p data/models/whisper
+curl -L -o data/models/whisper/ggml-small-q5_1.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin
+```
+
+(Same source as `ggml-silero-v5.1.2.bin`, already required for VAD —
+override the model path with `JARVIS_WHISPER_MODEL` if you'd rather keep
+the older English-only `small.en` for speed and don't need Portuguese.)
+
 **2. Grant Accessibility permission**
 
 `make dev` will print `This process is not trusted!` the first time — that's

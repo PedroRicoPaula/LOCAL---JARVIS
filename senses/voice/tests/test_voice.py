@@ -6,6 +6,7 @@ import json
 import socket
 
 from senses import ipc
+from senses.voice import config
 from senses.voice.fakes import FakeSayBackend
 from senses.voice.main import run_forever, speak_text
 from senses.voice.sentences import split_sentences
@@ -44,13 +45,43 @@ def test_speak_text_empty_speaks_nothing() -> None:
     assert backend.spoken == []
 
 
+def test_speak_text_uses_the_english_voice_for_an_english_reply() -> None:
+    backend = FakeSayBackend()
+
+    speak_text("Good morning. The weather looks fine today.", backend)
+
+    assert backend.voices == [config.SAY_VOICE, config.SAY_VOICE]
+
+
+def test_speak_text_uses_the_portuguese_voice_for_a_portuguese_reply() -> None:
+    backend = FakeSayBackend()
+
+    speak_text("Bom dia! Está tudo pronto.", backend)
+
+    assert backend.voices == [config.SAY_VOICE_PT, config.SAY_VOICE_PT]
+
+
+def test_speak_text_picks_one_voice_for_the_whole_reply_not_per_sentence() -> None:
+    """Owner's own choice (2026-08-06): a mixed-language reply gets ONE
+    voice for every sentence, not a switch mid-response -- even though the
+    second sentence alone would score as English."""
+    backend = FakeSayBackend()
+
+    speak_text(
+        "Já verifiquei a tua lista de compras, está tudo pronto. All items are in stock.",
+        backend,
+    )
+
+    assert backend.voices == [config.SAY_VOICE_PT, config.SAY_VOICE_PT]
+
+
 class _FlakySayBackend:
     """Fails on one specific sentence, to prove run_forever survives it."""
 
     def __init__(self) -> None:
         self.spoken: list[str] = []
 
-    def speak(self, sentence: str) -> None:
+    def speak(self, sentence: str, voice: str | None = None) -> None:
         if sentence == "boom":
             raise RuntimeError("say exploded")
         self.spoken.append(sentence)

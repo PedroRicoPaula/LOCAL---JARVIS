@@ -8,6 +8,8 @@ from __future__ import annotations
 class FakeSayBackend:
     def __init__(self) -> None:
         self.spoken: list[str] = []
+        self.voices: list[str | None] = []
 
-    def speak(self, sentence: str) -> None:
+    def speak(self, sentence: str, voice: str | None = None) -> None:
         self.spoken.append(sentence)
+        self.voices.append(voice)

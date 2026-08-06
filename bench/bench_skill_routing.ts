@@ -63,6 +63,17 @@ const CASES: Case[] = [
   { utterance: "I'm lactose intolerant", expected: "none" },
   { utterance: "I hate mushrooms, always have", expected: "none" },
   { utterance: "my favorite fruit is mango", expected: "none" },
+  // PT-PT dispatch -- added 2026-08-06 (ADR-033/ADR-039) alongside PT
+  // examples in every skill's manifest. Real paraphrases, not the
+  // manifest's own literal example strings, same standard as the
+  // English cases above -- proves the whole pipeline (lane + embedding
+  // match + disambiguation), not just that a memorized string echoes.
+  { utterance: "bom dia, o que se passa hoje", expected: { skillId: "brief", intentId: "morning_brief" } },
+  { utterance: "falta-nos leite, põe na lista", expected: { skillId: "shopping_list", intentId: "add_item" } },
+  { utterance: "já usei o leite, tira da lista", expected: { skillId: "shopping_list", intentId: "remove_item" } },
+  { utterance: "como está o tempo lá fora", expected: { skillId: "weather", intentId: "current_weather" } },
+  { utterance: "lembra-me de pagar a renda amanhã", expected: { skillId: "tasks", intentId: "add_task" } },
+  { utterance: "abre o Cursor se faz favor", expected: { skillId: "launcher", intentId: "open_app" } },
 ];
 
 async function main(): Promise<number> {

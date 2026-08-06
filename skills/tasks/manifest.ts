@@ -24,6 +24,11 @@ export const manifest: SkillManifest = {
         "add a task to pay the electricity bill",
         "put renew my passport on my task list",
         "todo: book the flights",
+        // PT-PT paraphrases (ADR-033)
+        "adiciona uma tarefa",
+        "lembra-me de ligar ao dentista",
+        "tenho de acabar o relatório",
+        "põe pagar a luz na lista de tarefas",
       ],
       lanes: ["converse"],
     },
@@ -36,6 +41,10 @@ export const manifest: SkillManifest = {
         "what do I need to do",
         "what's on my task list",
         "any open tasks",
+        // PT-PT paraphrases (ADR-033)
+        "quais são as minhas tarefas",
+        "o que é que eu tenho para fazer",
+        "lê-me a lista de tarefas",
       ],
       lanes: ["converse"],
     },
@@ -48,6 +57,10 @@ export const manifest: SkillManifest = {
         "complete the task about the electricity bill",
         "I already did that",
         "check off renew my passport",
+        // PT-PT paraphrases (ADR-033)
+        "já acabei o relatório",
+        "já fiz isso",
+        "marca ligar ao dentista como feito",
       ],
       lanes: ["converse"],
     },
