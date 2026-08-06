@@ -14,8 +14,16 @@
  */
 
 import type { ChatRequest, Lane } from "../../shared/types.ts";
+import { classifyLaneHeuristically } from "./laneHeuristic.ts";
 import type { Registry } from "./registry.ts";
 import { routeChat, type TraceSink } from "./router.ts";
+
+/** The `ModelProvider.id` of the true last resort (`providers/ollama.ts`)
+ * -- when it's the one that actually answered, ADR-040 prefers the
+ * no-model heuristic's guess over trusting its JSON, live-verified to
+ * frequently misfire on this specific structured task even though it
+ * answers within budget (not a timeout/crash case, ADR-028/ADR-040). */
+const OLLAMA_FALLBACK_PROVIDER_ID = "ollama";
 
 export const LANE_CLASSIFIER_SYSTEM = `You are a request router for a personal assistant.
 The request may be in English or European Portuguese (PT-PT), including a
@@ -110,9 +118,23 @@ export async function classifyLane(
     timeoutMs: 3000,
   };
 
+  let answeredBy = "";
+  const captureProvider: TraceSink = (trace) => {
+    if (trace.ok) answeredBy = trace.providerId;
+    onTrace?.(trace);
+  };
+
   let text = "";
-  for await (const chunk of routeChat(registry, req, onTrace)) {
+  for await (const chunk of routeChat(registry, req, captureProvider)) {
     text += chunk.delta;
+  }
+
+  // ADR-040: the true last resort answers within budget but is
+  // demonstrably unreliable at this specific structured task -- a
+  // no-model heuristic guess is preferred over trusting its JSON,
+  // rather than risking a confident, silent misroute.
+  if (answeredBy === OLLAMA_FALLBACK_PROVIDER_ID) {
+    return classifyLaneHeuristically(utterance);
   }
 
   let parsed: unknown;
