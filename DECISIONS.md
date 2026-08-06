@@ -3124,3 +3124,105 @@ continuous pass. All 9 fixed; none deferred.
   against the owner's actual `~/Developer/Programação` directory
   (real project names listed correctly) and a real `~/.ssh` denial,
   outside the fake-based tests.
+
+---
+
+## ADR-045 — Phase 8 Tasks 1-2: `senses/eyes`, camera wiring, vision providers
+
+**Status:** accepted
+
+**Context.** Phase 8 (`ROADMAP.md`), planned and approved as its own
+plan document per `CLAUDE.md` § 1's phase discipline. Task 1 built the
+camera daemon; Task 2 wired it into `core` and gave the `see` lane two
+real providers. Full plan context (NIM-vs-local hardware reasoning,
+`RulesProvider` dead-code finding, `CameraEvent`/`ServerEvent` overlap)
+already summarized in the plan itself and in `PROGRESS.md`'s Phase 8
+log; this ADR records the decisions made *while building* that weren't
+fully settled by the plan.
+
+**Decisions.**
+
+- **Frames are ephemeral by construction, not by a `keepFrameIds`
+  round-trip.** The plan's own Task 1.4 text sketched `close()` passing
+  "frames to keep" back to eyes. Building it exposed a real race:
+  `senses/eyes/main.py`'s `check_timeouts_forever` can self-close a
+  session (idle or absolute cap) with no request from `core` at all, at
+  any point after a capture -- there is no reliable moment for `core`
+  to tell eyes "keep this one" before it may already be gone, especially
+  since a `MEMORY_WRITE` approval can sit pending far longer than the
+  120s idle default. Fixed by moving durability *earlier*: a skill that
+  wants to keep what it saw copies the frame's bytes to a permanent
+  location (`data/observations/`) immediately after `capture()`, before
+  ever proposing the write -- decoupling "the image survives" from
+  "eyes hasn't gotten around to deleting the session yet." `shared/
+  types.ts`'s `CameraSession.close(): Promise<void>` keeps its original,
+  no-argument signature; eyes' own `close` handling stays unconditional
+  delete-all, exactly as Task 1 already shipped it. See
+  `core/skills/camera.ts`'s docstring and `skills/look/index.ts`.
+- **`CameraEvent`'s `camera.captured` variant gained a `path` field.**
+  The plan's Context claimed `shared/types.ts`'s camera types were
+  already a decided contract; building `senses/eyes/main.py` (Task 1)
+  showed the wire event always carried the captured file's path (needed
+  for anything to actually use the frame), but the pre-existing type
+  didn't declare it. A real, necessary correction, not a redesign --
+  fixed in both `shared/types.ts` and `ui/src/lib/types.ts`'s mirror.
+- **NIM vision model: `meta/llama-3.2-11b-vision-instruct`, live-confirmed,
+  not guessed.** Queried the real `/v1/models` endpoint with the owner's
+  own key (2026-08-06) rather than trusting search results or training
+  data -- this project has been burned more than once assuming a
+  provider's exact model string ahead of checking it live (Cerebras,
+  OpenRouter, Google AI Studio names, `wiring.ts`'s own docstring).
+  Smoke-tested end to end against a real generated JPEG through
+  `/chat/completions` before writing any code against it -- confirmed
+  the `image_url`/base64-data-URI request shape and a correct reply.
+- **`routeVision()` (new, `core/router/router.ts`) mirrors `routeChat()`'s
+  fallback/trace shape, simplified for a single non-streaming result.**
+  No "already yielded output, don't fall back" case applies (vision
+  either answers or it doesn't -- nothing is spoken until the full
+  qualitative description returns), so it's a smaller function, not a
+  generalized/parameterized merge with `routeChat()`. `see` lane order:
+  `nim` before `ollama` -- ADR-001's already-accepted finding (this 8GB
+  M1 can't reliably run even a 4B *text* model) generalizes to "unlikely
+  to win" for a heavier vision-language model; `ollama`'s `vision()` (it
+  turned out to already exist, built ahead of schedule in Phase 3, only
+  needed tests) stays registered as a real second option, not removed,
+  so it's a genuine benchmarked fallback rather than an assumption.
+- **`MEMORY_WRITE`'s executor is now `payload.kind`-dispatched
+  (`"fact" | "observation"`)**, same shape `core/executors/shell.ts`
+  already uses for `SHELL_EXEC`'s several actions, rather than a new
+  capability or a second `Executor` slot (`Gate` holds exactly one
+  `Executor` per `Capability`, `core/executors/README.md`). Both
+  existing fact-writing call sites (`factExtraction.ts`, `skills/
+  weather`) needed one added field (`kind: "fact"`) -- the only breaking
+  change, exactly as the plan predicted.
+- **Capability enforcement for `CAMERA` happens at the dispatch call
+  site in `core/main.ts`, not inside `camera.ts` or `context.ts`.**
+  `core/main.ts` already has `skillRegistry` and therefore each skill's
+  manifest at the point it builds that dispatch's `SkillContext`:
+  `skill?.manifest.capabilities.includes("CAMERA") ? cameraHandle :
+  undefined`. `buildSkillContext` itself just falls back to the existing
+  throwing stub when `deps.camera` is absent -- identical shape to how
+  `mcp`/`gate`/`fsRoots` already work, no new lookup logic added to
+  `context.ts`.
+- **`eyes` is optional at `core` boot, unlike `ears`/`voice`.** A failed
+  connection is caught and logged, not fatal -- `eyes` is on-demand
+  (`SPEC.md` § 2: "launchd, idle"), so `core` (and every non-camera
+  skill) must keep working without it. A handful of quick connection
+  attempts (3 × 500ms), not the full ears/voice retry budget.
+
+**Consequences.**
+- `senses/eyes`: 19 pytest tests, `ruff` clean. Two real Python bugs
+  caught by manual review before ever running a test (see `PROGRESS.md`'s
+  Phase 8 log) -- a leftover `field()` line invalid outside a
+  `@dataclass`, and a mutable/direct-imported config value used as a
+  parameter default (binds once at import time, silently defeats
+  `monkeypatch`).
+- Core/TS side: 374 `node --test` cases (up from 359), `tsc`/`ruff`/
+  ESLint/UI build all green. New coverage: `NimProvider.vision()` (5
+  tests), `OllamaProvider.vision()` (3 tests, closing a real pre-existing
+  gap), `routeVision()` (5 tests), the `MEMORY_WRITE` observation branch
+  (3 tests).
+- One stale test fixed in the same pass: `factExtraction.test.ts`
+  asserted the pre-`kind`-field payload shape.
+- `skills/look` (the skill that actually uses any of this) is Task 3,
+  not yet built as of this ADR.

@@ -2301,8 +2301,57 @@ test, not by test failure -- worth recording as real quirks:
 `ruff check` and `.venv/bin/pytest senses/eyes/` both run clean (19
 passed); full `make check` green. Committed as `812077d`.
 
-Tasks 2-4 (core wiring, vision providers, the `look` skill, dashboard)
-not started yet.
+**Task 2 built and tested — core camera wiring, `MEMORY_WRITE`
+observations, vision providers.** Full reasoning in ADR-045; summary:
+
+- Real `CameraHandle` (`core/skills/camera.ts`) wired to `eyes` over the
+  same request/reply correlation shape `conversation/ipc.ts` already
+  uses for `ask()`. Capability-gated at the `core/main.ts` dispatch call
+  site (a skill only gets the live handle if its own manifest declares
+  `CAMERA` and `eyes` is connected) -- `eyes` is optional at boot,
+  unlike `ears`/`voice`.
+- `CameraEvent`'s three variants folded into `ServerEvent`; a real gap
+  found building it (`camera.captured` never declared the `path` field
+  eyes always sent) fixed in both `shared/types.ts` and the `ui`
+  mirror.
+- `MEMORY_WRITE`'s executor is now `payload.kind`-dispatched
+  (`fact`/`observation`), matching `shell.ts`'s own action-dispatch
+  shape -- the two existing fact-writing callers updated for the one
+  new required field.
+- **`NimProvider.vision()`, live-confirmed model id.** Queried the real
+  `/v1/models` catalog with the owner's own key, found
+  `meta/llama-3.2-11b-vision-instruct`, then smoke-tested it end to end
+  against a real generated JPEG through `/chat/completions` before
+  writing any code against it -- correctly read back both the
+  background color and the text in the test image. Not guessed, per
+  this project's own repeated "don't trust a provider's model name
+  without checking it live" lesson (Cerebras, OpenRouter, Google AI
+  Studio).
+- **`OllamaProvider.vision()` turned out to already exist**, built ahead
+  of schedule in Phase 3 (`moondream`) and never tested or wired into
+  the `see` lane -- added the missing tests and the `routeVision()`
+  wiring rather than rebuilding it.
+- New `routeVision()` (`core/router/router.ts`): same fallback/trace
+  shape as `routeChat()`, simplified for a single non-streaming result.
+  `see` lane order: `nim` then `ollama`, matching ADR-001's hardware
+  finding.
+- **A real design change from the plan's own sketch, caught while
+  building Task 1's `main.py`:** `CameraSession.close()` does **not**
+  take a "frames to keep" list. `eyes`'s own idle/absolute-timeout
+  self-close can fire with no request from `core` at all, at any point
+  after a capture -- there's no reliable moment to tell it "wait, keep
+  this one" before the file may already be gone, especially since a
+  `MEMORY_WRITE` approval can sit pending far longer than the 120s idle
+  default. Fixed by moving durability earlier instead: a skill that
+  wants to keep what it saw copies the frame to `data/observations/`
+  immediately after capture, before ever proposing the write. Full
+  reasoning in ADR-045.
+
+374 tests total (up from 359), `tsc`/`ruff`/ESLint/UI build all green.
+One stale test fixed in the same pass (`factExtraction.test.ts` still
+asserted the pre-`kind` payload shape). Committed as `99ea64a`.
+
+Tasks 3-4 (the `look` skill, dashboard) not started yet.
 
 ---
 
