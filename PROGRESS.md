@@ -2190,6 +2190,39 @@ created the real shortcuts yet, and the `execFile` hang means even the
 underlying mechanism needs a real, watched first run. Full detail in
 ADR-042.
 
+**Same day, a real ask: stop building, review everything (ADR-043).**
+Asked directly for a full-codebase quality/security/efficiency
+analysis, not new features -- the whole ~10.8K-line codebase, not just
+recent work (confirmed the scope explicitly before starting: whole
+codebase, not just today or this SOAK). Two parallel audits (security,
+quality/efficiency); one got cut off mid-task by a session limit and
+was resumed from its own transcript rather than restarted, no work
+lost. Every Critical/High finding was re-verified by reading the real
+code myself, not taken on an agent's word.
+
+Found and fixed the same day: a **critical** dashboard vulnerability
+(no host binding, wildcard CORS, no WebSocket origin check -- together,
+any webpage the owner had open in another tab could forge an approval
+with zero interaction, defeating the whole "owner is the only
+executor" model) and a **high** gap (the HMAC signature `Gate.decide()`
+creates was never actually verified before executing, contradicting
+every executor's own docstring). Both fixed, both covered by new,
+real tests (a live HTTP server + WebSocket client for the dashboard
+fix, not fakes). 9 more findings reported (medium/low: an
+undocumented, unenforced `FS_READ` whitelist; a real grammar bug
+pinned as "correct" in `skills/media`'s own tests; an entire dead file;
+duplication across 5 skills; two untested-but-testable files; a
+non-timing-safe nonce comparison) -- not yet acted on, left for the
+owner to prioritize.
+
+332 tests total (up from 329), `make check` green. Also confirmed,
+not just assumed: command injection is correctly defended everywhere
+(argv arrays throughout, zero shell-string interpolation), the audit
+log is genuinely append-only at the DB level, OAuth/MCP tokens are
+never logged, secrets hygiene is clean repo-wide. The two real bugs
+were narrow, specific gaps, not evidence of a weak foundation overall.
+Full detail in ADR-043.
+
 ---
 
 ## Key numbers to record as we go
