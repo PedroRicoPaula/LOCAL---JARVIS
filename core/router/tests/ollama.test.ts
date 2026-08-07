@@ -91,6 +91,39 @@ test("embed returns the embeddings array", async () => {
   assert.deepEqual(result, [[0.1, 0.2]]);
 });
 
+test("embed retries once on a transient failure, then succeeds", async () => {
+  let calls = 0;
+  const provider = new OllamaProvider({
+    models: {},
+    embedModel: "embed-model",
+    fetchFn: async () => {
+      calls += 1;
+      if (calls === 1) return new Response(JSON.stringify({ error: "connection reset by peer" }), { status: 400 });
+      return new Response(JSON.stringify({ embeddings: [[0.1, 0.2]] }));
+    },
+  });
+
+  const result = await provider.embed(["hello"]);
+
+  assert.deepEqual(result, [[0.1, 0.2]]);
+  assert.equal(calls, 2);
+});
+
+test("embed fails after two consecutive failures, doesn't retry forever", async () => {
+  let calls = 0;
+  const provider = new OllamaProvider({
+    models: {},
+    embedModel: "embed-model",
+    fetchFn: async () => {
+      calls += 1;
+      return new Response("", { status: 400 });
+    },
+  });
+
+  await assert.rejects(() => provider.embed(["hello"]), ProviderUnavailableError);
+  assert.equal(calls, 2);
+});
+
 // --- vision() -----------------------------------------------------------
 
 /** `vision()` reads `req.imagePath` off the real filesystem (not

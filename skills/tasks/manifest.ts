@@ -4,6 +4,14 @@
  * frequently-updated data, not the shared `facts`/`events` model
  * `MEMORY_WRITE` is for. No capability needed: writing to a skill's own
  * namespaced table isn't a gated side effect (docs/SKILLS.md § 1).
+ *
+ * Multi-lane (`converse` + `act`), added 2026-08-07 as a preventive
+ * fix, not a live-caught bug: `shopping_list`'s near-identical
+ * add/remove/list shape broke exactly this way (ADR-030) -- "delete X
+ * from the list" classified as `act`, silently unreachable when
+ * declared `converse`-only. Same imperative/command-verb shape here
+ * ("add a task", "mark X as done"), same fix applied ahead of the
+ * first real failure rather than waiting for one.
  */
 
 import type { SkillManifest } from "../../shared/types.ts";
@@ -30,7 +38,7 @@ export const manifest: SkillManifest = {
         "tenho de acabar o relatório",
         "põe pagar a luz na lista de tarefas",
       ],
-      lanes: ["converse"],
+      lanes: ["converse", "act"],
     },
     {
       id: "list_tasks",
@@ -46,7 +54,7 @@ export const manifest: SkillManifest = {
         "o que é que eu tenho para fazer",
         "lê-me a lista de tarefas",
       ],
-      lanes: ["converse"],
+      lanes: ["converse", "act"],
     },
     {
       id: "complete_task",
@@ -62,7 +70,7 @@ export const manifest: SkillManifest = {
         "já fiz isso",
         "marca ligar ao dentista como feito",
       ],
-      lanes: ["converse"],
+      lanes: ["converse", "act"],
     },
   ],
 

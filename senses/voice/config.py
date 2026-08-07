@@ -16,9 +16,17 @@ SAY_BIN = os.environ.get("JARVIS_SAY_BIN", "say")
 # Male, British English — owner's choice, post Phase-5-integration live
 # test (see PROGRESS.md). Was "Samantha" (female) through Phases 1-5.
 SAY_VOICE = os.environ.get("JARVIS_SAY_VOICE", "Daniel")
-# ADR-033's bilingual reversal, TTS half: "Joana" is the only pt_PT voice
-# installed on this machine (`say -v '?'`, checked live, 2026-08-06) --
-# not a choice among several, the only real option today. Owner's own
-# call: ship with it now (voice changes gender by language until a second
-# pt_PT voice is installed via System Settings) rather than block on that.
-SAY_VOICE_PT = os.environ.get("JARVIS_SAY_VOICE_PT", "Joana")
+# ADR-033's bilingual reversal, TTS half. "Joana" (female) was the only
+# pt_PT voice `say -v '?'` listed as installed (checked live, 2026-08-06),
+# so the reply's voice changed gender by language -- English (Daniel,
+# male) vs Portuguese (Joana, female). Owner's own call (2026-08-07):
+# wanted a male pt_PT voice instead, to match Daniel. Real gap found the
+# same day: `say -v '?'` never listed a male pt_PT option -- but macOS
+# actually ships one ("Joaquim," `com.apple.voice.compact.pt-PT.Joaquim`,
+# confirmed via TextToSpeech.framework's own VoiceIdSampleStringMap.plist,
+# not guessed), and `say -v Joaquim -o test.aiff "..."` produced a real,
+# valid 4.7s audio file live-tested the same day even though `say -v '?'`
+# still doesn't list it -- compact-tier voices are apparently usable
+# on-demand without the explicit "download" System Settings normally
+# requires for Enhanced/Premium tiers. Confirmed working, not assumed.
+SAY_VOICE_PT = os.environ.get("JARVIS_SAY_VOICE_PT", "Joaquim")

@@ -50,11 +50,11 @@ without exception.
   awkward translation of something the owner would say in the original
   language themselves.
 - `senses/voice` picks one voice for the *whole* reply (English:
-  "Daniel"; Portuguese: "Joana") from the reply's own dominant language
-  -- it does not switch voice mid-response. Write accordingly: a reply
-  that's mostly Portuguese with one English term is spoken entirely in
-  the Portuguese voice, and vice versa. Don't rely on a voice change to
-  signal a language switch within one response.
+  "Daniel"; Portuguese: "Joaquim") from the reply's own dominant
+  language -- it does not switch voice mid-response. Write accordingly:
+  a reply that's mostly Portuguese with one English term is spoken
+  entirely in the Portuguese voice, and vice versa. Don't rely on a
+  voice change to signal a language switch within one response.
 - Never invent a translation for something with no natural equivalent
   (a command name, a file path, a proper noun) -- say it as-is,
   regardless of which language the rest of the sentence is in.

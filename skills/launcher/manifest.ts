@@ -54,10 +54,19 @@ export const manifest: SkillManifest = {
         "quit Terminal",
         "close the calculator",
         "quit Finder",
-        // PT-PT paraphrases (ADR-033)
+        // PT-PT paraphrases (ADR-033). Deliberately no app name shared
+        // with open_app's own PT examples (Cursor, Finder, calculadora)
+        // -- found live, 2026-08-07, via real mxbai-embed-large cosine
+        // scores: "abre o Cursor se faz favor" scored *higher* against
+        // this intent's "fecha o Cursor" (0.8325) than against
+        // open_app's own near-identical "abre o Cursor" (0.8156) --
+        // the embedding model weighs the shared noun more than the
+        // differing verb. Confirmed fixed with real scores before
+        // shipping: using Spotify/Terminal/Safari here (none of which
+        // appear in open_app's PT examples) instead.
         "fecha o Spotify",
-        "fecha o Cursor",
-        "sai do Spotify",
+        "fecha o Terminal",
+        "sai do Safari",
       ],
       // Found live, 2026-08-07: "close Calculator" classified as `reflex`
       // (the classifier's own reflex bullet names "stop, cancel, pause" --

@@ -113,16 +113,39 @@ export class OllamaProvider implements ModelProvider {
     if (!this.embedModel) {
       throw new ProviderUnavailableError(this.id, "no embed model configured");
     }
-    const response = await this.fetchFn(`${this.baseUrl}/api/embed`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.embedModel, input: texts }),
-    });
-    if (!response.ok) {
-      throw new ProviderUnavailableError(this.id, `embed HTTP ${response.status}`);
+    // Retries once on a transient local-server failure -- found live,
+    // 2026-08-07, testing this exact call at its real current size
+    // (261 manifest examples, one batch, `embedManifestExamples`'s own
+    // one-call-at-load-time design): Ollama's embed endpoint
+    // intermittently 400s with "read tcp ...: connection reset by
+    // peer" against its own internal tokenizer subprocess, confirmed by
+    // repeating the identical real request three times (fail, succeed,
+    // fail) -- a local resource-contention issue (ADR-001's 8GB-RAM
+    // finding), not a malformed request. A failure here isn't "one
+    // request degrades," it's "core's entire skill registry fails to
+    // load" (`embedManifestExamples` -> `SkillRegistry.loadAll`, no
+    // skill works until it succeeds), so it's worth one retry rather
+    // than failing the whole process on a transient hiccup.
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 500));
+      try {
+        const response = await this.fetchFn(`${this.baseUrl}/api/embed`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: this.embedModel, input: texts }),
+        });
+        if (!response.ok) {
+          lastError = new ProviderUnavailableError(this.id, `embed HTTP ${response.status}`);
+          continue;
+        }
+        const payload = (await response.json()) as { embeddings: number[][] };
+        return payload.embeddings;
+      } catch (cause) {
+        lastError = new ProviderUnavailableError(this.id, "embed request failed", cause);
+      }
     }
-    const payload = (await response.json()) as { embeddings: number[][] };
-    return payload.embeddings;
+    throw lastError;
   }
 
   async vision(req: VisionRequest): Promise<VisionResult> {
