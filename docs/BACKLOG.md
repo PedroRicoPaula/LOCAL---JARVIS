@@ -530,15 +530,47 @@ design rather than requiring a new one.
   `system_health` also given the same multi-lane backstop preemptively
   (already broke once, ADR-024, with zero structural safety net). See
   ADR-030.
-- **Open, not fixed -- `tasks`, `brief`, `weather` are still
-  `converse`-only, same pattern class as the three skills above that
-  have now broken live at least once each.** No direct evidence yet
-  that `complete_task`/`morning_brief`/`current_weather` misroute (this
-  audit found `launcher`/`media`/`shopping_list`/`system_health` broke,
-  didn't find evidence these three have), so left alone rather than
-  guessed at -- but worth a look the moment any of them goes quiet in
-  real use, rather than rediscovering the same root cause a fourth
-  time. See ADR-030's closing note.
+- ~~`tasks`, `brief`, `weather` were still `converse`-only~~ -- **all
+  three fixed 2026-08-07.** `weather.current_weather` fixed live
+  (`["converse", "see"]`, a real misroute found in the owner's own
+  session -- see the same day's ADR). `tasks`'s three intents and
+  `brief.morning_brief` hardened preemptively (`["converse", "act"]`)
+  before any live failure, same reasoning `system_health` already got
+  in ADR-030. Re-ran `bench/bench_skill_routing.ts` after each change
+  (91.4% -> regression found and fixed same pass, see the `launcher`
+  entry below -- then reconfirmed clean).
+- **A second real regression found by that same benchmark run, fixed
+  the same pass:** adding `close_app`'s PT examples introduced a real
+  collision with `open_app` -- "abre o Cursor se faz favor" (open
+  Cursor) started dispatching to `close_app` instead, at high
+  confidence (0.832, no disambiguation involved). Root-caused with real
+  `mxbai-embed-large` cosine scores, not guessed: "fecha o Cursor"
+  scored *higher* against the query (0.8325) than open_app's own
+  near-identical "abre o Cursor" (0.8156) -- the embedding model
+  weighs the shared noun ("Cursor") more than the differing verb
+  (abre/fecha). Fixed by removing all PT app-name overlap between
+  `open_app`'s and `close_app`'s own examples (Spotify/Terminal/Safari
+  for close, Cursor/Finder/calculadora stay open-only); verified with
+  real re-measured scores before shipping, not assumed fixed from the
+  theory alone.
+  **Follow-up, same day: the fix is confirmed correct at the embedding
+  stage but the benchmark still occasionally misses this exact case --
+  a different, already-known problem, not a new one.** Re-running
+  `matchUtterance` directly against the real, full 261-example index:
+  `launcher.open_app` now correctly scores highest for "abre o Cursor
+  se faz favor" (0.8156, `close_app` no longer competitive at all) --
+  but the runner-up (`system_health.check_system`, 0.7414) sits only
+  0.074 below it, just under `DISPATCH_MARGIN` (0.08), so this specific
+  phrasing always falls through to `disambiguate()`'s own LLM call
+  rather than auto-dispatching. Three consecutive benchmark runs the
+  same night landed 91.4% / 88.6% / 91.4% -- entirely attributable to
+  disambiguation's own run-to-run reliability under heavy real API
+  usage (this session made a lot of live NIM/Ollama calls), the exact
+  same already-documented gap as the "peanuts" entry below (ADR-038:
+  "needs real per-skill logic... not attempted"), not a new regression.
+  Confirmed the embedding layer itself is fully deterministic (5
+  repeated calls on identical input, cosine similarity 1.000000 every
+  time) before concluding this, not assumed.
 - **Open, not fixed, root-caused more precisely (2026-08-06) -- not a
   simple example collision after all, the actual mechanism is deeper.**
   "I don't eat peanuts, I'm allergic" dispatched to `shopping_list.
