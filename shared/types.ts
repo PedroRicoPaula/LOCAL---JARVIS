@@ -77,6 +77,16 @@ export type Capability =
   | "FS_READ"
   | "CAMERA"
   | "NET_READ"
+  // Opening/closing an app, project, or website -- owner request,
+  // 2026-08-07: low-risk, immediately visible (a window opens/closes),
+  // trivially reversible, and the repeated approval-per-open was pure
+  // friction with no real safety benefit. Deliberately narrower than
+  // all of SHELL_EXEC: media control, volume/brightness, clipboard
+  // write, and screenshot stay SHELL_EXEC/yellow -- not part of this
+  // request, different risk profile (clipboard/screenshot can expose
+  // sensitive content; this tier is reserved for "opens/closes a
+  // window," nothing that reads or captures anything).
+  | "APP_CONTROL"
   // yellow — requires approval
   | "MEMORY_WRITE"
   | "FS_WRITE"
@@ -100,6 +110,7 @@ export const GREEN_CAPABILITIES: readonly Capability[] = [
   "FS_READ",
   "CAMERA",
   "NET_READ",
+  "APP_CONTROL",
 ] as const;
 
 export type ApprovalState =

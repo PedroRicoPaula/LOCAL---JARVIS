@@ -17,6 +17,7 @@ export type Capability =
   | "FS_READ"
   | "CAMERA"
   | "NET_READ"
+  | "APP_CONTROL"
   | "MEMORY_WRITE"
   | "FS_WRITE"
   | "GIT_WRITE"

@@ -36,6 +36,56 @@ test("a green-tier action runs unprompted and is still logged", async () => {
   assert.equal(audit[0]?.event, "green_auto_run");
 });
 
+test("a green-tier action with a registered executor actually calls it -- the real bug this fixes", async () => {
+  const calls: unknown[] = [];
+  const gate = new Gate(new DatabaseSync(":memory:"), KEY, {
+    CAMERA: async (payload) => {
+      calls.push(payload);
+      return { ok: true, result: { opened: true } };
+    },
+  });
+  const action: ProposedAction = { capability: "CAMERA", humanSummary: "do the thing", payload: { x: 1 } };
+
+  const outcome = await gate.propose(action, "some-skill");
+
+  assert.deepEqual(calls, [{ x: 1 }]);
+  assert.deepEqual(outcome, { ok: true, result: { opened: true } });
+  const audit = auditRows(gate);
+  assert.deepEqual(
+    audit.map((a) => a.event),
+    ["green_auto_run", "executed"],
+  );
+});
+
+test("a green-tier action whose executor fails reports the failure honestly", async () => {
+  const gate = new Gate(new DatabaseSync(":memory:"), KEY, {
+    CAMERA: async () => ({ ok: false, error: "camera permission denied" }),
+  });
+  const action: ProposedAction = { capability: "CAMERA", humanSummary: "do the thing", payload: { x: 1 } };
+
+  const outcome = await gate.propose(action, "some-skill");
+
+  assert.deepEqual(outcome, { ok: false, reason: "error", detail: "camera permission denied" });
+  const audit = auditRows(gate);
+  assert.deepEqual(
+    audit.map((a) => a.event),
+    ["green_auto_run", "execution_failed"],
+  );
+});
+
+test("a green-tier action whose executor throws is treated as a failure, not an unhandled rejection", async () => {
+  const gate = new Gate(new DatabaseSync(":memory:"), KEY, {
+    CAMERA: async () => {
+      throw new Error("boom");
+    },
+  });
+  const action: ProposedAction = { capability: "CAMERA", humanSummary: "do the thing", payload: { x: 1 } };
+
+  const outcome = await gate.propose(action, "some-skill");
+
+  assert.deepEqual(outcome, { ok: false, reason: "error", detail: "boom" });
+});
+
 test("a yellow-tier action blocks until answered", async () => {
   const gate = freshGate();
   const action: ProposedAction = { capability: "MEMORY_WRITE", humanSummary: "write something", payload: { x: 1 } };

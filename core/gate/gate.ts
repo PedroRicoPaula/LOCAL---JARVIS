@@ -109,7 +109,36 @@ export class Gate extends EventEmitter {
 
     if (tier === "green") {
       this.logAudit(null, "green_auto_run", { capability: action.capability, skillId, humanSummary: action.humanSummary });
-      return { ok: true, result: action.payload };
+      const executor = this.executors[action.capability];
+      // No registered executor (true for every green capability so far
+      // -- CAMERA/MEMORY_READ/FS_READ/NET_READ are all read straight off
+      // ctx.camera/ctx.memory/ctx.fs or a plain fetch, never through
+      // propose()) -- same "nothing to actually run" shape `decide()`
+      // already has for an unregistered yellow capability.
+      if (!executor) {
+        return { ok: true, result: action.payload };
+      }
+      // A real bug, found live 2026-08-07 building the first green
+      // capability that *does* need a real executor (APP_CONTROL): this
+      // branch used to return `{ok: true}` without ever calling the
+      // executor at all, so "runs unprompted" (this class's own
+      // docstring) silently meant "never actually runs." Mirrors
+      // `decide()`'s own executor-invocation shape below, minus the
+      // approval-row/nonce/signature machinery green tier has no use
+      // for (skipping the wait is the whole point).
+      let execResult: { ok: boolean; result?: unknown; error?: string };
+      try {
+        execResult = await executor(action.payload);
+      } catch (cause) {
+        execResult = { ok: false, error: cause instanceof Error ? cause.message : String(cause) };
+      }
+      if (execResult.ok) {
+        this.logAudit(null, "executed", { capability: action.capability, skillId, result: execResult.result ?? null });
+        return { ok: true, result: execResult.result ?? action.payload };
+      }
+      const errorDetail = execResult.error ?? "unknown";
+      this.logAudit(null, "execution_failed", { capability: action.capability, skillId, error: errorDetail });
+      return { ok: false, reason: "error", detail: errorDetail };
     }
 
     const id = ulid();

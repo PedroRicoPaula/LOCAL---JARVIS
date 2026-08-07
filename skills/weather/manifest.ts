@@ -23,13 +23,28 @@ export const manifest: SkillManifest = {
         "weather today",
         "do I need a jacket",
         "what's it like outside",
+        "give me the weather right now in Lisbon",
         // PT-PT paraphrases (ADR-033)
         "como está o tempo",
         "vai chover",
         "está frio lá fora",
         "preciso de casaco",
       ],
-      lanes: ["converse"],
+      // Multi-lane, not just `converse` -- found live, 2026-08-06: "Give
+      // me the weather right now, em Ponta Delgada, Açores." (a longer,
+      // code-switched sentence naming a real place) classified as `see`,
+      // not `converse`. `dispatch()` filters skill candidates to the
+      // classified lane before the embedding match ever runs
+      // (core/skills/dispatch.ts), so a converse-only declaration made
+      // this unreachable for that exact phrasing regardless of score --
+      // the same root cause and same fix as `look.describe` (this same
+      // day) and `media.now_playing` (ADR-026/030). The fallback that
+      // caught it (general conversation) then made things worse: it
+      // parroted an unrelated prior forecast-refusal line from its own
+      // recent-context window instead of admitting it didn't know,
+      // rather than actually answering -- fixed by making this
+      // reachable again, not by patching the fallback's honesty.
+      lanes: ["converse", "see"],
     },
   ],
 

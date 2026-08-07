@@ -2,14 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runShellAction } from "../shell.ts";
 
-test("dispatches open_app, open_url, media_control, set_volume, set_brightness to their real handlers", async () => {
+test("dispatches media_control, set_volume, set_brightness to their real handlers", async () => {
   // These hit the real executors with no injected fetchFn -- each one's
-  // own module has full fake-based coverage already (apps/browser/media/
+  // own module has full fake-based coverage already (media/
   // systemControls .test.ts). This just proves the dispatcher routes by
   // `action` correctly, using payloads guaranteed to fail validation
   // fast (before any real execFile call) so it stays offline.
-  assert.equal((await runShellAction({ action: "open_app" })).ok, false); // missing app
-  assert.equal((await runShellAction({ action: "open_url", url: "not a url" })).ok, false);
   assert.equal((await runShellAction({ action: "media_control", command: "not_real" })).ok, false);
   assert.equal((await runShellAction({ action: "set_volume", level: 999 })).ok, false);
   assert.equal((await runShellAction({ action: "set_brightness", level: 999 })).ok, false);

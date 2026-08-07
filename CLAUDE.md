@@ -170,9 +170,20 @@ are three tiers and they are not negotiable by a model at runtime:
 
 | Tier | Capabilities | Behaviour |
 |---|---|---|
-| **Green** | `MEMORY_READ`, `FS_READ` (whitelist only), `CAMERA`, `NET_READ` | Runs automatically. Logged. |
+| **Green** | `MEMORY_READ`, `FS_READ` (whitelist only), `CAMERA`, `NET_READ`, `APP_CONTROL` | Runs automatically. Logged. |
 | **Yellow** | `FS_WRITE`, `GIT_WRITE`, `SHELL_EXEC`, `MEMORY_WRITE`, `WEBHOOK` | Requires approval. Blocks until answered or expired. |
 | **Red** | Credential access, `rm`, package publish, anything that moves money, anything that sends a message to another human | Never automatic. Never proposed by a model. Only reachable by the owner typing it. |
+
+`APP_CONTROL` (added 2026-08-07, owner request): opening/closing an app,
+project, or website — a window appearing/disappearing, immediately
+visible, trivially reversible. Deliberately narrow: media control,
+volume/brightness, clipboard read/write, and screenshots stay
+`SHELL_EXEC`/yellow — they can expose or change something the owner
+can't immediately see and undo the way a window can. Any future
+capability that deletes something (files, messages, anything not
+trivially recoverable) stays yellow at minimum, red if it's
+irreversible/`rm`-class — this tier is not a precedent for widening
+`SHELL_EXEC` wholesale.
 
 "Only reachable by the owner typing it" survives voice-first design
 intact: the *content* of a red-tier action (e.g. a message to send) can

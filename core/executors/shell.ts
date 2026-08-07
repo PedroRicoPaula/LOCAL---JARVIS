@@ -4,10 +4,14 @@
  * `payload.action` to the actual handler -- each one its own small,
  * independently-tested module. Adding a new `SHELL_EXEC` action means
  * adding a case here, not a new capability.
+ *
+ * `open_app`/`open_url` moved to `APP_CONTROL` (`core/executors/
+ * appControl.ts`, 2026-08-07) -- opening/closing a window is lower risk
+ * than everything left here (clipboard/screenshot can expose sensitive
+ * content, volume/brightness/media/focus are minor but still real system
+ * state changes), so it no longer needs a per-open approval click.
  */
 
-import { openApp } from "./apps.ts";
-import { openUrl } from "./browser.ts";
 import { readClipboard, writeClipboard } from "./clipboard.ts";
 import { setFocusMode } from "./focusMode.ts";
 import { controlMedia } from "./media.ts";
@@ -18,10 +22,6 @@ export async function runShellAction(payload: unknown): Promise<{ ok: boolean; r
   const action = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>)["action"] : undefined;
 
   switch (action) {
-    case "open_app":
-      return openApp(payload);
-    case "open_url":
-      return openUrl(payload);
     case "media_control":
       return controlMedia(payload);
     case "set_volume":

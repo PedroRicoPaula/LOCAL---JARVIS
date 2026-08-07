@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { capabilityTier } from "../gate.ts";
 
 test("green capabilities run unprompted", () => {
-  for (const c of ["MEMORY_READ", "FS_READ", "CAMERA", "NET_READ"] as const) {
+  for (const c of ["MEMORY_READ", "FS_READ", "CAMERA", "NET_READ", "APP_CONTROL"] as const) {
     assert.equal(capabilityTier(c), "green", c);
   }
 });

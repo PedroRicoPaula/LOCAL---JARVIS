@@ -25,6 +25,7 @@ import { connectWithRetry, readLines, sendLine } from "./ipc.ts";
 import { createIpcCameraHandle, type EyesEventSource } from "./skills/camera.ts";
 import { generalConversationReply } from "./converse.ts";
 import { createDashboardHistory } from "./dashboardHistory.ts";
+import { runAppControlAction } from "./executors/appControl.ts";
 import { createMcpToolExecutor } from "./executors/mcp.ts";
 import { createWriteFactExecutor } from "./executors/memory.ts";
 import { runShellAction } from "./executors/shell.ts";
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
   const mcpRegistry = await setupMcpRegistry();
   const gate = new Gate(db, await getSigningKey(), {
     SHELL_EXEC: runShellAction,
+    APP_CONTROL: runAppControlAction,
     MEMORY_WRITE: createWriteFactExecutor(memory),
     MCP_TOOL_CALL: createMcpToolExecutor(mcpRegistry),
   });
@@ -261,7 +263,14 @@ async function main(): Promise<void> {
       history.recordError(errorEvent);
       const fallback = "Something went wrong handling that. I've logged the error.";
       conversation.say(fallback);
-      wsHub.broadcast({ type: "transcript", text: fallback, final: true, speaker: "jarvis" });
+      // Durable, not just a live WS broadcast -- found live, 2026-08-06:
+      // a real ctx.ask() timeout left no trace at all in /api/events,
+      // only in the ephemeral WS stream a connected tab happened to
+      // catch. A turn that failed is still part of the conversation
+      // history; hiding it from a later dashboard reload/query is its
+      // own kind of dishonesty (CLAUDE.md § 6).
+      const fallbackEvent = memory.appendEvent({ kind: "response", actor: "jarvis", content: fallback, sessionId: SESSION_ID });
+      wsHub.broadcast({ type: "transcript", text: fallback, final: true, speaker: "jarvis", eventId: fallbackEvent.id });
     } finally {
       wsHub.broadcast({ type: "state", value: "idle" });
     }

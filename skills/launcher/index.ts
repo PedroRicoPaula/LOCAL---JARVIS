@@ -1,9 +1,14 @@
 /**
- * skills/launcher/index.ts — opens apps and projects, hands-free. Every
- * actual open goes through `ctx.propose({capability: "SHELL_EXEC", ...})`
- * -- this skill never touches `core/executors/apps.ts` directly (it
- * can't; ESLint blocks the import) and never assumes something happened
- * just because it asked. `listProjectDirs` is only ever a directory
+ * skills/launcher/index.ts — opens/closes apps and projects, hands-free,
+ * no approval needed (`APP_CONTROL` is green-tier, 2026-08-07). Every
+ * actual open/close still goes through
+ * `ctx.propose({capability: "APP_CONTROL", ...})` -- this skill never
+ * touches `core/executors/apps.ts` directly (it can't; ESLint blocks the
+ * import) and never assumes something happened just because it asked;
+ * green just means the gate runs the real executor immediately instead
+ * of waiting on a click, not that nothing checks the result
+ * (`Gate.propose()`'s own green-tier executor call still reports a real
+ * failure honestly). `listProjectDirs` is only ever a directory
  * *listing* (names, not contents) under one fixed root, through
  * `ctx.fs.listDir` -- CLAUDE.md § 5's "FS_READ is whitelist, not
  * blacklist" now has a real enforcement mechanism behind it
@@ -52,34 +57,53 @@ for well-known sites/companies (e.g. "GitHub" -> https://github.com). No
 quotes, no extra words. If nothing resembling a website is stated,
 respond with exactly: NONE`;
 
+const EXTRACT_CLOSE_APP_SYSTEM = `Extract just the application name the owner wants closed/quit. Respond with the
+app name only, capitalized the way a macOS app is normally named (e.g.
+"Cursor", "Safari", "Calculator"). No quotes, no extra words. If no app is
+named, respond with exactly: NONE`;
+
 // Trailing punctuation on an app name would reach `open -a "X."` --
 // stripped the same way skills/tasks found it needed live.
 function extractName(ctx: SkillContext, system: string, utterance: string): Promise<string | null> {
   return extractOrNull(ctx, system, utterance, { maxTokens: 20, stripTrailingPunctuation: true, catchErrors: true });
 }
 
-function speechForOutcome(app: string, outcome: ApprovalOutcome): string {
-  if (outcome.ok) return `Opened ${app}.`;
-  if (outcome.reason === "rejected") return `Okay, not opening ${app}.`;
-  if (outcome.reason === "expired") return `The request to open ${app} expired before you answered.`;
-  return `I couldn't open ${app} -- ${outcome.detail ?? "something went wrong"}.`;
+// `APP_CONTROL` is green-tier (auto-runs, `Gate.propose()`'s own
+// green-tier executor call) -- an owner can no longer reject or let this
+// expire, so "rejected"/"expired" outcomes are structurally unreachable
+// here now (they were real, live paths back when this was `SHELL_EXEC`).
+// The only way `outcome.ok` is false today is a real executor failure.
+function speechForOutcome(app: string, outcome: ApprovalOutcome, verb: "open" | "close"): string {
+  if (outcome.ok) return verb === "open" ? `Opened ${app}.` : `Closed ${app}.`;
+  return `I couldn't ${verb} ${app} -- ${outcome.detail ?? "something went wrong"}.`;
 }
 
 async function proposeOpen(ctx: SkillContext, app: string, path: string | undefined, humanSummary: string): Promise<{ speech: string }> {
   const payload = path ? { action: "open_app" as const, app, path } : { action: "open_app" as const, app };
-  const outcome = await ctx.propose({ capability: "SHELL_EXEC", humanSummary, payload });
-  const speech = speechForOutcome(app, outcome);
+  const outcome = await ctx.propose({ capability: "APP_CONTROL", humanSummary, payload });
+  const speech = speechForOutcome(app, outcome, "open");
+  ctx.say(speech);
+  return { speech };
+}
+
+async function proposeClose(ctx: SkillContext, app: string): Promise<{ speech: string }> {
+  const outcome = await ctx.propose({
+    capability: "APP_CONTROL",
+    humanSummary: `Close ${app}`,
+    payload: { action: "close_app" as const, app },
+  });
+  const speech = speechForOutcome(app, outcome, "close");
   ctx.say(speech);
   return { speech };
 }
 
 async function proposeOpenUrl(ctx: SkillContext, url: string): Promise<{ speech: string }> {
   const outcome = await ctx.propose({
-    capability: "SHELL_EXEC",
+    capability: "APP_CONTROL",
     humanSummary: `Open ${url}`,
     payload: { action: "open_url" as const, url },
   });
-  const speech = speechForOutcome(url, outcome);
+  const speech = speechForOutcome(url, outcome, "open");
   ctx.say(speech);
   return { speech };
 }
@@ -106,6 +130,17 @@ export function createLauncherSkill(deps: LauncherDeps = { listProjectDirs: real
             return { speech };
           }
           return proposeOpen(ctx, trimmed, undefined, `Open ${trimmed}`);
+        }
+
+        case "close_app": {
+          const app = (await extractName(ctx, EXTRACT_CLOSE_APP_SYSTEM, input.utterance)) ?? (await ctx.ask("Which app?"));
+          const trimmed = app.trim();
+          if (!trimmed) {
+            const speech = "I didn't catch which app.";
+            ctx.say(speech);
+            return { speech };
+          }
+          return proposeClose(ctx, trimmed);
         }
 
         case "list_projects": {
