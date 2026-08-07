@@ -3310,3 +3310,96 @@ answered correctly on a simpler one -- a real, measured data point
 behind this phase's NIM-primary decision, not just ADR-001's
 a-priori hardware hypothesis), and the full core+eyes+dashboard
 Playwright run -- recorded in `PROGRESS.md`'s Phase 8 closing log.
+
+---
+
+## ADR-046 — `APP_CONTROL`: a new green capability, and the `Gate.propose()` bug it exposed
+
+**Status:** accepted
+
+**Context.** Pedro used the real, live `make dev` stack the night Phase 8
+closed and hit three real bugs (no "what can you do" skill, a weather
+lane misroute, an unlogged `ask()` timeout) plus gave a direct product
+instruction: opening/closing apps should no longer need a per-action
+approval click; only a genuinely destructive action (none exist yet)
+should stay gated. Full bug list and evidence trail in `PROGRESS.md`.
+This ADR covers the capability-tier decision and the real bug building
+it exposed; the three smaller live-testing bugs are logged there, not
+here, since they're not architectural decisions.
+
+**Decisions.**
+
+- **`APP_CONTROL`, new green capability, narrowly scoped to
+  opening/closing an app, project, or website.** `open_app`/
+  `open_project`/`open_url` (already existed) and the new `close_app`
+  moved off `SHELL_EXEC`. Deliberately does *not* widen to the rest of
+  `SHELL_EXEC` -- media control, volume/brightness, clipboard
+  read/write, and screenshots stay yellow, since they can expose or
+  change something the owner can't immediately see and undo the way a
+  window appearing/disappearing can. `CLAUDE.md` § 5's own capability
+  table updated in the same commit -- the table is supposed to be the
+  live, accurate policy, not a historical snapshot.
+- **A real, previously-latent bug found building this:
+  `Gate.propose()`'s green-tier branch never called the registered
+  executor.** It audit-logged `"green_auto_run"` and returned `{ok:
+  true, result: action.payload}` unconditionally -- the *raw proposed
+  payload*, not any real result, and critically never invoked
+  `this.executors[capability]` at all. This was invisible until now
+  because no green capability before `APP_CONTROL` needed a real
+  executor: `CAMERA`/`MEMORY_READ`/`FS_READ`/`NET_READ` are all reached
+  directly (`ctx.camera`, `ctx.memory`, `ctx.fs`, a plain `fetch` in
+  skill code), never through `propose()`. The gap was covered by an
+  existing test (`"a green-tier action runs unprompted and is still
+  logged"`), but that test uses `MEMORY_READ` with no registered
+  executor on the test `Gate` instance -- it exercised the *tier logic*
+  faithfully, just never the *executor-invocation* path, because
+  nothing in the whole codebase had ever needed that combination
+  before. Fixed to mirror `decide()`'s own executor-invocation shape
+  (try/catch, `executed`/`execution_failed` audit events, honest
+  `ok:false` on real failure) minus the approval-row/nonce/signature
+  machinery green tier has no use for. Three new tests lock in the
+  fixed behavior (success, executor failure, executor throws).
+- **`close_app` via `osascript 'tell application X to quit'`, not
+  `pkill`.** A graceful quit (lets the app prompt to save, run its own
+  shutdown handlers) over a bare signal. `execFile` array args throughout
+  (`apps.ts`'s own established pattern) means no shell is ever invoked;
+  the one AppleScript-specific risk (a literal `"` in an app name
+  breaking out of the quoted string) is rejected outright rather than
+  escaped, since a real macOS app name never legitimately contains one.
+- **A second real bug found live-testing `close_app` itself, not
+  written in this ADR's first draft:** "close Calculator" classified as
+  `reflex` (the lane classifier's own reflex examples include "stop,
+  cancel, pause" -- "close" reads close enough), and without `reflex`
+  declared on `close_app`, `dispatch.ts`'s lane filter dropped it from
+  the candidate list before the embedding match ever ran --
+  disambiguation then picked `media.pause_music` instead (it does
+  declare `reflex`), a live, real misroute that tried to pause Spotify
+  in response to "close Calculator." First looked like a hang (the
+  resulting `SHELL_EXEC` proposal correctly, silently waited for a real
+  approval that nothing was providing -- yellow tier working exactly as
+  designed, not a bug); root-caused by adding temporary debug logging
+  to `launcher`'s own `close_app` case, confirming it was never reached
+  at all. Fixed the same way as every other lane gap this phase:
+  declare the lane it actually lands on (`["converse", "act",
+  "reflex"]`).
+
+**Consequences.**
+- `shared/types.ts` and `ui/src/lib/types.ts` (hand-kept mirror) both
+  gained `APP_CONTROL`; `core/skills/loader.ts`'s `VALID_CAPABILITIES_SET`
+  (a `Record<Capability, true>`, ADR-035's own drift guard) caught the
+  missing key as a real compile error, exactly as designed.
+- `core/executors/shell.ts` lost its now-dead `open_app`/`open_url`
+  cases; new `core/executors/appControl.ts` dispatches `open_app`/
+  `close_app`/`open_url` for the new capability, reusing `apps.ts`/
+  `browser.ts`'s existing executors unchanged.
+- `skills/launcher`'s `speechForOutcome` simplified: `rejected`/
+  `expired` outcomes are now structurally unreachable for anything
+  routed through `APP_CONTROL` (green tier never produces them), so
+  those branches were removed rather than left as dead code.
+- 25 new tests total across this change and the three smaller
+  live-testing fixes (`about`, `appControl`, `apps` close_app, `gate`
+  green+executor, `launcher` close_app). 399 tests, `make check` green
+  throughout. Live-verified end to end against a fresh isolated
+  instance -- real `open Calculator`/`close Calculator` via the actual
+  `osascript`/`open` calls, zero pending approvals either time, real
+  process confirmed gone after close.

@@ -2499,6 +2499,77 @@ build all green throughout every commit this phase. Commits:
 `812077d`, `450902e`, `99ea64a`, `a7c0320`, `7b208c9`, `c5dcb3a`,
 `31cd22c`, `981a467`, `7835c97`, `b47d539` on `phase/08-camera-look`.
 
+**Post-completion: real bugs from Pedro's own live `make dev` session,
+2026-08-07.** Phase 8 was reported complete and awaiting Phase 9
+approval; instead Pedro spent real time actually talking to the running
+system and hit real, reproducible bugs, then asked for them fixed
+directly plus a product change (open/close apps shouldn't need approval)
+-- CLAUDE.md § 2's error-handling process, not Phase 9 scope, so this
+stayed on `phase/08-camera-look` rather than opening a new phase branch
+for bug fixes.
+
+Diagnosed from the real `data/jarvis.db` and `/api/events`/`/api/thoughts`
+of Pedro's actual running session (not reproduced synthetically first):
+
+1. **No skill answers "what can you do."** Three separate real phrasings
+   that night ("dá-me uma lista das funcionalidades," "what functionalities
+   do you can do for me," "what skills do you have") all correctly
+   classified as `converse`, but with nothing to actually answer, the
+   disambiguator picked the least-wrong of an irrelevant shortlist every
+   time (`shopping_list.list_items` once, `tasks.list_tasks` twice) --
+   "The shopping list is empty." is not an answer to "what skills do you
+   have." Fixed with a new `skills/about` (fixed text, no model call).
+2. **Weather lane misroute, same root cause as this phase's own
+   `look.describe` bug, different skill.** "Give me the weather right
+   now, em Ponta Delgada, Açores." classified as `see`; `weather.
+   current_weather` was `converse`-only, so `dispatch.ts`'s lane filter
+   dropped it before the embedding match ever ran. General conversation
+   caught the fallthrough and made it worse: it parroted an unrelated
+   prior forecast-refusal line from its own context window instead of
+   answering or admitting it didn't know. Fixed by declaring `["converse",
+   "see"]`, matching the `look.describe`/`media.now_playing` precedent.
+3. **A real `ctx.ask()` timeout left no durable trace.** The generic
+   fallback ("Something went wrong handling that...") was only ever
+   broadcast live over WS, never written to `events` -- invisible on a
+   dashboard reload. Traced by cross-referencing `/api/errors` (had the
+   raw error), `/api/events` (silent on it), and timing math (~31s after
+   the utterance, matching `ask()`'s 30s default) before the gap was
+   even visible. Fixed: the fallback path now calls `memory.appendEvent`
+   like every other response.
+4. **Product change: `APP_CONTROL`, a new green capability.** Owner
+   request -- opening/closing an app, project, or website no longer
+   needs a per-action approval click; only a genuinely destructive
+   action (none exist yet) stays gated. Full reasoning, plus a real
+   latent bug this exposed (`Gate.propose()`'s green tier never actually
+   called the registered executor -- fixed) and a second live-caught bug
+   (`close_app` classified as `reflex`, misrouted to `media.pause_music`,
+   fixed the same way as everything else this phase: declare the lane it
+   actually lands on) -- all in ADR-046.
+
+**Live-verified end to end, not just unit-tested:** stood up a fresh,
+fully isolated `core` instance (its own DB, its own ports, fake `ears`/
+`voice` stub servers reusing the real `senses/ipc.py` protocol) so none
+of this touched Pedro's actual running session, then drove it directly
+over the real WebSocket/HTTP API (no browser needed for these fixes).
+Confirmed live: `about` answers correctly; the exact failing weather
+utterance now reaches `weather.current_weather`; the `ask()`-timeout
+fallback is now a real, persisted `events` row; `open Calculator` /
+`close Calculator` both execute for real (`osascript`/`open`, process
+confirmed present then gone) with zero pending approvals either time.
+
+**A real mistake made and immediately fixed during this pass:** a
+`pkill -f "next dev"` meant to stop only an isolated test dashboard
+instance also matched and killed Pedro's own real dashboard dev server
+(his `core` process was never affected). Caught within the same turn by
+checking the specific PID before believing the pattern-match was safe;
+restarted his dashboard on its original port before continuing, and
+every process kill after that point in this session was by exact PID,
+never by name/pattern again.
+
+25 new tests. 399 total, `make check` green throughout. Committed as
+`57bbe3b` (code) on `phase/08-camera-look`; docs in this same commit
+plus ADR-046.
+
 ---
 
 ## Key numbers to record as we go
