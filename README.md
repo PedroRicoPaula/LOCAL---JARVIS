@@ -129,7 +129,32 @@ credentials degrade gracefully -- `core` logs "gmail MCP server not
 configured" and starts normally either way; the `gmail` skill just says
 so honestly if asked to check email before this is done.
 
-**3d. Optional: Do Not Disturb / Focus toggle**
+**3d. Optional: GitHub (via GitHub's official MCP server)**
+
+Added 2026-08-08. Lists the owner's repositories through the `github`
+skill -- read-only, never writes (see `skills/github/persona.md`). Real-
+checked before building, not guessed: the remote server
+(`https://api.githubcopilot.com/mcp/`) is free to use with a personal
+access token; only Copilot-premium-tier tools would need a paid plan,
+and nothing this skill uses does. One-time setup, by hand, no code
+needed:
+
+1. Go to <https://github.com/settings/personal-access-tokens/new> and
+   create a fine-grained personal access token, read-only, scoped to
+   whichever repositories you want JARVIS able to list (or all
+   repositories, your choice)
+2. Store it:
+
+   ```bash
+   security add-generic-password -a "$USER" -s jarvis-github-pat -w 'YOUR_TOKEN'
+   ```
+
+`core` picks up the stored token next time it starts. A missing token
+degrades gracefully -- `core` logs "github MCP server not configured"
+and starts normally either way; the `github` skill just says so
+honestly if asked to list repos before this is done.
+
+**3e. Optional: Do Not Disturb / Focus toggle**
 
 Added 2026-08-06. macOS has no public AppleScript/`defaults` control
 for Focus modes anymore -- this goes through the Shortcuts app instead,

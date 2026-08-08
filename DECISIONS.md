@@ -3403,3 +3403,99 @@ here, since they're not architectural decisions.
   instance -- real `open Calculator`/`close Calculator` via the actual
   `osascript`/`open` calls, zero pending approvals either time, real
   process confirmed gone after close.
+
+## ADR-047 — GitHub as the second real MCP server; extracted the shared skill helper
+
+**Status:** accepted
+
+**Context.** 2026-08-08: after real end-to-end voice+camera testing (see
+`PROGRESS.md`'s dated entries) and fixing the two bugs it found (`core`
+sense-reconnect resilience, orphaned observation files), the owner asked
+for the full backlog to be organized and analyzed toward making JARVIS
+"cada vez mais poderoso e inteligente... que saiba trabalhar em tudo o que
+seja tecnologia." Presented the organized backlog (ROADMAP Phases 9-13
+plus every `docs/BACKLOG.md` track, including the new Personal Knowledge
+Brain idea logged that same day); the owner chose generalizing the MCP
+tool layer over continuing straight to Phase 9, with GitHub as the first
+new server (most aligned with the stated goal) and explicitly kept
+`MCP_TOOL_CALL`'s capability tiering exactly as ADR-035 left it (every
+call yellow, no per-tool allowlist) despite fresh same-night evidence of
+real approval fatigue -- owner's own call, to revisit later with more
+usage data.
+
+Explored the existing MCP layer before planning rather than assuming --
+it was already far more generic than expected. `core/mcp/registry.ts`,
+`core/executors/mcp.ts`, `SkillContext.mcp`, and the `MCP_TOOL_CALL`
+capability/Gate wiring were all already fully server-agnostic (ADR-035
+built them for Gmail with this in mind). What was genuinely missing: no
+non-Google auth path existed (Gmail's whole `googleOAuth.ts` module is
+Google-specific), and the propose/outcome-handling shape
+`skills/gmail/index.ts` used was written inline, never extracted for a
+second skill to reuse. Confirmed live via web search (2026-08-08, not
+guessed -- this project has been burned guessing third-party API details
+before): GitHub's official remote MCP server
+(`https://api.githubcopilot.com/mcp/`) is free with a personal access
+token, `Authorization: Bearer <PAT>` over Streamable-HTTP -- the exact
+transport `realConnect()` already speaks, and a PAT is a single static
+secret through the *existing*, already-generic `getKeychainSecret()`
+(`core/router/keychain.ts`), needing no new auth module at all.
+
+**Decisions.**
+
+- **`core/mcp/setup.ts` registers `github` the same imperative way it
+  registers `gmail`** -- one `tryKeychainSecret("jarvis-github-pat")` +
+  one `registry.register({...})` call, degrading to "not configured" on
+  a missing secret. Deliberately did not generalize this into a
+  config-driven server list (a fixed, hand-curated set of servers is the
+  same explicit-registration philosophy `core/skills/registered.ts`
+  already uses for skills, ADR-035's own stated choice) -- two servers
+  isn't enough evidence a config format is worth the abstraction yet.
+- **New `skills/_shared/mcpTool.ts`**: `requireMcpServer()` and
+  `proposeMcpTool()` extract only the mechanical, identical-every-time
+  half of an MCP-backed skill (the connectivity check and the four-way
+  ok/rejected/expired/error branch) -- tool-matching and argument-
+  building stay in each skill, since those differ per server by design
+  and a one-size-fits-all helper would hide the "don't guess a
+  third-party server's tool names or argument shape" reasoning each
+  skill needs. `skills/gmail/index.ts` refactored to use both helpers in
+  the same change that introduced them, proving real reuse on day one
+  rather than a speculative abstraction -- `skills/gmail/index.test.ts`
+  passes unchanged in behavior.
+- **`skills/github`: one intent, `list_repos`**, matching Gmail's own
+  minimal-start precedent (`check_email` was its only intent too).
+  `findRepoListTool()` pattern-matches the real tool catalogue at
+  runtime (never a hardcoded tool name, same discipline
+  `skills/gmail`'s `findSearchTool` established) and
+  `hasNoRequiredArgs()` refuses to call a tool needing an argument this
+  skill has no value for, rather than guessing one blind.
+- **`docs/SKILLS.md` gained a new § 5b** documenting the MCP-backed-skill
+  pattern -- confirmed via exploration that zero mentions of MCP existed
+  in that doc before this, despite the pattern already existing in code
+  since ADR-035. Closes a real authoring-doc gap while there are two
+  real examples to point at instead of one.
+- **README gained a new § 3d** (GitHub PAT setup, fine-grained token,
+  read-only scopes) -- existing § 3d (Do Not Disturb/Focus toggle)
+  renumbered to § 3e. The stale `docs/BACKLOG.md` pointer to "README's
+  3d" for that section was updated in the same change.
+
+**Consequences.**
+- `core/skills/registered.ts` gained `skills/github/index.ts` -- 13
+  skills loaded now, up from 12.
+- 17 new tests (`skills/_shared/mcpTool.test.ts`: 7; `skills/github/
+  index.test.ts`: 10). 427 tests total, `make check` green throughout.
+- Live-verified against a fresh isolated `core` instance, no GitHub PAT
+  in Keychain: `core: github MCP server not configured (...)` logged,
+  `core` boots fine, `github` skill loads normally -- same graceful-
+  degradation shape Gmail's own missing-secret path already has.
+  Injected a real "what are my repos" utterance over the real WebSocket
+  (`utterance.inject`, not just a unit test): correctly dispatched to
+  `github.list_repos` (real lane classification + embedding match, not
+  scripted) and spoke the honest not-connected fallback.
+- **Owner-required, not yet done:** a real GitHub PAT in Keychain, and
+  confirming a real `tools/list`/`list_repositories` call against live
+  data -- this is the first real proof the whole `MCP_TOOL_CALL`
+  pipeline works end to end against a third-party server's live data,
+  since Gmail itself never got that far (blocked by Google's own bug,
+  ADR-037). `REPO_LIST_PATTERN` may need adjusting once the real tool
+  catalogue is visible -- GitHub's server exposes far more tools than
+  Gmail's, so the regex is a reasonable guess, not a verified match yet.

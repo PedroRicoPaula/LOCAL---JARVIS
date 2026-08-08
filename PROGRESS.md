@@ -18,9 +18,15 @@ real speakers via `say` acoustic loopback, real webcam, real NIM vision
 call) found three real bugs; two (`core`'s sense-reconnect gap, orphaned
 observation files) fixed and live-verified 2026-08-08, one (`ears`
 hang under heavy memory pressure) stays open pending reproduction. See
-the dated entries below for full detail. Next: organizing and
-prioritizing the full backlog (including the owner's Knowledge Brain
-idea, 2026-08-08) before deciding what comes before Phase 9.
+the dated entries below for full detail. Backlog organized and analyzed
+2026-08-08; owner chose generalizing the MCP tool layer next over
+Phase 9 -- GitHub added as the second real MCP server (ADR-047),
+`skills/_shared/mcpTool.ts` extracted and proven with both Gmail and
+GitHub, `docs/SKILLS.md` § 5b documents the pattern. `make check`: 427
+tests green. Owner-required: a real GitHub PAT in Keychain (README
+§ 3d) to confirm the pipeline against live third-party data. Next: to
+be decided with the owner -- more MCP servers, Phase 9, or the
+Knowledge Brain idea.
 **Branch:** `main`
 **Last updated:** 2026-08-08
 
@@ -2702,6 +2708,46 @@ reproduction before a blind fix.
 
 `make check`: 410 tests (up from 401 at Phase 8's own close), `tsc`/
 `ruff`/`pytest`/ESLint/UI build all green throughout.
+
+**Backlog organized and analyzed; GitHub added as the second real MCP
+server, 2026-08-08.** Owner asked for the full backlog (ROADMAP Phases
+9-13 plus every `docs/BACKLOG.md` track, including a new Personal
+Knowledge Brain idea logged that day) organized and analyzed toward
+making JARVIS more capable across "qualquer tecnologia." Presented the
+organized picture; owner chose generalizing the MCP tool layer over
+continuing straight to Phase 9. Full reasoning, decisions, and
+consequences in `DECISIONS.md`'s ADR-047 — short version:
+
+- Explored first, not assumed: the MCP plumbing built for Gmail
+  (ADR-035) was already fully server-agnostic. What was missing was a
+  second real example and a non-Google auth path.
+- **GitHub's official remote MCP server** registered in
+  `core/mcp/setup.ts` — a personal access token through the *existing*
+  generic Keychain helper, no new OAuth module needed (real-checked via
+  web search before building: free, PAT-based, same HTTP transport
+  `core/mcp/registry.ts` already speaks).
+- **`skills/_shared/mcpTool.ts`** (new): extracted the mechanical half
+  of an MCP-backed skill (connectivity check, ok/rejected/expired/error
+  handling) out of `skills/gmail/index.ts`, which was refactored to use
+  it the same day — proven reuse, not a speculative abstraction.
+- **`skills/github`** (new): one intent, `list_repos`, same
+  non-guessing discipline as Gmail (pattern-matches the real tool
+  catalogue at runtime, never a hardcoded tool name).
+- `docs/SKILLS.md` gained a new § 5b documenting the MCP-backed-skill
+  pattern (previously undocumented anywhere but code comments); README
+  gained § 3d (GitHub PAT setup), renumbering the old Focus-toggle
+  section to § 3e.
+- 17 new tests (427 total, `make check` green). Live-verified against
+  an isolated `core` instance with no PAT configured yet: graceful
+  degradation confirmed (same shape Gmail's own missing-secret path
+  already has), and a real "what are my repos" utterance injected over
+  the real WebSocket correctly dispatched to `github.list_repos` and
+  spoke the honest not-connected fallback.
+- **Owner-required, not yet done:** a real GitHub PAT in Keychain
+  (README § 3d has the steps) and confirming a real `tools/list` call
+  against live data — the first real end-to-end proof of the
+  `MCP_TOOL_CALL` pipeline against a third party, since Gmail itself
+  never got that far (ADR-037).
 
 ---
 

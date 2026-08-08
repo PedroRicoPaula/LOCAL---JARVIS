@@ -20,6 +20,7 @@
 import type { McpJsonSchema, McpToolInfo } from "../../core/mcp/registry.ts";
 import type { Skill, SkillContext } from "../../core/skills/types.ts";
 import { extractOrNull } from "../_shared/extract.ts";
+import { proposeMcpTool, requireMcpServer } from "../_shared/mcpTool.ts";
 import { manifest } from "./manifest.ts";
 
 const SEARCH_TOOL_PATTERN = /search|query|list.*(message|email|thread)/i;
@@ -62,10 +63,9 @@ export const skill: Skill = {
   manifest,
 
   async handle(input, ctx): Promise<{ speech: string }> {
-    if (!ctx.mcp.hasServer("gmail")) {
-      const speech = "Gmail isn't connected yet -- that needs a one-time setup I can't do myself.";
-      ctx.say(speech);
-      return { speech };
+    const notConnected = "Gmail isn't connected yet -- that needs a one-time setup I can't do myself.";
+    if (!requireMcpServer(ctx, "gmail", notConnected)) {
+      return { speech: notConnected };
     }
 
     const tools = ctx.mcp.listTools("gmail");
@@ -84,23 +84,22 @@ export const skill: Skill = {
     }
 
     const query = await extractQuery(ctx, input.utterance);
-    const outcome = await ctx.propose({
-      capability: "MCP_TOOL_CALL",
-      humanSummary: `Search Gmail: ${query}`,
-      payload: { serverId: "gmail", toolName: tool.name, arguments: { [argName]: query } },
-    });
-
-    let speech: string;
-    if (outcome.ok) {
-      const result = typeof outcome.result === "string" ? outcome.result.trim() : "";
-      speech = result ? result : "Nothing matched that in your Gmail.";
-    } else if (outcome.reason === "rejected") {
-      speech = "Okay, didn't check your email.";
-    } else if (outcome.reason === "expired") {
-      speech = "The request to check your email expired before you answered.";
-    } else {
-      speech = `Couldn't check your email -- ${outcome.detail ?? "something went wrong"}.`;
-    }
+    const speech = await proposeMcpTool(
+      ctx,
+      "gmail",
+      tool.name,
+      { [argName]: query },
+      `Search Gmail: ${query}`,
+      (result) => {
+        const text = typeof result === "string" ? result.trim() : "";
+        return text ? text : "Nothing matched that in your Gmail.";
+      },
+      {
+        rejected: "Okay, didn't check your email.",
+        expired: "The request to check your email expired before you answered.",
+        error: (detail) => `Couldn't check your email -- ${detail}.`,
+      },
+    );
     ctx.say(speech);
     return { speech };
   },

@@ -242,6 +242,74 @@ owner declares quantities; a static table converts them. See `SPEC.md` § 7.
 
 ---
 
+## 5b. MCP-backed skills
+
+A skill can call out to an external MCP server (Gmail, GitHub, and
+whatever's registered next in `core/mcp/setup.ts`) — `SkillContext.mcp`
+(`McpToolLister`) exposes exactly two read-only methods, `hasServer(id)`
+and `listTools(id)`. There is no `callTool` on `ctx.mcp` — a skill can
+*discover* what a server offers, but the only way to actually invoke a
+tool is `ctx.propose({capability: "MCP_TOOL_CALL", ...})`, same as any
+other gated action (§ 5's confirmation-loop rule applies here too, just
+usually without the multi-step ask/confirm — most MCP calls today are a
+single read, propose once, speak the result).
+
+**Never hardcode a third-party server's tool name or argument shape.**
+This project has been burned more than once guessing an external API's
+exact names ahead of a real, authorized connection — `skills/gmail` and
+`skills/github` both instead:
+
+1. Check `ctx.mcp.hasServer(id)` first — an honest "not connected"
+   fallback if the owner hasn't done the one-time setup yet.
+2. Pattern-match `ctx.mcp.listTools(id)` for the right tool (a regex over
+   the tool's name/description — see `skills/gmail/index.ts`'s
+   `findSearchTool` or `skills/github/index.ts`'s `findRepoListTool`),
+   rather than assuming a literal tool name that was never verified
+   against a live connection.
+3. Read the tool's own declared `inputSchema` to work out what argument(s)
+   it needs, rather than guessing a key — and say so honestly (never call
+   blind) when the schema doesn't map to anything this skill can supply.
+4. Build the payload — `{serverId, toolName, arguments}` — and propose it
+   through `skills/_shared/mcpTool.ts`'s two helpers rather than
+   hand-rolling the propose/outcome-handling boilerplate a third time:
+
+```ts
+import { proposeMcpTool, requireMcpServer } from "../_shared/mcpTool.ts";
+
+if (!requireMcpServer(ctx, "github", "GitHub isn't connected yet.")) {
+  return { speech: "GitHub isn't connected yet." };
+}
+
+const speech = await proposeMcpTool(
+  ctx, "github", tool.name, args,
+  "List GitHub repositories",       // humanSummary the owner sees on the approval
+  (result) => formatRepoList(result),
+  {
+    rejected: "Okay, didn't check your repositories.",
+    expired: "The request to list your repositories expired before you answered.",
+    error: (detail) => `Couldn't list your repositories -- ${detail}.`,
+  },
+);
+```
+
+`requireMcpServer`/`proposeMcpTool` only cover the mechanical, identical-
+every-time part (the connectivity check and the four-way ok/rejected/
+expired/error branch) — tool-matching and argument-building stay in each
+skill, since they're genuinely different per server and folding them into
+a shared helper would hide the "don't guess" reasoning above behind a
+one-size-fits-all call.
+
+`MCP_TOOL_CALL` is always yellow-tier — every call requires approval,
+regardless of server or tool, deliberately not trusting a server's own
+self-declared `readOnlyHint`/`destructiveHint` (`shared/types.ts`'s own
+docstring on the capability has the full reasoning). Registering a new
+server is `core/mcp/setup.ts`'s job (one `registry.register({id, url,
+getAccessToken})` call, degrading to "not configured" on a missing
+Keychain secret, same pattern for every server so far) — a skill never
+registers a server itself, only consumes one that's already there.
+
+---
+
 ## 6. Persona
 
 Each skill ships a `persona.md` fragment describing how *it* speaks. The core

@@ -33,8 +33,9 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   installed automatically — reports the gap plainly instead). ~~Do Not
   Disturb toggle~~ — **built 2026-08-06, ADR-042**, via Shortcuts.app
   (`shortcuts run`), the only Apple-supported automation surface left
-  for Focus modes. Owner-required setup (README's "3d") and a live
-  permission-dialog check, both still open.
+  for Focus modes. Owner-required setup (README's "3e", renumbered
+  2026-08-08 when the GitHub MCP section was inserted as "3d") and a
+  live permission-dialog check, both still open.
 - **Voice-authored Cursor/Claude Code prompts, with the owner still
   pressing send** — asked about directly (2026-08-04): JARVIS types a
   drafted prompt into Cursor's Claude Code panel via macOS UI scripting,
