@@ -94,6 +94,7 @@ export type ServerEvent =
   | { type: "camera.captured"; sessionId: string; frameId: string; path: string }
   | { type: "camera.closed"; sessionId: string; cause: "owner" | "idle" | "cap" | "error" }
   | { type: "health"; providers: Record<string, boolean> }
+  | { type: "sense.connection"; sense: "ears" | "voice" | "eyes"; connected: boolean }
   | { type: "error"; message: string; detail?: string; ts: number }
   | { type: "feedback"; eventId: string; rating: FeedbackRating };
 

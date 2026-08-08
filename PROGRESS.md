@@ -7,23 +7,27 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 7 — Dashboard — **closed, merged to `main`**
-**Status:** `core/ws.ts` + `core/http.ts` give `core` a live WebSocket
-channel and REST backfill (`/api/events`, `/api/skills`,
-`/api/approvals`) on one port (`JARVIS_DASHBOARD_PORT`, default 8787).
-`Gate` now extends `EventEmitter`; `core/main.ts`'s dispatch loop
-broadcasts real `transcript`/`thought` events, not synthetic ones. `ui/`
-is a fresh Next.js + shadcn/ui project (own `package.json`) with the
-Figma reference's dark/cyan visual language carried over: approval queue
-(expand-to-see-payload, approve/reject), live thought stream, transcript,
-timeline over `events`, skill health panel, a static camera indicator
-(Phase 8 will make it live). All four DoD checks verified live —
-Playwright driving real Chromium against the real running `core` process,
-not the MCP tool (unavailable this session) and not fakes. 137 TS tests +
-20 Python tests, `make check` green, `next build`/`next lint` clean.
-Next: 🛑 **SOAK 1** (see ROADMAP.md — two weeks of daily use before Phase
-8).
+**Phase:** 8 — Camera sessions + `look` — **closed, merged to `main`**
+**Status:** `senses/eyes` (camera daemon) built and tested; `core`
+wires a real `CameraHandle`, NIM + Ollama `vision()` providers on the
+`see` lane, and a `kind`-dispatched `MEMORY_WRITE` executor (`fact` |
+`observation`). `skills/look` (`open_camera`/`close_camera`/`describe`)
+live. Merged to `main` 2026-08-06 (`make check`: 401 tests green).
+Real end-to-end voice + camera testing done live 2026-08-07 (real mic,
+real speakers via `say` acoustic loopback, real webcam, real NIM vision
+call) found three real bugs; two (`core`'s sense-reconnect gap, orphaned
+observation files) fixed and live-verified 2026-08-08, one (`ears`
+hang under heavy memory pressure) stays open pending reproduction. See
+the dated entries below for full detail. Next: organizing and
+prioritizing the full backlog (including the owner's Knowledge Brain
+idea, 2026-08-08) before deciding what comes before Phase 9.
 **Branch:** `main`
+**Last updated:** 2026-08-08
+
+(Phase 7 — the dashboard: live WebSocket channel, REST backfill, `ui/`
+Next.js + shadcn/ui project, all four DoD checks Playwright-verified —
+closed and merged to `main`. 137 TS tests + 20 Python tests. See its own
+log below.)
 **Last updated:** 2026-08-04
 
 (Phase 6 — the gate: full `ApprovalRequest` lifecycle, HMAC signing,
@@ -2568,7 +2572,136 @@ never by name/pattern again.
 
 25 new tests. 399 total, `make check` green throughout. Committed as
 `57bbe3b` (code) on `phase/08-camera-look`; docs in this same commit
-plus ADR-046.
+plus ADR-046. `phase/08-camera-look` merged to `main` 2026-08-06
+(`make check`: 401 tests green).
+
+**Real end-to-end voice + camera test, 2026-08-07.** Owner authorized
+real mic/speaker/camera testing end to end (`CLAUDE.md` § 1's
+self-run tier, extended to cover what a fake genuinely can't stand in
+for). Acoustic loopback via macOS `say` through real speakers, picked
+up by the real continuous wake-word listener, against a real `make dev`
+stack — same methodology as Phase 1/2's own live tests.
+
+*Passed, real, unscripted:* `"Hey Jarvis, turn on the camera"` →
+wake word (score 0.999) → dispatch → `"Camera's on."` `"Hey Jarvis...
+what is this, can you describe it"` → real frame capture → real NIM
+vision call → spoken description of the actual room the webcam was
+pointed at → `MEMORY_WRITE` (`kind: "observation"`) correctly proposed
+and left pending, never auto-approved. `"Hey Jarvis, turn off the
+camera"` → `"Camera's off."` → `data/frames/` correctly emptied
+(ephemeral session frame deleted on close).
+
+*Three real bugs found, none fixed tonight (found during owner-
+requested testing, not part of a planned phase — logged per `CLAUDE.md`
+§ 0.7 rather than fixed ad hoc; owner to decide priority against Phase
+9):*
+
+1. **`senses/ears` hung indefinitely on a second wake-word capture in
+   the same running session.** First utterance (`open_camera`) worked;
+   the very next one (`describe`), triggered ~15s later in the same
+   `make dev` session, never produced a `"heard"` line or an error —
+   confirmed genuinely stuck (not just slow) via `sample`, still
+   unresolved after 260+ real seconds, well past both
+   `MAX_RECORDING_FRAMES`'s 32s hard cap and `WhisperServerTranscriber`'s
+   10s HTTP timeout, either of which should have fired regardless of
+   silence/noise. Root cause not fully pinned down live — machine was
+   under real, severe memory pressure at the time (`vm_stat`: ~64MB
+   free physical pages, consistent with ADR-001's already-documented
+   8GB-M1 constraint), which may starve the audio callback/worker
+   thread enough to prevent `ContinuousAudioSource`'s frame count ever
+   reaching its cap; a second, narrower theory (`arm()` not taking
+   effect before `_process_frame`'s early-return-if-`!armed` check, a
+   real race between `run_wakeword_forever`'s thread and
+   `_process_loop`'s worker thread) was not ruled out. Recovered by
+   restarting the whole stack, not by fixing the daemon in place —
+   needs real, focused reproduction (not under this session's own
+   heavy concurrent load) before a fix is attempted blind.
+2. **`core` has no reconnect logic if `ears` (or presumably `voice`)
+   dies mid-session — found as a direct side effect of #1.** Sending
+   `SIGTERM` to the stuck `ears` process to recover from bug #1 should
+   have let `core` and a fresh `ears` reconnect; instead `core`'s own
+   utterance-handling loop (`core/main.ts`'s bare
+   `for await (const message of readLines(earsSock))`, the last thing
+   in `main()`) went silently idle forever — no error, no log line, no
+   retry, confirmed via `sample` showing `core`'s HTTP/WS server (port
+   8787) still fully responsive throughout while the ears-reading path
+   never advanced. `connectWithRetry` is only called once, at boot.
+   Anything that kills the `ears` or `voice` connection after startup —
+   a daemon crash, `launchd` restarting it, the bug above — currently
+   requires restarting `core` itself to recover, silently. No dashboard
+   indicator surfaces this either. Worth fixing before this is depended
+   on daily.
+3. **Durable observation copies (`data/observations/*.jpg`) have no
+   cleanup path on reject or expiry.** By design (ADR-045), `look`
+   copies the captured frame to `data/observations/` immediately, before
+   the `MEMORY_WRITE` proposal is even created, so the image survives
+   `eyes`'s own idle/absolute-timeout session deletion while approval is
+   pending — correct and deliberate. But nothing ever deletes that copy
+   if the approval is rejected or simply expires (`DEFAULT_EXPIRY_MS`,
+   5 min) — confirmed live: tonight's real observation photo's approval
+   expired unactioned (owner chose to let it expire naturally rather
+   than decide, to observe the real behavior) and the JPEG is still on
+   disk. Every `describe` that isn't approved within 5 minutes leaves a
+   real photo on disk permanently — a real privacy/storage gap, not
+   theoretical, and in tension with `SPEC.md` § 7's "nothing is
+   persisted until approved" spirit even though the DB row itself
+   correctly never gets written.
+
+Also reconfirmed, not new: fact-extraction noise (already flagged,
+`docs/BACKLOG.md`) — two more `MEMORY_WRITE` (`fact-extraction`)
+proposals fired during this same short test session (`"prefs.camera =
+exists"` and one more), both expired unactioned like the observation
+above.
+
+All three findings added to `docs/BACKLOG.md`'s Annoyances section
+with full detail. No code changed for any of them that night — it was
+a test-and-report pass, per the owner's own request to test everything
+live and then get a professional assessment before deciding what's
+next.
+
+**Bugs #2 and #3 fixed and live-verified, 2026-08-08** (owner reviewed
+the report, asked to proceed with best judgment rather than defer
+either). Bug #1 (the `ears` hang) stays open — real root cause unclear,
+plausibly tied to that specific night's heavy concurrent memory
+pressure rather than a reproducible code defect, needs focused
+reproduction before a blind fix.
+
+- **`core/senseConnection.ts`** (new): wraps a sense's Unix socket so a
+  dropped connection reconnects with backoff (500ms → ×1.5, capped
+  10s) and resumes `readLines`-ing transparently, instead of the
+  silent permanent stall bug #2 found. `core/main.ts` now builds
+  `earsConn`/`voiceConn`/`eyesConn` through this wrapper; `eyesConn`
+  only exists once `eyes` has actually connected at least once (its
+  optional-at-boot behavior is unchanged), but from that point on gets
+  the same reconnect treatment as ears/voice. New `sense.connection`
+  `ServerEvent` (`shared/types.ts` + `ui/src/lib/types.ts` mirror) makes
+  a drop/reconnect dashboard-visible for the first time. 4 new tests
+  (`core/tests/senseConnection.test.ts`, fully faked sockets).
+  **Live-verified**, not just unit-tested: an isolated `core` instance
+  against a real Python fake-`ears` server (reusing `senses/ipc.py`)
+  that intentionally drops its connection after one message and
+  re-listens on the same socket path a second later, simulating a
+  daemon crash+restart. Real log sequence confirmed:
+  `core: heard "first message before drop"` → `core: said "..."` →
+  `core: ears disconnected, reconnecting...` → `core: ears reconnected.`
+  → `core: heard "second message after reconnect"` → `core: said "You're
+  back online. What can I help you with?"` → once the fake daemon
+  process exited for good, real capped exponential backoff retries
+  logged (500ms, 750ms, 1125ms, 1687.5ms, 2531.25ms, 3796.875ms, ...).
+- **`core/gate/gate.ts`**: new private `cleanupObservationFile()`,
+  called from all three paths that can end a `kind: "observation"`
+  `MEMORY_WRITE` proposal without an approval (the `propose()` timeout,
+  `decide()`'s own expiry-recheck, and an explicit reject) — best-effort
+  `unlink` of `data/observations/*.jpg`, silent on an already-missing
+  file, untouched for `kind: "fact"` payloads or an approved
+  observation. 6 new tests (`core/gate/tests/gate.test.ts`, real temp
+  files, not mocked — the cleanup itself is real `node:fs/promises`
+  `unlink`, not injected, a deliberately narrow/low-risk exception to
+  the "fake outside-world calls" convention given how contained this
+  is).
+
+`make check`: 410 tests (up from 401 at Phase 8's own close), `tsc`/
+`ruff`/`pytest`/ESLint/UI build all green throughout.
 
 ---
 

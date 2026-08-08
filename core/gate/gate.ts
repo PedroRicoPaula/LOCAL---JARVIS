@@ -18,6 +18,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { unlink } from "node:fs/promises";
 import { ulid } from "ulid";
 import type {
   ApprovalOutcome,
@@ -168,6 +169,7 @@ export class Gate extends EventEmitter {
         this.setState(id, "expired");
         this.logAudit(id, "expired", {});
         this.emit("approval.resolved", { requestId: id, state: "expired" });
+        this.cleanupObservationFile(row);
         resolve({ ok: false, reason: "expired" });
       }, Math.max(0, expiresAt - createdAt));
       this.pending.set(id, { resolve, timeoutHandle });
@@ -199,11 +201,13 @@ export class Gate extends EventEmitter {
 
     if (now() > row.expires_at) {
       this.settlePending(row.id, "expired", { ok: false, reason: "expired" });
+      this.cleanupObservationFile(row);
       return;
     }
 
     if (response.decision !== "approve") {
       this.settlePending(row.id, "rejected", { ok: false, reason: "rejected" });
+      this.cleanupObservationFile(row);
       return;
     }
 
@@ -311,6 +315,34 @@ export class Gate extends EventEmitter {
       this.pending.delete(id);
     }
     entry?.resolve(outcome);
+  }
+
+  /** Rejected/expired `MEMORY_WRITE` `kind: "observation"` proposals leave
+   * `skills/look`'s durable `data/observations/*.jpg` copy (ADR-045)
+   * unreferenced by any DB row forever -- confirmed live, 2026-08-07
+   * (PROGRESS.md's dated entry, `docs/BACKLOG.md`'s Annoyances section):
+   * a real photo's approval expired unactioned and the file just sat on
+   * disk. Only fires for a `kind: "observation"` payload (a `kind: "fact"`
+   * proposal has no file to clean up); best-effort and silent on a
+   * missing file (already gone is not an error worth logging). */
+  private cleanupObservationFile(row: ApprovalRow): void {
+    if (row.capability !== "MEMORY_WRITE") return;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(row.payload);
+    } catch {
+      return;
+    }
+    if (typeof payload !== "object" || payload === null) return;
+    const p = payload as Record<string, unknown>;
+    if (p["kind"] !== "observation" || typeof p["imagePath"] !== "string" || !p["imagePath"]) return;
+    const imagePath = p["imagePath"];
+    unlink(imagePath).catch((err) => {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        console.error(`gate: failed to delete orphaned observation file ${imagePath}`, err);
+      }
+    });
   }
 
   private insertApproval(row: ApprovalRow): void {

@@ -21,7 +21,8 @@
  * its own tests.
  */
 
-import { connectWithRetry, readLines, sendLine } from "./ipc.ts";
+import { connectWithRetry } from "./ipc.ts";
+import { wrapSenseConnection, type SenseConnection } from "./senseConnection.ts";
 import { createIpcCameraHandle, type EyesEventSource } from "./skills/camera.ts";
 import { generalConversationReply } from "./converse.ts";
 import { createDashboardHistory } from "./dashboardHistory.ts";
@@ -64,10 +65,17 @@ const DASHBOARD_PORT = Number(process.env["JARVIS_DASHBOARD_PORT"] ?? 8787);
 const SESSION_ID = "default";
 
 async function main(): Promise<void> {
+  // `wsHub` doesn't exist yet at connect time (it needs `gate`/`memory`,
+  // built further down), so each sense's `onStateChange` is a tiny
+  // indirection cell filled in once `wsHub` is real -- same "forward
+  // reference, assigned later, only ever called after" shape
+  // `handleUtterance` below already uses.
+  let broadcastSenseState: (sense: "ears" | "voice" | "eyes", connected: boolean) => void = () => {};
+
   console.log(`core: connecting to ears (${EARS_SOCKET})`);
-  const earsSock = await connectWithRetry(EARS_SOCKET);
+  const earsConn = wrapSenseConnection("ears", EARS_SOCKET, await connectWithRetry(EARS_SOCKET), (c) => broadcastSenseState("ears", c));
   console.log(`core: connecting to voice (${VOICE_SOCKET})`);
-  const voiceSock = await connectWithRetry(VOICE_SOCKET);
+  const voiceConn = wrapSenseConnection("voice", VOICE_SOCKET, await connectWithRetry(VOICE_SOCKET), (c) => broadcastSenseState("voice", c));
   console.log("core: connected to both.");
 
   // eyes is on-demand (SPEC.md § 2: "launchd, idle"), not always-running
@@ -77,11 +85,15 @@ async function main(): Promise<void> {
   // rather than the whole assistant refusing to start over one unused
   // sense. A handful of quick attempts, not the full ears/voice retry
   // budget -- if eyes genuinely isn't running, waiting longer just
-  // delays boot for no benefit.
+  // delays boot for no benefit. Once connected, though, it gets the same
+  // reconnect-on-drop treatment as ears/voice -- a camera skill that
+  // worked five minutes ago shouldn't silently stop working forever
+  // after one `eyes` hiccup.
   console.log(`core: connecting to eyes (${EYES_SOCKET})`);
-  let eyesSock: Awaited<ReturnType<typeof connectWithRetry>> | undefined;
+  let eyesConn: SenseConnection | undefined;
   try {
-    eyesSock = await connectWithRetry(EYES_SOCKET, 3, 500);
+    const initialEyesSock = await connectWithRetry(EYES_SOCKET, 3, 500);
+    eyesConn = wrapSenseConnection("eyes", EYES_SOCKET, initialEyesSock, (c) => broadcastSenseState("eyes", c));
     console.log("core: connected to eyes.");
   } catch (err) {
     console.warn(`core: eyes not available (${err instanceof Error ? err.message : String(err)}) -- camera-declaring skills will fail honestly until it's running`);
@@ -110,14 +122,14 @@ async function main(): Promise<void> {
   );
   console.log("core: skills loaded:", loadReport.loaded, "-- disabled:", loadReport.disabled);
 
-  const conversation = createIpcConversation((text) => sendLine(voiceSock, { type: "speak", text }));
+  const conversation = createIpcConversation((text) => voiceConn.send({ type: "speak", text }));
 
   // Only constructed when eyes is actually connected -- `undefined`
   // means every camera-declaring skill's `ctx.camera` falls back to the
   // honest throwing stub (`buildSkillContext`'s own `deps.camera ??
   // createStubCameraHandle()`), same shape as the four optional keys in
   // `router/wiring.ts`.
-  const cameraHandle = eyesSock ? createIpcCameraHandle((message) => sendLine(eyesSock!, message)) : undefined;
+  const cameraHandle = eyesConn ? createIpcCameraHandle((message) => eyesConn!.send(message)) : undefined;
 
   // Forward reference: `wsHub` needs `onUtterance` to wire the dashboard's
   // test console (SOAK 1) before `handleUtterance` itself can be defined
@@ -144,6 +156,12 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve) => httpServer.listen(DASHBOARD_PORT, "127.0.0.1", resolve));
   console.log(`core: dashboard listening on :${DASHBOARD_PORT}`);
 
+  // Now that `wsHub` is real, wire the forward reference declared at the
+  // top of this function -- every reconnect/disconnect from here on is
+  // dashboard-visible, not just a console log (found live, 2026-08-07:
+  // it previously wasn't, at all -- see `senseConnection.ts`'s docstring).
+  broadcastSenseState = (sense, connected) => wsHub.broadcast({ type: "sense.connection", sense, connected });
+
   // Concurrent with the ears loop below, not before/after it -- until
   // Phase 7's dashboard exists, typing into this same terminal is the
   // only way to answer a pending approval (see gate/cli.ts's docstring).
@@ -152,15 +170,15 @@ async function main(): Promise<void> {
   // `voice` now reports real speaking start/stop (SayBackend.speak blocks
   // for the actual audio duration -- see senses/voice/main.py) -- relayed
   // as-is so the dashboard shows genuine progress, not a guess.
-  relayVoiceStatus(voiceSock, wsHub).catch((err) => console.error("core: voice status relay failed", err));
+  relayVoiceStatus(voiceConn, wsHub).catch((err) => console.error("core: voice status relay failed", err));
 
   // Same relay shape as voice, but doubles as the wire that resolves
   // `cameraHandle`'s own pending request/reply correlation (offerEvent)
   // -- one socket, one reader, two jobs, since eyes multiplexes replies
   // and self-triggered timeout events on the same connection. Only
   // started when eyes actually connected.
-  if (eyesSock && cameraHandle) {
-    relayCameraStatus(eyesSock, wsHub, cameraHandle, conversation.say).catch((err) => console.error("core: camera status relay failed", err));
+  if (eyesConn && cameraHandle) {
+    relayCameraStatus(eyesConn, wsHub, cameraHandle, conversation.say).catch((err) => console.error("core: camera status relay failed", err));
   }
 
   // The single utterance-handling path -- real speech from `ears` and a
@@ -277,7 +295,7 @@ async function main(): Promise<void> {
   };
 
   console.log("core: ready.");
-  for await (const message of readLines(earsSock)) {
+  for await (const message of earsConn.messages()) {
     if (message["type"] === "listening") {
       wsHub.broadcast({ type: "state", value: "listening" });
       continue;
@@ -292,8 +310,8 @@ async function main(): Promise<void> {
 /** Relays `voice`'s real `{"type": "speaking", "active": bool}` reports
  * to the dashboard -- runs concurrently with the ears loop, same pattern
  * as `watchApprovalCommands`. */
-async function relayVoiceStatus(voiceSock: Parameters<typeof readLines>[0], wsHub: ReturnType<typeof createWsHub>): Promise<void> {
-  for await (const message of readLines(voiceSock)) {
+async function relayVoiceStatus(voiceConn: SenseConnection, wsHub: ReturnType<typeof createWsHub>): Promise<void> {
+  for await (const message of voiceConn.messages()) {
     if (message["type"] !== "speaking") continue;
     wsHub.broadcast({ type: "speaking", active: Boolean(message["active"]) });
   }
@@ -322,12 +340,12 @@ const CAMERA_TIMEOUT_ANNOUNCEMENT: Record<"idle" | "cap", string> = {
  * live, Phase 8's own verification pass: this was silently
  * dashboard-only until now. */
 async function relayCameraStatus(
-  eyesSock: Parameters<typeof readLines>[0],
+  eyesConn: SenseConnection,
   wsHub: ReturnType<typeof createWsHub>,
   cameraHandle: EyesEventSource,
   say: (text: string) => void,
 ): Promise<void> {
-  for await (const message of readLines(eyesSock)) {
+  for await (const message of eyesConn.messages()) {
     cameraHandle.offerEvent(message);
     const type = message["type"];
     if (type === "camera.armed") {

@@ -312,6 +312,13 @@ export type ServerEvent =
   | { type: "camera.captured"; sessionId: string; frameId: string; path: string }
   | { type: "camera.closed"; sessionId: string; cause: "owner" | "idle" | "cap" | "error" }
   | { type: "health"; providers: Record<string, boolean> }
+  /** `ears`/`voice`/`eyes` connection state, per sense -- distinct from
+   * `health` (LLM router providers, above). Found live, 2026-08-07: a
+   * dropped sense connection had no dashboard-visible signal at all,
+   * only a real bug in `core/main.ts`'s reconnect handling (fixed the
+   * same day, `core/senseConnection.ts`) made this observable in the
+   * first place -- see PROGRESS.md's dated entry. */
+  | { type: "sense.connection"; sense: "ears" | "voice" | "eyes"; connected: boolean }
   /** A turn failed. Spoken to the owner too (persona.md) -- this is the
    * dashboard-visible half of the same honesty rule, not a replacement
    * for it. `detail` is a plain message, never a raw stack trace. */

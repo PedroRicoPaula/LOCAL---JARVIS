@@ -501,6 +501,97 @@ future MCP tool calls *through* the Gate (already the plan in this
 file's Platform section) rather than beside it, and validates that
 design rather than requiring a new one.
 
+## Personal Knowledge Brain / Engineering Intelligence System — 2026-08-08
+
+Owner's own idea, pasted in full during a chat discussion (not a code
+session) about making JARVIS "cada vez mais inteligente e eficiente."
+Explicitly scoped by the owner as bigger than this repo (a system-wide
+Mac tool, Obsidian-based) but "principalmente no jarvis" — logged here
+per CLAUDE.md § 0.6/§ 0.7 rather than discussed further in chat.
+**Not scoped, not designed, no phase assigned. Read before any future
+work on JARVIS memory/RAG/agent-orchestration touches this territory.**
+
+**Core thesis, in the owner's own framing:** a "knowledge brain" doesn't
+make Claude intrinsically smarter — it changes the quality of context
+it reasons with, and lets it reuse prior work instead of re-deriving it
+each time. The value isn't volume of notes; it's *structured retrieval
+of the right knowledge at the right moment* plus a *relationship graph
+between concepts* (e.g. Bloom Filter + Distributed Systems + Caching
+suggesting an architecture a flat keyword search wouldn't surface).
+
+**Key design principles extracted from the pitch, independent of any
+specific tool choice:**
+
+1. **Knowledge ≠ Reasoning.** Store facts (crypto primitives, data
+   structures, theorems) separately from the *combinations* of them
+   that solve a given problem. The graph of relationships between
+   concepts is where the leverage is, not the concept list itself.
+2. **Never let a model read the whole vault.** Retrieval, not
+   memorization — vector search + graph search + a relevance layer
+   feeding only what's relevant into context. A 100k-note vault dumped
+   wholesale is a design failure, not a feature. This is the same
+   context-discipline principle `core/memory/recall.ts`'s hard context
+   cap (Phase 4) already applies at a much smaller scale.
+3. **Universal knowledge vs. personal engineering knowledge — the
+   second is worth more.** CS/math/security facts are replaceable
+   (textbooks have them); a durable record of *this owner's own*
+   decisions, bugs, root causes, and rejected approaches is not. This
+   project already does a small, proven version of exactly this by
+   hand: `PROGRESS.md` + `DECISIONS.md` (ADRs) + this file, written
+   because CLAUDE.md § 0.7 requires it. The owner's proposal is
+   essentially "generalize what CLAUDE.md § 0.7 already forces for one
+   project into a structured, queryable system across all of them."
+4. **Source/confidence metadata per note** — `FACT` / `HYPOTHESIS` /
+   `EXPERIMENT` / `OPINION` / `UNVERIFIED` / `OBSERVATION`, each with
+   source + confidence + date + verified flag. Directly the same
+   discipline as CLAUDE.md § 0.5's "no model output becomes a stored
+   number/fact" and SPEC.md § 7 — extended from JARVIS's own facts DB
+   to a general knowledge store.
+5. **"Unsolved Problems" and "Experiments" as first-class content, not
+   just reference notes** — a hypothesis → implementation → benchmark
+   → verify → (new) knowledge loop. This is close in spirit to the
+   already-logged `BenchmarkGate` idea above (External research
+   section) and to `bench/` in this repo, generalized from "does this
+   routing change regress the benchmark" to "does this new algorithm
+   candidate beat the baseline."
+6. **Specialized agents over one generalist** — architect / security /
+   math / research / performance / validator roles coordinated by an
+   orchestrator, each consulting the knowledge base for its domain
+   before answering. Concretely: this is the same reasoning behind the
+   `code-reviewer`, `security-auditor`, `debugger`, `release-manager`,
+   and `seo-master` global agents already built 2026-08-08 (in
+   `~/.claude/agents/`, outside this repo) — small, real, working
+   instances of exactly this pattern, built *before* this bigger idea
+   was written down. Worth treating as the proof-of-concept rather than
+   starting the bigger system from zero.
+
+**Named risk (the owner's own, and correct):** the failure mode is
+spending months populating physics/math/CS notes and ending up with
+"10,000 notes, 0 impact." The owner's own priority ranking put "just
+storing lots of documents" at 3/10 value versus 9-10/10 for the
+graph/retrieval/verification/experiment pieces. Any future work here
+should start with knowledge that improves *current* project work
+(architecture, algorithms, databases, security — the stuff already in
+play across the owner's projects), not a universal encyclopedia.
+
+**Recommendation on record (owner's own conclusion, worth preserving):**
+build a small, functional version integrated into the actual dev
+environment first — not a from-scratch universal knowledge base —
+and let real projects feed it going forward.
+
+**Relationship to existing backlog items, so this doesn't get
+re-designed from zero later:** overlaps the MCP entry above (a
+knowledge/retrieval API is a natural MCP server, consumable by both
+JARVIS and Claude Code the same way); overlaps the sandboxed `act` lane
+entry (hypothesis → implementation → benchmark → verify is the same
+shape as generated code needing a reviewed pipeline before it's
+trusted); and would, if ever built as a JARVIS skill rather than a
+standalone tool, need its own capability tier under CLAUDE.md § 5 (at
+minimum `FS_READ`/`MEMORY_READ`, likely `MEMORY_WRITE` for the
+experiment-logging half) and its own `persona.md` like any other skill
+per `docs/SKILLS.md`. None of this is scoped — flagging the seams, not
+deciding them.
+
 ## Annoyances found during SOAK
 
 - ~~`core/skills/loader.ts` kept its own `VALID_CAPABILITIES`/
@@ -720,6 +811,61 @@ design rather than requiring a new one.
   live run) — safely caught by ADR-027's gate fix, not a new gap, but
   worth knowing the approval queue may see a burst of nonsense during
   any future NIM outage.
+
+- **Three real bugs found during real end-to-end voice + camera
+  testing, 2026-08-07** (owner-authorized real mic/speaker/camera test,
+  `CLAUDE.md` § 1's self-run tier; full detail and investigation trail
+  in `PROGRESS.md`'s dated entry for that night). #2 and #3 fixed and
+  live-verified the same night; #1 stays open pending focused
+  reproduction.
+  1. **Open, not fixed.** `senses/ears` hung indefinitely capturing a
+     second wake-word utterance in the same running session (first
+     utterance worked fine). Confirmed genuinely stuck, not slow, via
+     `sample` -- unresolved past both the 32s hard recording cap and
+     the 10s whisper-server HTTP timeout, either of which should have
+     fired regardless. Machine was under real, severe memory pressure
+     at the time (~64MB free, `vm_stat`) -- plausible cause, not
+     confirmed; a race in `arm()`/`_process_frame`'s armed-check wasn't
+     ruled out either. Recovered by restarting the daemon, not by a
+     fix. Needs focused reproduction outside a heavy-load session
+     before attempting a real fix.
+  2. **Fixed 2026-08-08.** `core/main.ts`'s ears-reading loop had no
+     reconnect logic -- `connectWithRetry` only ran once, at boot. If
+     `ears` (or `voice`) died after that, `core`'s utterance pipeline
+     silently and permanently stalled with zero error/log, while the
+     dashboard's HTTP/WS server stayed fully responsive throughout
+     (found as a direct consequence of #1: killing the stuck `ears` to
+     recover left `core` itself silently unable to hear anything ever
+     again). Fixed with `core/senseConnection.ts`: wraps each of
+     `ears`/`voice`/`eyes`'s socket in a reconnect-with-backoff loop
+     (500ms initial, ×1.5 capped at 10s) that transparently resumes
+     `readLines`-ing once the daemon comes back, plus a new
+     `sense.connection` `ServerEvent` so a drop/reconnect is now
+     dashboard-visible, not silent. 4 new unit tests
+     (`core/tests/senseConnection.test.ts`, fake sockets, no real net).
+     Live-verified against a real isolated `core` instance and a fake
+     `ears` server that drops its connection and restarts on the same
+     socket path: `core: ears disconnected, reconnecting...` →
+     `core: ears reconnected.` → the very next real utterance was heard
+     and answered correctly, then a real capped exponential-backoff
+     retry loop confirmed once the fake daemon was gone for good.
+  3. **Fixed 2026-08-08.** `skills/look`'s durable observation copy
+     (`data/observations/*.jpg`, written immediately per ADR-045 so it
+     survives `eyes`'s own session-close deletion while approval is
+     pending) had no cleanup path if the `MEMORY_WRITE` proposal was
+     rejected or simply expired (`DEFAULT_EXPIRY_MS`, 5 min default) --
+     confirmed live that night, a real observation photo's approval
+     expired unactioned and the JPEG stayed on disk with nothing
+     referencing it. Fixed with `Gate.cleanupObservationFile()`
+     (`core/gate/gate.ts`), called from all three terminal-state paths
+     that can end a `kind: "observation"` `MEMORY_WRITE` proposal
+     without approval (the timeout in `propose()`, `decide()`'s own
+     expiry-recheck, and an explicit reject) -- best-effort `unlink`,
+     silent on an already-missing file, untouched for `kind: "fact"`
+     payloads and for approved observations. 6 new unit tests
+     (`core/gate/tests/gate.test.ts`, real temp files): reject deletes
+     it, natural-timer expiry deletes it, decide-after-expiry deletes
+     it, approval keeps it, a plain fact proposal doesn't throw.
 
 _(add as you find them — this section is the most valuable one)_
 

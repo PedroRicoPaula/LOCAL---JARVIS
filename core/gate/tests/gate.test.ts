@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import type { ProposedAction } from "../../../shared/types.ts";
@@ -344,4 +347,107 @@ test("a capability with no registered executor still resolves immediately with t
 
   assert.equal(outcome.ok, true);
   assert.equal(gate.getApproval(request!.id)?.state, "approved");
+});
+
+// Rejected/expired observation proposals used to leave `data/observations/
+// *.jpg` orphaned forever -- found live, 2026-08-07 (PROGRESS.md, docs/
+// BACKLOG.md). Real temp files, not mocked -- `cleanupObservationFile` uses
+// real `node:fs/promises` unlink, no injected fs dependency (narrow, low-
+// risk, best-effort side effect; not worth threading a fake through every
+// `new Gate(...)` call site for this alone).
+function tempObservationFile(): { path: string; dir: string } {
+  const dir = mkdtempSync(join(tmpdir(), "jarvis-gate-test-"));
+  const path = join(dir, "observation.jpg");
+  writeFileSync(path, "fake jpeg bytes");
+  return { path, dir };
+}
+
+test("rejecting an observation proposal deletes its durable image file", async () => {
+  const gate = freshGate();
+  const { path } = tempObservationFile();
+  const action: ProposedAction = {
+    capability: "MEMORY_WRITE",
+    humanSummary: "remember what I saw",
+    payload: { kind: "observation", imagePath: path, provider: "nim", qualitative: "a room", structured: null, confidence: 0.5 },
+  };
+
+  const outcomePromise = gate.propose(action, "look");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "reject", decidedAt: Date.now() });
+  await outcomePromise;
+
+  // unlink() is fire-and-forget inside the gate -- give its promise a tick.
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(existsSync(path), false);
+});
+
+test("an expired observation proposal (real timer) deletes its durable image file", async () => {
+  const gate = freshGate();
+  const { path } = tempObservationFile();
+  const action: ProposedAction = {
+    capability: "MEMORY_WRITE",
+    humanSummary: "remember what I saw",
+    payload: { kind: "observation", imagePath: path, provider: "nim", qualitative: "a room", structured: null, confidence: 0.5 },
+    expiresInMs: 10,
+  };
+
+  await gate.propose(action, "look");
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(existsSync(path), false);
+});
+
+test("a decision arriving after expiry also deletes the observation's image file", async () => {
+  const gate = freshGate();
+  const { path } = tempObservationFile();
+  const action: ProposedAction = {
+    capability: "MEMORY_WRITE",
+    humanSummary: "remember what I saw",
+    payload: { kind: "observation", imagePath: path, provider: "nim", qualitative: "a room", structured: null, confidence: 0.5 },
+    expiresInMs: 60_000,
+  };
+
+  const outcomePromise = gate.propose(action, "look");
+  const [request] = gate.listPending();
+  gate.decide(
+    { requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() },
+    () => Date.now() + 61_000,
+  );
+  await outcomePromise;
+
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(existsSync(path), false);
+});
+
+test("an approved observation proposal keeps its durable image file", async () => {
+  const gate = freshGate();
+  const { path } = tempObservationFile();
+  const action: ProposedAction = {
+    capability: "MEMORY_WRITE",
+    humanSummary: "remember what I saw",
+    payload: { kind: "observation", imagePath: path, provider: "nim", qualitative: "a room", structured: null, confidence: 0.5 },
+  };
+
+  const outcomePromise = gate.propose(action, "look");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
+  await outcomePromise;
+
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(existsSync(path), true);
+});
+
+test("rejecting a plain fact proposal (no imagePath) does not throw", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = {
+    capability: "MEMORY_WRITE",
+    humanSummary: "remember a fact",
+    payload: { kind: "fact", key: "prefs.color", value: "blue", confidence: 0.9 },
+  };
+
+  const outcomePromise = gate.propose(action, "fact-extraction");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "reject", decidedAt: Date.now() });
+  const outcome = await outcomePromise;
+
+  assert.deepEqual(outcome, { ok: false, reason: "rejected" });
 });
