@@ -258,14 +258,25 @@ site), [Avinashb722/jarvis-ai-assistant](https://github.com/Avinashb722/jarvis-a
   ("click" | "voice" | "system") is a small addition with real
   forensic value — right now our `audit_log` records the decision but
   not how it arrived.
-- **A reviewable list of routing misses**, not just individual
-  `no_skill_matched` thought-stream entries. thevickypedia/Jarvis dumps
-  every unrecognized phrase to a file for the developer to read later
-  and turn into new keywords/examples (`support.unrecognized_dumper`).
-  We have the data (every `no_skill_matched` trace), just not surfaced
-  as a punch list — would make closing gaps like ADR-026's coffee
-  collision a matter of reading a list instead of re-reading the whole
-  conversation log by hand.
+- ~~A reviewable list of routing misses~~ — **built 2026-08-08.**
+  thevickypedia/Jarvis dumps every unrecognized phrase to a file for the
+  developer to read later (`support.unrecognized_dumper`); had the data
+  (`routing_stats`) but not the owner's actual utterance text alongside
+  it, only that a miss happened. `routing_stats` gained an `event_id`
+  column (this project's first real schema migration on an
+  already-populated table — `core/memory/db.ts`'s `ensureRoutingStats
+  EventIdColumn`, `PRAGMA table_info`-guarded so `ALTER TABLE ADD COLUMN`
+  is safe to run on every boot; live-verified against a real copy of
+  the owner's own `data/jarvis.db`, 39 existing rows preserved, safe to
+  run twice). New `Memory.recentRoutingMisses(limit)` /
+  `GET /api/routing-misses` returns the real utterance text for every
+  `no_skill_matched` decision, most recent first, joined against
+  `events` — closing a gap like ADR-026's coffee collision is now
+  reading this list instead of re-reading a whole conversation log by
+  hand. Old rows (recorded before this column existed) show an honestly
+  unknown utterance rather than a guess. No dashboard UI panel yet
+  (deliberately out of scope for this pass — the backend/endpoint was
+  the actual gap); a future UI panel is a natural, separate follow-up.
 - **MCP tool calls, if/when the MCP backlog item above gets built, must
   go through `Gate.propose()` like everything else — do not wrap them
   the way OpenJarvis does.** Its own MCP doc confirms tool calls from

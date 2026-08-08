@@ -237,6 +237,7 @@ async function main(): Promise<void> {
         skillId: trace.chosen?.skillId ?? null,
         intentId: trace.chosen?.intentId ?? null,
         matched: trace.chosen !== undefined,
+        eventId: utteranceEvent.id,
       });
       const thoughtEvent = {
         type: "thought" as const,

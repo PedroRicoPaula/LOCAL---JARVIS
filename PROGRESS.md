@@ -27,8 +27,12 @@ GitHub, `docs/SKILLS.md` § 5b documents the pattern. Also built the
 regressionGate.ts`, `make bench-gate`) -- catches a real routing-
 accuracy regression against a recorded baseline, not just the fixed
 floor, the exact class of bug that shipped twice before (ADR-024,
-ADR-026). `make check`: 435 tests green. Owner-required, not yet done:
-a real GitHub PAT in Keychain (README § 3d) to confirm the MCP pipeline
+ADR-026). Also built a reviewable routing-misses list (`GET /api/
+routing-misses`, `routing_stats` gained an `event_id` column -- this
+project's first real schema migration on an already-populated table,
+live-verified against a real copy of the owner's own `data/jarvis.db`).
+`make check`: 440 tests green. Owner-required, not yet done: a real
+GitHub PAT in Keychain (README § 3d) to confirm the MCP pipeline
 against live third-party data. Next: to be decided with the owner --
 more MCP servers, Phase 9, or the Knowledge Brain idea.
 **Branch:** `main`
@@ -2781,6 +2785,40 @@ information — the comparison logic itself is what needed proving, and
 it's proven offline); first real run happens naturally the next time a
 `laneClassifier.ts`/`dispatch.ts`/manifest-examples change needs
 benchmarking.
+
+**Reviewable routing-misses list, 2026-08-08 (ADR-049).**
+`docs/BACKLOG.md`'s thevickypedia-inspired idea: a real, queryable list
+of what the owner actually said on every `no_skill_matched` decision,
+not just a count — the exact thing that would have made closing gaps
+like ADR-026's coffee collision a matter of reading a list instead of
+re-reading a whole conversation log by hand.
+
+`routing_stats` never stored the utterance text, only that a miss
+happened — fixed by adding an `event_id` column and joining against
+`events` at read time (single source of truth, no duplicated text).
+This is the project's **first real schema migration on an
+already-populated table** — `ALTER TABLE ADD COLUMN` isn't idempotent on
+its own (a second run throws "duplicate column name"), so
+`core/memory/db.ts`'s new `ensureRoutingStatsEventIdColumn()` checks via
+`PRAGMA table_info` first, runs on every `openDb()` call. Live-verified
+carefully given this touches real production data: copied the owner's
+actual `data/jarvis.db` (39 real `routing_stats` rows) to a scratch
+location, ran the real migration against the copy twice (confirming
+idempotency), confirmed all 39 rows survived untouched, and confirmed
+`recentRoutingMisses()` correctly returns them with an honestly-`null`
+utterance (they predate this column, so there's genuinely nothing to
+join — shown as unknown, never guessed). The real `data/jarvis.db` file
+itself was never touched directly; the migration will apply naturally
+the next time `core` boots against it.
+
+New `Memory.recentRoutingMisses(limit)` and `GET /api/routing-misses`
+(`core/http.ts`), most-recent-first. `core/main.ts` now passes
+`eventId: utteranceEvent.id` into `recordRoutingStat` so every miss
+from here on has its real text. No dashboard UI panel built for this
+yet — deliberately out of scope, the backend gap was the actual ask;
+flagged in `docs/BACKLOG.md` as a natural follow-up.
+
+5 new tests (440 total), `make check` green throughout.
 
 ---
 

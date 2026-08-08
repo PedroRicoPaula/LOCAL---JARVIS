@@ -17,7 +17,7 @@ import { indexKeywords } from "./keywordSearch.ts";
 import { addObservation, getObservation } from "./observations.ts";
 import type { AssembledContext, RecallOptions } from "./recall.ts";
 import { assembleContext } from "./recall.ts";
-import { recordRoutingStat, routingStatsSince, type RoutingStatRow } from "./routingStats.ts";
+import { recentRoutingMisses, recordRoutingStat, routingStatsSince, type RoutingMiss, type RoutingStatRow } from "./routingStats.ts";
 
 export class Memory {
   private readonly db: DatabaseSync;
@@ -112,11 +112,15 @@ export class Memory {
     return recentFeedback(this.db, limit);
   }
 
-  recordRoutingStat(input: { lane: Lane; skillId: string | null; intentId: string | null; matched: boolean }): void {
+  recordRoutingStat(input: { lane: Lane; skillId: string | null; intentId: string | null; matched: boolean; eventId?: string | null }): void {
     recordRoutingStat(this.db, input);
   }
 
   routingStatsSince(sinceTs: number): RoutingStatRow[] {
     return routingStatsSince(this.db, sinceTs);
+  }
+
+  recentRoutingMisses(limit: number): RoutingMiss[] {
+    return recentRoutingMisses(this.db, limit);
   }
 }

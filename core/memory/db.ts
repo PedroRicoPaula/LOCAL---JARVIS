@@ -93,6 +93,23 @@ CREATE TABLE IF NOT EXISTS routing_stats (
 );
 `;
 
+/** `routing_stats` gained `event_id` 2026-08-08 (docs/BACKLOG.md's
+ * "reviewable list of routing misses" idea) -- the original table had
+ * no way to look up *what the owner actually said* for a no_skill_matched
+ * row, only that one happened. This project's first real schema
+ * migration on an already-populated table: `ALTER TABLE ADD COLUMN`
+ * isn't idempotent (a second run throws "duplicate column name"), so
+ * this checks via `PRAGMA table_info` first rather than swallowing every
+ * possible error in a try/catch. Runs every `openDb()` call, same as the
+ * `CREATE TABLE IF NOT EXISTS` statements above -- cheap, and safe on a
+ * database that already has the column. */
+function ensureRoutingStatsEventIdColumn(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(routing_stats)").all() as { name: string }[];
+  if (!columns.some((c) => c.name === "event_id")) {
+    db.exec("ALTER TABLE routing_stats ADD COLUMN event_id TEXT");
+  }
+}
+
 export function openDb(path: string): DatabaseSync {
   if (path !== ":memory:") {
     mkdirSync(dirname(path), { recursive: true });
@@ -100,6 +117,7 @@ export function openDb(path: string): DatabaseSync {
   const db = new DatabaseSync(path, { allowExtension: true });
   loadSqliteVec(db);
   db.exec(SCHEMA);
+  ensureRoutingStatsEventIdColumn(db);
   // cosine, not the vec0 default (L2/euclidean): bounded 0 (identical) to
   // ~2 (opposite), 1 = orthogonal — a threshold on this reads naturally as
   // a "similarity floor" (SPEC.md § 4's recall policy step 2). L2 distance

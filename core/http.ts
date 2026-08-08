@@ -123,6 +123,16 @@ export function createHttpServer(memory: Memory, skillRegistry: SkillRegistry, g
       return;
     }
 
+    // docs/BACKLOG.md's "reviewable list of routing misses" idea, built
+    // 2026-08-08 -- the actual utterances that hit no_skill_matched,
+    // most recent first, for closing routing gaps by reading a list
+    // instead of re-reading a whole conversation log by hand.
+    if (url.pathname === "/api/routing-misses" && req.method === "GET") {
+      const limit = Math.min(Number(url.searchParams.get("limit") ?? 50) || 50, 500);
+      sendJson(res, 200, memory.recentRoutingMisses(limit));
+      return;
+    }
+
     if (segments[0] === "api" && segments[1] === "tasks") {
       if (segments.length === 2 && req.method === "GET") {
         const rows = tasksStore.all<TaskRow>("SELECT id, text, done, created_at FROM skill_tasks_items ORDER BY created_at");

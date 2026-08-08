@@ -3557,3 +3557,60 @@ work that doesn't need him, tracking what does.
   real against live NIM/Ollama calls -- first real run happens naturally
   the next time a routing-relevant change needs benchmarking, which is
   the gate's actual job.
+
+## ADR-049 — Reviewable routing-misses list; first real schema migration
+
+**Status:** accepted
+
+**Context.** `docs/BACKLOG.md` flagged this since the external-project
+research pass (thevickypedia/Jarvis dumps every unrecognized phrase to a
+file for later review) — this project had the *data* (`routing_stats`
+records every dispatch decision) but not the owner's actual utterance
+text for a `no_skill_matched` row, only that one happened. Built
+2026-08-08 while the owner asked to keep progressing on work that
+doesn't need him.
+
+**Decisions.**
+
+- **Join against `events` at read time via a new `event_id` column,
+  rather than duplicating utterance text into `routing_stats`.** Single
+  source of truth for what was actually said; `routing_stats` stays a
+  denormalized *metrics* table (per its own existing docstring reasoning
+  in `db.ts`), not a second copy of conversation content.
+- **This is the project's first real schema migration on an
+  already-populated table.** Every prior table change so far was either
+  a brand-new table or happened before real data existed. `ALTER TABLE
+  ADD COLUMN` is not idempotent (a second run throws "duplicate column
+  name"), so `ensureRoutingStatsEventIdColumn()` checks via `PRAGMA
+  table_info` first rather than swallowing every possible error in a
+  try/catch — an explicit existence check, not a guess that a caught
+  error means "already migrated." Runs unconditionally on every
+  `openDb()` call, same as the `CREATE TABLE IF NOT EXISTS` statements
+  it sits next to.
+- **Verified against a real copy of the owner's own `data/jarvis.db`,
+  not just a synthetic in-memory test**, given this touches real
+  production data for the first time this way: copied the real file (39
+  actual `routing_stats` rows) to a scratch location, ran the real
+  migration twice (confirming idempotency against real data, not just
+  the synthetic file-based test), confirmed all 39 rows survived, and
+  confirmed the new `recentRoutingMisses()` correctly returns them with
+  an honestly-`null` utterance (pre-migration rows have nothing to join
+  against — shown as unknown, never guessed, per CLAUDE.md § 0.5's
+  spirit applied to missing data, not just numbers). The owner's real
+  file itself was never touched directly by this verification; the
+  migration applies naturally the next time `core` boots against it.
+- **No dashboard UI panel built.** The backend/endpoint (`GET /api/
+  routing-misses`) was the actual gap `docs/BACKLOG.md` flagged — a
+  reviewable list for closing routing gaps by reading it, which this
+  session (and any future one) can already do via `curl`. A UI panel is
+  real, separate scope, flagged as a natural follow-up rather than
+  built speculatively now.
+
+**Consequences.**
+- `core/memory/db.ts`, `core/memory/routingStats.ts`, `core/memory/
+  memory.ts`, `core/main.ts` (passes `eventId: utteranceEvent.id` into
+  `recordRoutingStat`), `core/http.ts` (`GET /api/routing-misses`).
+- 5 new tests (440 total), `make check` green throughout — including a
+  real-file-based migration-idempotency test (`core/memory/tests/
+  db.test.ts`), not just an in-memory one, since `:memory:` databases
+  can't actually exercise "reopen the same real file twice."
