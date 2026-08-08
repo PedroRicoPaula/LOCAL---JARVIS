@@ -1,14 +1,21 @@
-.PHONY: check bench dev install-daemon uninstall-daemon new-skill
+.PHONY: check bench bench-gate dev install-daemon uninstall-daemon new-skill
 
 # Requires: `npm install` (TypeScript), `ruff` on PATH (brew install ruff),
 # .venv set up per requirements.txt (see README.md Phase 1 quickstart), and
 # `npm install` inside ui/ too (Phase 7 -- its own project, own lockfile).
 # Grows as later phases add real code to check — see ROADMAP.md.
+#
+# bench/**/*.test.ts (added 2026-08-08, bench/_shared/regressionGate.ts)
+# joins the glob here too -- pure offline unit tests of the gate's own
+# comparison logic, no network/models, same "make check stays fully
+# offline" rule every other test file here already follows. This is
+# separate from actually *running* the real benchmarks (`make bench-gate`,
+# below), which needs real network/model calls and real API quota.
 check:
 	npx tsc --noEmit
 	ruff check bench/ senses/
 	.venv/bin/pytest senses/ -q
-	node --test 'core/**/*.test.ts' 'skills/**/*.test.ts'
+	node --test 'core/**/*.test.ts' 'skills/**/*.test.ts' 'bench/**/*.test.ts'
 	npx eslint 'skills/**/*.ts' --ignore-pattern 'skills/__fixtures__/**'
 	cd ui && npm run lint && npm run build
 
@@ -20,6 +27,20 @@ bench:
 	@echo
 	@echo "Run bench_local.py yourself with the models you pulled, e.g.:"
 	@echo "  python3 bench/bench_local.py qwen3:8b phi4"
+
+# docs/BACKLOG.md's "permanent benchmark gate" idea, built 2026-08-08
+# (bench/_shared/regressionGate.ts) — real network/model calls, real API
+# quota, deliberately NOT part of `make check`. Run this by hand before
+# shipping a change to laneClassifier.ts, dispatch.ts, or any skill
+# manifest's examples -- exactly the class of change that silently
+# regressed accuracy twice before (ADR-024, ADR-026) while still
+# clearing each benchmark's fixed floor. A real drop below the recorded
+# baseline in bench/baseline.json fails even then; see each script's own
+# output for how to record a new baseline once a change is confirmed.
+bench-gate:
+	node bench/bench_router_lane.ts
+	node bench/bench_router_lane_pt.ts
+	node bench/bench_skill_routing.ts
 
 # voice + ears + eyes (Python) + core (Node, Phase 5b) + dashboard
 # (Next.js dev server, Phase 7) all at once. Ctrl+C stops all five (trap

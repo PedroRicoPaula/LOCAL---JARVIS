@@ -233,19 +233,25 @@ site), [Avinashb722/jarvis-ai-assistant](https://github.com/Avinashb722/jarvis-a
   free-tier constraint.
 
 **Small, concrete ideas worth building — low risk, no design debate needed.**
-- **A permanent benchmark gate for lane-classifier changes.** OpenJarvis's
-  `docs/architecture/learning.md` describes a `BenchmarkGate` that
-  scores any proposed prompt/routing edit against a benchmark *before*
-  it ships, with rollback via a `CheckpointStore`. We hit the exact
-  failure this guards against, twice, by hand this SOAK (ADR-024,
-  ADR-026: an added few-shot example silently regressed unrelated
-  cases on the 45-case benchmark, caught only because I happened to
-  rerun it). `bench/bench_router_lane.ts` already exists — turning
-  "rerun it and eyeball the number" into a real gate (a `make check`
-  step, or at minimum a pre-commit hook, that fails if
-  `laneClassifier.ts` changes and the benchmark score drops) would
-  make that class of regression structurally hard to ship again,
-  instead of relying on remembering to check.
+- ~~A permanent benchmark gate for lane-classifier changes~~ — **built
+  2026-08-08.** OpenJarvis's `docs/architecture/learning.md` describes a
+  `BenchmarkGate` that scores any proposed prompt/routing edit against a
+  benchmark *before* it ships; we hit the exact failure this guards
+  against, twice, by hand this SOAK (ADR-024, ADR-026: an added few-shot
+  example silently regressed unrelated cases on the 45-case benchmark,
+  caught only because someone happened to rerun it). `bench/_shared/
+  regressionGate.ts` compares a fresh run against a recorded baseline
+  (`bench/baseline.json`, seeded from the real documented numbers -- 97.8%
+  lane, 100% PT-PT lane, 88.6% skill routing, the last one deliberately
+  conservative to absorb `disambiguate()`'s own known run-to-run
+  variance, ADR-038) and fails on a real drop even while still clearing
+  the fixed floor. Wired into `bench_router_lane.ts`, `bench_router_
+  lane_pt.ts`, and `bench_skill_routing.ts`; `make bench-gate` runs all
+  three. Deliberately **not** part of `make check` (real network/model
+  calls, real API quota) -- the gate logic itself has 8 offline unit
+  tests that are (`bench/**/*.test.ts` joined `make check`'s glob).
+  `bench/update_baseline.ts` is the one deliberate way to record a new
+  baseline after a confirmed real improvement -- never automatic.
 - **Tag the audit log with which channel resolved an approval**
   (dashboard click vs. `gate/cli.ts` terminal command vs. voice, once
   voice approval ever exists). vierisid's `AuditEntry.channel` field

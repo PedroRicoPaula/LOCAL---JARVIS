@@ -22,6 +22,7 @@
 
 import { classifyLane } from "../core/router/laneClassifier.ts";
 import { buildRegistry } from "../core/router/wiring.ts";
+import { checkGate, formatGateReport, loadBaselines } from "./_shared/regressionGate.ts";
 
 const PACE_MS = 2000;
 
@@ -112,8 +113,9 @@ async function main(): Promise<number> {
   }
 
   const accPct = (100 * correct) / CASES.length;
+  const gate = checkGate("bench_router_lane", accPct, 85, loadBaselines());
   console.log(`\n  lane accuracy  ${accPct.toFixed(1)}%   (need >= 85)`);
-  console.log(`\n  ${accPct >= 85 ? "PASS" : "FAIL"}`);
+  console.log(formatGateReport("bench_router_lane", gate));
 
   if (failures.length > 0) {
     console.log(`\n  failures (${failures.length}):`);
@@ -121,7 +123,7 @@ async function main(): Promise<number> {
     if (failures.length > 12) console.log(`    ... and ${failures.length - 12} more`);
   }
 
-  return accPct >= 85 ? 0 : 1;
+  return gate.passed ? 0 : 1;
 }
 
 main().then((code) => process.exit(code));

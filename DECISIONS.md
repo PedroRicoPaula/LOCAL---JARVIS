@@ -3499,3 +3499,61 @@ secret through the *existing*, already-generic `getKeychainSecret()`
   ADR-037). `REPO_LIST_PATTERN` may need adjusting once the real tool
   catalogue is visible -- GitHub's server exposes far more tools than
   Gmail's, so the regex is a reasonable guess, not a verified match yet.
+
+## ADR-048 — Permanent benchmark regression gate
+
+**Status:** accepted
+
+**Context.** `docs/BACKLOG.md` flagged this idea since at least ADR-024/
+ADR-026, when an added few-shot example and a manifest-example collision
+each silently regressed real routing accuracy by several points while
+still clearing each benchmark's fixed absolute floor (85%/90%) --  caught
+both times only because someone happened to rerun the benchmark by hand.
+Built for real 2026-08-08 while the owner asked to keep progressing on
+work that doesn't need him, tracking what does.
+
+**Decisions.**
+
+- **Compare against a recorded baseline, not just the floor.**
+  `bench/_shared/regressionGate.ts`'s `checkGate()` fails a run that
+  drops more than `REGRESSION_TOLERANCE_PCT` (1.0) below
+  `bench/baseline.json`'s recorded score for that benchmark, even while
+  the run still clears the floor -- the floor alone is exactly what let
+  both prior regressions through undetected.
+- **Never wired into `make check`.** All three routing-accuracy
+  benchmarks (`bench_router_lane.ts`, `bench_router_lane_pt.ts`,
+  `bench_skill_routing.ts`) make real NIM/Ollama calls and spend real API
+  quota -- `make check` has never done that (CLAUDE.md § 3). New `make
+  bench-gate` target runs all three by hand, meant to be run deliberately
+  before shipping a `laneClassifier.ts`/`dispatch.ts`/manifest-examples
+  change, not on every commit. The gate's own comparison *logic* is a
+  pure function over numbers, though, so it's fully offline-testable --
+  8 new tests, `bench/**/*.test.ts` joined `make check`'s glob.
+- **`bench_skill_routing`'s baseline (88.6) is deliberately set at the
+  low end of its own documented natural variance, not its typical
+  91%+ run.** Confirmed live, 2026-08-07: three consecutive same-night
+  runs with zero code changes between them landed 91.4% / 88.6% / 91.4%,
+  attributable to `disambiguate()`'s own LLM-call reliability under heavy
+  real API usage (ADR-038), not a regression. A tight baseline on this
+  specific benchmark would make the gate cry wolf on ordinary variance;
+  the other two benchmarks (deterministic embedding scores, confirmed via
+  a real 5x-repeat self-similarity test at 1.000000 every time) get a
+  tight baseline at their real, stable numbers (97.8%, 100%).
+- **Baseline updates are a separate, deliberate CLI step
+  (`bench/update_baseline.ts`), never automatic on a passing/improved
+  run.** Auto-updating on every improved run would let a regression that
+  still happens to clear the floor quietly become the new "normal" the
+  next time it's also the best run of the day -- same "a trust decision
+  needs a human, not a script" reasoning already applied to MCP tool
+  tiering (`docs/BACKLOG.md`) and fact/quantity confidence
+  (CLAUDE.md § 0.5).
+
+**Consequences.**
+- `bench/baseline.json` seeded from the real, already-documented numbers
+  in `PROGRESS.md`'s own "Key numbers" table -- not re-measured live
+  tonight (would spend real API quota to re-confirm numbers already on
+  record with no new information).
+- 8 new tests, 435 total, `make check` green throughout. Not yet run for
+  real against live NIM/Ollama calls -- first real run happens naturally
+  the next time a routing-relevant change needs benchmarking, which is
+  the gate's actual job.

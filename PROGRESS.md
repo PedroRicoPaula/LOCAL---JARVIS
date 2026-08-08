@@ -22,11 +22,15 @@ the dated entries below for full detail. Backlog organized and analyzed
 2026-08-08; owner chose generalizing the MCP tool layer next over
 Phase 9 -- GitHub added as the second real MCP server (ADR-047),
 `skills/_shared/mcpTool.ts` extracted and proven with both Gmail and
-GitHub, `docs/SKILLS.md` § 5b documents the pattern. `make check`: 427
-tests green. Owner-required: a real GitHub PAT in Keychain (README
-§ 3d) to confirm the pipeline against live third-party data. Next: to
-be decided with the owner -- more MCP servers, Phase 9, or the
-Knowledge Brain idea.
+GitHub, `docs/SKILLS.md` § 5b documents the pattern. Also built the
+`docs/BACKLOG.md`-flagged permanent benchmark gate (`bench/_shared/
+regressionGate.ts`, `make bench-gate`) -- catches a real routing-
+accuracy regression against a recorded baseline, not just the fixed
+floor, the exact class of bug that shipped twice before (ADR-024,
+ADR-026). `make check`: 435 tests green. Owner-required, not yet done:
+a real GitHub PAT in Keychain (README § 3d) to confirm the MCP pipeline
+against live third-party data. Next: to be decided with the owner --
+more MCP servers, Phase 9, or the Knowledge Brain idea.
 **Branch:** `main`
 **Last updated:** 2026-08-08
 
@@ -2748,6 +2752,35 @@ consequences in `DECISIONS.md`'s ADR-047 — short version:
   against live data — the first real end-to-end proof of the
   `MCP_TOOL_CALL` pipeline against a third party, since Gmail itself
   never got that far (ADR-037).
+
+**Permanent benchmark regression gate, 2026-08-08 (owner asked to keep
+progressing on anything not needing him, tracking what does).**
+`docs/BACKLOG.md`'s own "permanent benchmark gate" idea, built for real:
+`bench/_shared/regressionGate.ts` compares a fresh benchmark run against
+a recorded baseline (`bench/baseline.json`), not just each script's fixed
+absolute floor — the exact gap that let real accuracy regress silently
+twice before (ADR-024, ADR-026) while still clearing the floor. Wired
+into all three routing-accuracy benchmarks (`bench_router_lane.ts`,
+`bench_router_lane_pt.ts`, `bench_skill_routing.ts`); `make bench-gate`
+runs all three in sequence. `bench_skill_routing`'s baseline (88.6) is
+deliberately set at the low end of its documented natural variance
+(ADR-038's disambiguation-reliability wobble, not a bug) so the gate
+doesn't cry wolf on normal runs. `bench/update_baseline.ts` is the one
+deliberate way to record a new baseline after a confirmed real
+improvement — never automatic, same "a trust decision needs a human,
+not a script" reasoning the MCP-tiering entries already established.
+
+Deliberately **not** wired into `make check` — these benchmarks make
+real network/model calls and spend real API quota, which `make check`
+has never done (CLAUDE.md § 3: no network, no models loaded). The gate's
+own comparison *logic* is fully offline-testable though: 8 new tests
+(`bench/tests/regressionGate.test.ts`), `bench/**/*.test.ts` joined
+`make check`'s glob. 435 tests total, `make check` green throughout. Not
+live-run against real API calls tonight (would spend quota for no new
+information — the comparison logic itself is what needed proving, and
+it's proven offline); first real run happens naturally the next time a
+`laneClassifier.ts`/`dispatch.ts`/manifest-examples change needs
+benchmarking.
 
 ---
 
