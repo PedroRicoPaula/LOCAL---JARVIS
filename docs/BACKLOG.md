@@ -610,6 +610,98 @@ experiment-logging half) and its own `persona.md` like any other skill
 per `docs/SKILLS.md`. None of this is scoped — flagging the seams, not
 deciding them.
 
+## Screen-guide overlay ("point at my screen and teach me") — 2026-08-11
+
+Owner's own idea, sparked by an Instagram clip of
+[farzaa/clicky](https://github.com/farzaa/clicky) (a macOS AI screen-guide
+app, 7.3k stars): asks a question by voice about whatever's on screen,
+gets a spoken answer, and a floating on-screen cursor animates to point at
+the actual UI element to click/use — never clicks or types anything
+itself, purely observes and guides. Owner's own stated stretch goal
+(explicitly flagged by him as "quem sabe um dia," not asked for now):
+the same pointing idea overlaid on a live camera feed instead of the
+screen, for physical tasks (pointing at a component on a breadboard,
+etc.) — closer in shape to the existing camera-gesture-control backlog
+entry above than to this one; not researched further here.
+
+**Real research on the actual repo before any technical opinion was
+formed** (fetched the real README, not guessed — this project has been
+burned before assuming a third party's architecture):
+
+- **Push-to-talk, one screenshot per query — not continuous video.** The
+  README's own words: "Push-to-talk streams audio over a websocket to
+  AssemblyAI, sends the transcript + screenshot to Claude via streaming
+  SSE." One capture per question, same shape as this project's own
+  camera-session model (`SPEC.md` § 6: armed, capture only on request,
+  never continuous recording) -- a good, not a compromised, architectural
+  fit. Worth correcting the "sees my screen in real time" framing from
+  the Instagram clip's own narration against the real source.
+- **The pointing mechanism is a text tag, not a separate vision model.**
+  Claude's own response embeds `[POINT:x,y:label:screenN]` tags (multi-
+  monitor aware); a native overlay parses and animates the cursor there.
+  Simple, reusable protocol -- the hard part isn't the tag, it's whether
+  the *model* can reliably emit accurate pixel coordinates from a
+  screenshot in the first place (see the open risk below).
+- **Rendering: two native `NSPanel` windows** (Swift/AppKit), one
+  transparent full-screen overlay for the cursor, one control-panel
+  dropdown. **This is the one piece JARVIS has no equivalent of at all**
+  -- there is no native macOS UI surface in this codebase today beyond
+  system notifications/dialogs (`senses/ears/ack.py`'s `osascript`
+  notification, `skills/media`'s AppleScript). Needs real platform work:
+  most likely `pyobjc` driving `NSPanel`/`NSWindow` directly from
+  `senses/` (same language as the rest of that layer, no new runtime),
+  as a not-yet-attempted alternative to a Swift helper binary or an
+  Electron overlay (heavier, cross-platform if that's ever wanted, but a
+  whole new dependency for one window) -- not researched deeply enough
+  yet to commit to one; a real spike, not assumed easy.
+- **Four permissions**: Microphone (already granted), Accessibility
+  (already needed for the Tab hotkey, Phase 1), Screen Recording +
+  Screen Content/ScreenCaptureKit (the same still-ungranted gap
+  `skills/clipboard`'s screenshot capability already found and logged
+  above -- one owner-required grant now covers both features).
+- **Real, hard conflict with CLAUDE.md § 0.2: Clicky runs on Anthropic
+  Claude (paid), AssemblyAI (paid real-time STT), and ElevenLabs (paid
+  TTS), each needing the end user's own API key.** A literal clone isn't
+  buildable inside this project's own free-tier-only rule as it stands
+  today -- flagging this plainly rather than quietly building around it
+  (CLAUDE.md § 9). The *concept* doesn't need those three specifically,
+  though -- see below.
+- **A real technical edge JARVIS's own prior research already has that
+  Clicky's pure-vision-coordinate approach doesn't use:** the 2026-08-05
+  computer-use research (Tier 2 entry above) already found and recorded
+  that macOS's Accessibility API (`AXUIElement`) beats vision-on-
+  screenshots badly for *locating* a UI element precisely (~50ms
+  structured lookups reading real button labels vs. ~2500ms per
+  screenshot, guessing from pixels) -- Clicky gets away with pure vision
+  because Claude's grounding is unusually strong (and still imperfect,
+  38 open issues). A JARVIS version could plausibly do *better* by
+  splitting the job: the vision/reasoning model identifies *what* to
+  point at semantically ("the color grading icon"), then a real
+  Accessibility-API lookup finds *where* it actually is on screen --
+  more accurate, and works even if the vision model's raw coordinate
+  guess would've been off. Not built or benchmarked, a real design
+  direction worth trying before assuming pure vision-coordinates is good
+  enough.
+
+**What already exists in this codebase and would carry over almost
+entirely, no conflict with anything already in `SPEC.md`/`CLAUDE.md`:**
+voice (bilingual STT/TTS, arguably more capable than Clicky's own cloud
+pair, and free/local where Clicky's isn't), the `see` lane's real vision
+routing (NIM primary), the capability/Gate model (this needs *no*
+approval flow to observe+point+speak -- no click, no type, nothing
+written -- squarely green-tier, same shape as `CAMERA`; arm the "screen
+guide" session once, like opening the camera, not per-screenshot), and
+the existing screenshot capability (`skills/clipboard`'s
+`capture_screenshot`, though that's an *interactive-selection* capture to
+clipboard -- a full-screen, non-interactive capture is a small, separate
+addition, not a rewrite).
+
+**Not scoped or sequenced.** A real, substantial piece of work (the
+overlay window alone is a genuine platform spike) competing with the MCP
+tool layer, Phase 9, and the Knowledge Brain idea for "what's next" --
+flagged here in full so the research doesn't need re-deriving, decision
+deliberately left to the owner.
+
 ## Annoyances found during SOAK
 
 - ~~`core/skills/loader.ts` kept its own `VALID_CAPABILITIES`/
