@@ -34,7 +34,8 @@ live-verified against a real copy of the owner's own `data/jarvis.db`).
 Also batched fact extraction (idle-triggered, `core/
 factExtractionScheduler.ts`, ADR-050) -- addresses the recurring
 approval-fatigue finding directly, live-verified against a real timed
-window, not just unit tests. `make check`: 449 tests green.
+window, not just unit tests. Audit log now tags which channel
+(dashboard/CLI) resolved an approval. `make check`: 453 tests green.
 Owner-required, not yet done: a real GitHub PAT in Keychain (README
 § 3d) to confirm the MCP pipeline against live third-party data. Also
 researched (not built): a screen-guide overlay idea (`docs/

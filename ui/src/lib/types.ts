@@ -44,6 +44,7 @@ export interface ApprovalResponse {
   nonce: string;
   decision: "approve" | "reject";
   decidedAt: number;
+  channel?: "dashboard" | "cli" | "voice";
 }
 
 export type EventKind = "utterance" | "response" | "observation" | "action" | "approval" | "rejection" | "note";

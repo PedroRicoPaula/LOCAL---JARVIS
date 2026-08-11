@@ -59,6 +59,7 @@ export async function watchApprovalCommands(gate: Gate): Promise<void> {
       nonce: approval.nonce,
       decision: command === "approve" ? "approve" : "reject",
       decidedAt: Date.now(),
+      channel: "cli",
     });
     console.log(`gate: ${command}d ${id}`);
   }

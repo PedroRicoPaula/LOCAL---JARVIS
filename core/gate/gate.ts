@@ -195,18 +195,18 @@ export class Gate extends EventEmitter {
     const row = this.getApprovalRow(response.requestId);
 
     if (!row || row.state !== "pending" || !timingSafeEqualStrings(row.nonce, response.nonce)) {
-      this.logAudit(response.requestId, "rejected", { reason: "replay" });
+      this.logAudit(response.requestId, "rejected", { reason: "replay", channel: response.channel });
       return;
     }
 
     if (now() > row.expires_at) {
-      this.settlePending(row.id, "expired", { ok: false, reason: "expired" });
+      this.settlePending(row.id, "expired", { ok: false, reason: "expired" }, { channel: response.channel });
       this.cleanupObservationFile(row);
       return;
     }
 
     if (response.decision !== "approve") {
-      this.settlePending(row.id, "rejected", { ok: false, reason: "rejected" });
+      this.settlePending(row.id, "rejected", { ok: false, reason: "rejected" }, { channel: response.channel });
       this.cleanupObservationFile(row);
       return;
     }
@@ -226,7 +226,7 @@ export class Gate extends EventEmitter {
     // that breaks this invariant fails loudly instead of silently.
     if (!verify(this.signingKey, signed)) {
       this.setState(row.id, "approved");
-      this.logAudit(row.id, "approved", {});
+      this.logAudit(row.id, "approved", { channel: response.channel });
       this.logAudit(row.id, "execution_failed", { error: "signature verification failed" });
       this.emit("approval.resolved", { requestId: row.id, state: "approved" });
       this.resolvePending(row.id, { ok: false, reason: "error", detail: "signature verification failed" });
@@ -234,12 +234,12 @@ export class Gate extends EventEmitter {
     }
     const executor = this.executors[row.capability as Capability];
     if (!executor) {
-      this.settlePending(row.id, "approved", { ok: true, result: signed });
+      this.settlePending(row.id, "approved", { ok: true, result: signed }, { channel: response.channel });
       return;
     }
 
     this.setState(row.id, "approved");
-    this.logAudit(row.id, "approved", {});
+    this.logAudit(row.id, "approved", { channel: response.channel });
     this.emit("approval.resolved", { requestId: row.id, state: "approved" });
 
     let execResult: { ok: boolean; result?: unknown; error?: string };
@@ -295,9 +295,9 @@ export class Gate extends EventEmitter {
     return this.listPending().map(rowToRequest);
   }
 
-  private settlePending(id: string, state: ApprovalState, outcome: ApprovalOutcome): void {
+  private settlePending(id: string, state: ApprovalState, outcome: ApprovalOutcome, auditDetail: Record<string, unknown> = {}): void {
     this.setState(id, state);
-    this.logAudit(id, state === "approved" ? "approved" : state, {});
+    this.logAudit(id, state === "approved" ? "approved" : state, auditDetail);
     this.emit("approval.resolved", { requestId: id, state });
     this.resolvePending(id, outcome);
   }

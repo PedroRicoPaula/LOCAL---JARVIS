@@ -252,12 +252,15 @@ site), [Avinashb722/jarvis-ai-assistant](https://github.com/Avinashb722/jarvis-a
   tests that are (`bench/**/*.test.ts` joined `make check`'s glob).
   `bench/update_baseline.ts` is the one deliberate way to record a new
   baseline after a confirmed real improvement -- never automatic.
-- **Tag the audit log with which channel resolved an approval**
-  (dashboard click vs. `gate/cli.ts` terminal command vs. voice, once
-  voice approval ever exists). vierisid's `AuditEntry.channel` field
-  ("click" | "voice" | "system") is a small addition with real
-  forensic value — right now our `audit_log` records the decision but
-  not how it arrived.
+- ~~Tag the audit log with which channel resolved an approval~~ —
+  **built 2026-08-11.** `ApprovalResponse` gained an optional `channel:
+  "dashboard" | "cli" | "voice"` field (`shared/types.ts`, mirrored in
+  `ui/src/lib/types.ts`); `gate/cli.ts` and the dashboard's own `decide()`
+  (`ui/src/lib/use-jarvis.ts`) each tag their own. `"voice"` reserved,
+  not reachable yet (CLAUDE.md § 5: a red-tier send still needs a real
+  click/keystroke, never a spoken "yes" alone). A decision with no
+  channel set (an older/unspecified client) logs cleanly with the field
+  simply absent, not an error. 4 new tests.
 - ~~A reviewable list of routing misses~~ — **built 2026-08-08.**
   thevickypedia/Jarvis dumps every unrecognized phrase to a file for the
   developer to read later (`support.unrecognized_dumper`); had the data

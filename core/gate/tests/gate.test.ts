@@ -451,3 +451,59 @@ test("rejecting a plain fact proposal (no imagePath) does not throw", async () =
 
   assert.deepEqual(outcome, { ok: false, reason: "rejected" });
 });
+
+// docs/BACKLOG.md's "tag the audit log with which channel resolved an
+// approval" idea -- real forensic value, previously the audit log
+// recorded *that* a decision happened, never *how*.
+test("a rejection's audit entry records which channel decided it", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "SHELL_EXEC", humanSummary: "run", payload: {} };
+
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "reject", decidedAt: Date.now(), channel: "cli" });
+  await outcomePromise;
+
+  const audit = auditRows(gate);
+  const rejected = audit.find((a) => a.event === "rejected");
+  assert.deepEqual(rejected?.detail, { channel: "cli" });
+});
+
+test("an approval's audit entry records the dashboard channel", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "MEMORY_WRITE", humanSummary: "write", payload: {} };
+
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now(), channel: "dashboard" });
+  await outcomePromise;
+
+  const audit = auditRows(gate);
+  const approved = audit.find((a) => a.event === "approved");
+  assert.deepEqual(approved?.detail, { channel: "dashboard" });
+});
+
+test("a decision with no channel set (an older/unspecified client) logs cleanly, channel undefined", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "SHELL_EXEC", humanSummary: "run", payload: {} };
+
+  const outcomePromise = gate.propose(action, "some-skill");
+  const [request] = gate.listPending();
+  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "reject", decidedAt: Date.now() });
+  await outcomePromise;
+
+  const audit = auditRows(gate);
+  const rejected = audit.find((a) => a.event === "rejected");
+  assert.equal((rejected?.detail as { channel?: string })?.channel, undefined);
+});
+
+test("a natural timeout expiry (no decide() call at all) has no channel -- nothing decided it", async () => {
+  const gate = freshGate();
+  const action: ProposedAction = { capability: "SHELL_EXEC", humanSummary: "run", payload: {}, expiresInMs: 10 };
+
+  await gate.propose(action, "some-skill");
+
+  const audit = auditRows(gate);
+  const expired = audit.find((a) => a.event === "expired");
+  assert.equal((expired?.detail as { channel?: string })?.channel, undefined);
+});

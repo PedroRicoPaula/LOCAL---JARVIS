@@ -294,7 +294,7 @@ export function useJarvis(): JarvisDashboardState {
     // Optimistic: the dashboard is a view, but there's no reason to make
     // the owner wait on the round trip to stop showing a decided request.
     setApprovals((prev) => prev.filter((a) => a.id !== request.id));
-    send({ type: "approval.decide", response: { requestId: request.id, nonce: request.nonce, decision, decidedAt: Date.now() } });
+    send({ type: "approval.decide", response: { requestId: request.id, nonce: request.nonce, decision, decidedAt: Date.now(), channel: "dashboard" } });
   }
 
   function injectUtterance(text: string): void {

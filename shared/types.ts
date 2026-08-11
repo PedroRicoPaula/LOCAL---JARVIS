@@ -146,6 +146,16 @@ export interface ApprovalResponse {
   nonce: string;
   decision: "approve" | "reject";
   decidedAt: number;
+  /** How the decision arrived -- forensic value the audit log didn't
+   * have before (`docs/BACKLOG.md`'s "tag the audit log with which
+   * channel resolved an approval" idea, built 2026-08-11): it recorded
+   * *that* a decision happened, never *how*. `"voice"` doesn't exist
+   * yet (CLAUDE.md § 5's own rule: a red-tier send still needs a real
+   * click/keystroke, never a spoken "yes" alone) -- reserved so the enum
+   * doesn't need revisiting when it does. Optional: a client that
+   * doesn't set it (or an older one) just logs an audit entry with no
+   * channel, not an error. */
+  channel?: "dashboard" | "cli" | "voice";
 }
 
 export type ApprovalOutcome =
