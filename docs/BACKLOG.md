@@ -610,6 +610,46 @@ experiment-logging half) and its own `persona.md` like any other skill
 per `docs/SKILLS.md`. None of this is scoped — flagging the seams, not
 deciding them.
 
+**Addendum, 2026-08-11 — a concrete mechanism for point 5, found via
+Google Research's own published work, not another SEO-blog-tier
+secondary source this time:**
+[ReasoningBank](https://research.google/blog/reasoningbank-enabling-agents-to-learn-from-experience/)
+gives the "Unsolved Problems / Experiments" idea above a specific,
+evidenced shape instead of staying abstract. The mechanism: an agent
+memory item is `{title, description, content}` — a *distilled
+reasoning strategy*, not a raw trajectory log (e.g. "always verify the
+current page identifier before paginating" rather than "clicked page
+2, then page 3, then..."). Critically, it learns from **both success
+and failure** — a failed attempt yields a counterfactual/pitfall entry,
+not just silence. The loop is closed: retrieve relevant memories before
+acting → act → an LLM-as-judge assesses the outcome → extract the
+insight → consolidate into the bank for next time. Google's own
+published numbers (Gemini-2.5-Flash, WebArena + SWE-Bench-Verified):
++8.3% and +4.6% success rate over a memory-free baseline, and fewer
+execution steps per task.
+
+Why this matters more than it looks: this project already does the
+*human-driven, write-only* half of this loop by hand — CLAUDE.md § 0.7
+forces exactly "write down what you learned, including from failures"
+into `PROGRESS.md`/`DECISIONS.md`, and this file's own "Annoyances
+found during SOAK" section is full of real distilled-root-cause entries
+(ADR-024, ADR-030, ADR-038, ADR-040 among others) that already look
+like ReasoningBank memory items in prose form. What's missing is the
+other half: **retrieval before acting.** Nothing currently reads
+`PROGRESS.md`/`DECISIONS.md`/this file back *into* a live debugging or
+build session before it starts — a future agent re-hits a solved
+problem cold unless a human happens to remember to grep for it. The
+same gap exists one level up, outside this repo, for the `debugger`/
+`code-reviewer`/`release-manager` global agents built 2026-08-08 — each
+invocation starts from zero, no memory of prior sessions' root causes
+carries forward. If the Personal Knowledge Brain above is ever actually
+built, ReasoningBank's `{title, description, content}` schema plus its
+retrieve→act→judge→extract→consolidate loop is the concrete mechanism
+to build toward, not a bespoke one — closer to "make the write-side
+discipline this project already has queryable and automatically
+retrieved" than to a net-new idea. Still not scoped as a JARVIS phase;
+flagging the mechanism, not committing to it.
+
 ## Screen-guide overlay ("point at my screen and teach me") — 2026-08-11
 
 Owner's own idea, sparked by an Instagram clip of
