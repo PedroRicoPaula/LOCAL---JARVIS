@@ -3614,3 +3614,71 @@ doesn't need him.
   real-file-based migration-idempotency test (`core/memory/tests/
   db.test.ts`), not just an in-memory one, since `:memory:` databases
   can't actually exercise "reopen the same real file twice."
+
+## ADR-050 — Batched, idle-triggered fact extraction
+
+**Status:** accepted
+
+**Context.** `docs/BACKLOG.md` flagged approval-fatigue from
+`fact-extraction` since ADR-027/028; real usage kept reconfirming it (6
+proposals from one 8-utterance run, 2026-08-04; 13 of 17 rejected in
+Pedro's own real session; 3 more expired unactioned in a later short
+test; and, under degraded-model conditions, 5 of 6 extractions from
+isolated utterances were outright garbage). Built 2026-08-11 while the
+owner asked to keep progressing on work that doesn't need him.
+
+**Decisions.**
+
+- **Batch the extraction call itself, not just the approval UI.** Two
+  same-shaped options existed: (a) keep one extraction call per
+  utterance but group the resulting proposals into one dashboard-level
+  "review batch," or (b) accumulate utterances and run one extraction
+  call over the whole window. Went with (b) — it's strictly better on
+  both axes the backlog named: fewer LLM calls (cost), *and* better
+  precision, since the model judging "is this durable" from a short
+  recent window with real context is less likely to hallucinate a fact
+  from an isolated fragment than judging one line in isolation ever was.
+  (a) alone would only have addressed the popup-count complaint, not the
+  garbage-fact root cause.
+- **No Gate or dashboard changes.** Each fact in a batch still becomes
+  its own individual `MEMORY_WRITE` proposal, approved/rejected one at a
+  time exactly as before — batching happens entirely upstream, in when
+  and how often extraction *runs*, not in how its output is reviewed.
+  Deliberately the smaller, safer change: no new payload shape, no
+  executor change, no UI work, nothing to re-verify in the approval
+  lifecycle that ADR-006/027 already hardened.
+- **Debounce with a max-count safety cap, not a fixed interval.**
+  `core/factExtractionScheduler.ts` fires `idleMs` (default 20s, env-
+  overridable) after the *last* utterance, so an ordinary back-and-forth
+  turn doesn't get its own pass; `maxUtterances` (default 6) forces a
+  flush regardless if a session never goes quiet. 20s, not N.E.K.O's own
+  10s (`docs/BACKLOG.md`'s external-research entry) — chosen to clear a
+  typical spoken-response duration comfortably, not benchmarked against
+  N.E.K.O's own real usage pattern, which this project has no visibility
+  into.
+- **Each batch's facts are attributed to the last utterance's
+  `eventId`.** The model isn't asked to attribute a fact back to a
+  specific line in the window — `facts.source_event` is a soft
+  debugging reference (nothing else queries it precisely), and asking
+  for per-fact attribution would add real prompt complexity for a
+  provenance detail nothing currently depends on.
+
+**Consequences.**
+- `core/factExtractionScheduler.ts` (new), `core/factExtraction.ts`
+  (`extractAndRememberFacts` now takes the batch), `core/main.ts` (owns
+  the scheduler instance, feeds it instead of calling extraction
+  per-utterance directly).
+- 9 new tests (449 total): 6 fake-clock scheduler tests (`core/tests/
+  factExtractionScheduler.test.ts`, no real waiting), 3 new
+  `factExtraction.test.ts` cases (batch-join, last-eventId attribution,
+  empty batch). `make check` green throughout.
+- **Live-verified**, not just unit-tested, given this changes real
+  conversational timing behavior: an isolated `core` instance (`JARVIS_
+  FACT_EXTRACTION_IDLE_MS=8000` for a fast real test), two real
+  utterances injected 1.5s apart over the real WebSocket. Confirmed:
+  zero `approval.new` events after either utterance individually; both
+  `MEMORY_WRITE` proposals ("diet.avoids = peanuts",
+  "workdays.remote = Tuesdays") appeared together roughly 8s after the
+  *second* utterance, not the first — the debounce-resets-on-each-
+  utterance behavior confirmed against a real clock, not just the fake
+  one the unit tests use.

@@ -31,6 +31,7 @@ import { createMcpToolExecutor } from "./executors/mcp.ts";
 import { createWriteFactExecutor } from "./executors/memory.ts";
 import { runShellAction } from "./executors/shell.ts";
 import { extractAndRememberFacts } from "./factExtraction.ts";
+import { createFactExtractionScheduler } from "./factExtractionScheduler.ts";
 import { watchApprovalCommands } from "./gate/cli.ts";
 import { Gate } from "./gate/gate.ts";
 import { getSigningKey } from "./gate/hmac.ts";
@@ -181,6 +182,19 @@ async function main(): Promise<void> {
     relayCameraStatus(eyesConn, wsHub, cameraHandle, conversation.say).catch((err) => console.error("core: camera status relay failed", err));
   }
 
+  // Batched, idle-triggered fact extraction (core/factExtractionScheduler.ts)
+  // -- replaces the old one-extraction-call-per-utterance shape, found
+  // live to both cost more (an LLM call every turn) and produce worse,
+  // noisier facts (isolated fragments judged with no surrounding
+  // context). Still fire-and-forget from handleUtterance's own
+  // perspective -- onUtterance() only buffers, the real extraction call
+  // happens later, off this turn's critical path either way.
+  const factExtractionScheduler = createFactExtractionScheduler((batch) => {
+    extractAndRememberFacts(routerRegistry, gate, batch).catch((err) => {
+      console.error("core: fact extraction failed, continuing", err);
+    });
+  });
+
   // The single utterance-handling path -- real speech from `ears` and a
   // dashboard test-console line (SOAK 1, `ClientEvent` "utterance.inject")
   // both end up here, and `core` cannot tell them apart once they do.
@@ -202,13 +216,9 @@ async function main(): Promise<void> {
     wsHub.broadcast({ type: "transcript", text, final: true, speaker: "owner", eventId: utteranceEvent.id });
     wsHub.broadcast({ type: "state", value: "thinking" });
     try {
-      // Fire-and-forget: never adds latency to the spoken response
-      // (CLAUDE.md § 7). A failed extraction just means nothing learned
-      // this turn -- factExtraction.ts already degrades internally, this
-      // catch is only for a truly unexpected throw.
-      extractAndRememberFacts(routerRegistry, gate, text, utteranceEvent.id).catch((err) => {
-        console.error("core: fact extraction failed, continuing", err);
-      });
+      // Buffered, not extracted immediately -- see factExtractionScheduler
+      // above for why.
+      factExtractionScheduler.onUtterance({ text, eventId: utteranceEvent.id });
 
       const { outcome, trace } = await skillRegistry.dispatch(
         embedder,

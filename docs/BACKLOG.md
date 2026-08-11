@@ -288,17 +288,28 @@ site), [Avinashb722/jarvis-ai-assistant](https://github.com/Avinashb722/jarvis-a
   other executor, never an exception.
 
 **Bigger ideas, real design work, not scoped yet.**
-- **Batch fact-extraction review after a period of idle activity,
-  instead of one approval per utterance.** N.E.K.O's `app/memory_server/
-  gates.py` only runs its background memory-consolidation pass after
-  `IDLE_THRESHOLD` (10s) of no new conversation, with a minimum-new-
-  messages floor before bothering to review at all. ADR-027/ADR-028
-  already flagged approval-fatigue as a real risk once `fact-extraction`
-  approvals show up regularly (confirmed live 2026-08-04: 6 proposals
-  from one 8-utterance test run). Batching "review what I might have
-  learned this conversation" into one approval instead of N could cut
-  that noise a lot — real UX design work (what does one batched
-  approval's `humanSummary`/diff even look like?), not a quick patch.
+- ~~Batch fact-extraction review after a period of idle activity, instead
+  of one approval per utterance~~ — **built 2026-08-11.** N.E.K.O's
+  `app/memory_server/gates.py` idle-threshold pattern, adapted: `core/
+  factExtractionScheduler.ts` debounces (idle default 20s, env-
+  overridable) with a max-batch safety cap (6 utterances) so a never-quiet
+  session still gets extraction passes. `extractAndRememberFacts` now
+  takes the whole batch, joined into one extraction call instead of one
+  per utterance — real value beyond just fewer popups: a short window
+  gives the model more context to judge "is this actually durable" from,
+  directly addressing the "5 of 6 garbage in one live run" entry below.
+  Went with *batched extraction* over *batched approval UI* (a
+  same-shaped but different idea) — no Gate/dashboard changes needed,
+  individual facts still get individual approve/reject, just fewer,
+  more deliberate extraction passes producing them. Each fact in a batch
+  is attributed to the *last* utterance's `eventId` (a deliberate
+  simplification, documented in code). 9 new tests (fake-clock scheduler
+  logic, batch-join/attribution/empty-batch on the extraction side).
+  **Live-verified**, not just unit-tested: an isolated `core` instance,
+  two real utterances injected 1.5s apart -- confirmed zero approvals
+  fired after either one individually, both `MEMORY_WRITE` proposals
+  appeared together ~8s (the configured idle) after the *second*
+  utterance, not the first.
 - **Auto-tuned skill examples/prompts from real usage traces, instead
   of hand-editing `manifest.ts` examples every time a collision is
   found live.** OpenJarvis's optimization overlays

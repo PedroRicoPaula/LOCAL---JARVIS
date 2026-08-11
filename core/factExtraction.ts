@@ -31,14 +31,27 @@
  * approval adds no latency to the spoken response; it just means facts
  * accumulate in the dashboard's approval queue for review instead of
  * silently mutating memory.
+ *
+ * Runs on a batched, idle-triggered window (`core/factExtractionScheduler.ts`),
+ * not once per utterance -- found live, real usage: one-utterance-at-a-time
+ * extraction produced garbage from isolated fragments with no surrounding
+ * context (`docs/BACKLOG.md`'s "5 of 6 garbage in one live run" entry),
+ * and drove real approval fatigue (13 of 17 `MEMORY_WRITE` proposals
+ * rejected in one real session). A short recent window gives the model
+ * more context to judge "is this actually durable" from, and produces
+ * fewer, more deliberate extraction passes -- same shape N.E.K.O's own
+ * idle-threshold memory-consolidation pass already validated (`docs/
+ * BACKLOG.md`'s external-research section).
  */
 
+import type { PendingUtterance } from "./factExtractionScheduler.ts";
 import type { Gate } from "./gate/gate.ts";
 import type { Registry } from "./router/registry.ts";
 import { createSkillRouter } from "./skills/skillRouter.ts";
 
-const EXTRACTION_SYSTEM = `You extract durable facts about the owner from a
-single spoken utterance, for a personal assistant's long-term memory.
+const EXTRACTION_SYSTEM = `You extract durable facts about the owner from
+one or more recent spoken utterances, given one per line (oldest first),
+for a personal assistant's long-term memory.
 
 A fact is something true about the owner that would still matter in a
 future, unrelated conversation: a preference, a restriction, a stable
@@ -121,14 +134,23 @@ export async function extractFacts(routerRegistry: Registry, utterance: string):
  * never awaits this function's own promise either), so the owner reviews
  * and approves what actually gets remembered instead of it landing
  * silently. Returns what was *extracted* (for tests/logging), not what
- * was ultimately approved -- that's the gate's own audit log's job. */
+ * was ultimately approved -- that's the gate's own audit log's job.
+ *
+ * `utterances` is the batch `core/factExtractionScheduler.ts` accumulated
+ * over one idle window -- every fact this pass finds is attributed to
+ * the *last* utterance in the batch as `sourceEventId` (a deliberate
+ * simplification: the model isn't asked to attribute each fact back to
+ * a specific line, since `facts.source_event` is a soft debugging
+ * reference, not something anything else queries precisely). */
 export async function extractAndRememberFacts(
   routerRegistry: Registry,
   gate: Gate,
-  utterance: string,
-  sourceEventId: string,
+  utterances: readonly PendingUtterance[],
 ): Promise<ExtractedFact[]> {
-  const facts = await extractFacts(routerRegistry, utterance);
+  if (utterances.length === 0) return [];
+  const combinedText = utterances.map((u) => u.text).join("\n");
+  const sourceEventId = utterances[utterances.length - 1]!.eventId;
+  const facts = await extractFacts(routerRegistry, combinedText);
   for (const fact of facts) {
     gate
       .propose(

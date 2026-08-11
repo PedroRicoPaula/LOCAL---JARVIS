@@ -74,7 +74,7 @@ test("extractAndRememberFacts proposes each fact to the gate -- does not write m
   const db = new DatabaseSync(":memory:");
   const gate = new Gate(db, "test-key"); // no executors registered -- proves this alone never writes anything
 
-  const facts = await extractAndRememberFacts(registry, gate, "keep it terse", "event-1");
+  const facts = await extractAndRememberFacts(registry, gate, [{ text: "keep it terse", eventId: "event-1" }]);
 
   assert.deepEqual(facts, [{ key: "prefs.verbosity", value: "terse", confidence: 0.8 }]);
   const [pending] = gate.listPendingRequests();
@@ -99,7 +99,7 @@ test("a fact only actually lands in memory once the gate approval is granted -- 
   // failure inside the executor (found running this exact test).
   const event = memory.appendEvent({ kind: "utterance", actor: "owner", content: "keep it terse" });
 
-  await extractAndRememberFacts(registry, gate, "keep it terse", event.id);
+  await extractAndRememberFacts(registry, gate, [{ text: "keep it terse", eventId: event.id }]);
   assert.equal(memory.getFact("prefs.verbosity"), null, "not written before approval");
 
   const [pending] = gate.listPendingRequests();
@@ -115,10 +115,55 @@ test("a rejected fact never reaches memory", async () => {
   const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
   const gate = new Gate(db, "test-key", { MEMORY_WRITE: createWriteFactExecutor(memory) });
 
-  await extractAndRememberFacts(registry, gate, "I can whistle", "event-1");
+  await extractAndRememberFacts(registry, gate, [{ text: "I can whistle", eventId: "event-1" }]);
   const [pending] = gate.listPendingRequests();
   await gate.decide({ requestId: pending!.id, nonce: pending!.nonce, decision: "reject", decidedAt: Date.now() });
 
   assert.equal(memory.getFact("abilities.musical"), null);
   memory.close();
+});
+
+test("a batch of several utterances is joined into one extraction call, one per line", async () => {
+  const provider = new FakeProvider({ id: "fake", lanes: ["converse"], text: '{"facts": []}' });
+  const registry = new Registry();
+  registry.register(provider);
+  const db = new DatabaseSync(":memory:");
+  const gate = new Gate(db, "test-key");
+
+  await extractAndRememberFacts(registry, gate, [
+    { text: "I don't eat peanuts", eventId: "e1" },
+    { text: "also I work remote on Tuesdays", eventId: "e2" },
+  ]);
+
+  const sentText = provider.receivedRequests[0]?.messages.map((m) => m.content).join("\n");
+  assert.match(sentText ?? "", /I don't eat peanuts/);
+  assert.match(sentText ?? "", /also I work remote on Tuesdays/);
+});
+
+test("every fact from a batch is attributed to the LAST utterance's eventId", async () => {
+  const registry = registryWith('{"facts": [{"key": "diet.avoids", "value": "peanuts", "confidence": 0.9}]}');
+  const db = new DatabaseSync(":memory:");
+  const gate = new Gate(db, "test-key");
+
+  await extractAndRememberFacts(registry, gate, [
+    { text: "I don't eat peanuts", eventId: "e1" },
+    { text: "anyway, what's the weather", eventId: "e2" },
+  ]);
+
+  const [pending] = gate.listPendingRequests();
+  assert.deepEqual(pending?.payload, { kind: "fact", key: "diet.avoids", value: "peanuts", confidence: 0.9, sourceEventId: "e2" });
+  gate.decide({ requestId: pending!.id, nonce: pending!.nonce, decision: "reject", decidedAt: Date.now() });
+});
+
+test("an empty batch extracts nothing and never calls the model", async () => {
+  const provider = new FakeProvider({ id: "fake", lanes: ["converse"], text: '{"facts": []}' });
+  const registry = new Registry();
+  registry.register(provider);
+  const db = new DatabaseSync(":memory:");
+  const gate = new Gate(db, "test-key");
+
+  const facts = await extractAndRememberFacts(registry, gate, []);
+
+  assert.deepEqual(facts, []);
+  assert.equal(provider.callCount, 0);
 });

@@ -31,10 +31,16 @@ ADR-026). Also built a reviewable routing-misses list (`GET /api/
 routing-misses`, `routing_stats` gained an `event_id` column -- this
 project's first real schema migration on an already-populated table,
 live-verified against a real copy of the owner's own `data/jarvis.db`).
-`make check`: 440 tests green. Owner-required, not yet done: a real
-GitHub PAT in Keychain (README § 3d) to confirm the MCP pipeline
-against live third-party data. Next: to be decided with the owner --
-more MCP servers, Phase 9, or the Knowledge Brain idea.
+Also batched fact extraction (idle-triggered, `core/
+factExtractionScheduler.ts`, ADR-050) -- addresses the recurring
+approval-fatigue finding directly, live-verified against a real timed
+window, not just unit tests. `make check`: 449 tests green.
+Owner-required, not yet done: a real GitHub PAT in Keychain (README
+§ 3d) to confirm the MCP pipeline against live third-party data. Also
+researched (not built): a screen-guide overlay idea (`docs/
+BACKLOG.md`, inspired by farzaa/clicky) -- real platform work, not
+scoped. Next: to be decided with the owner -- more MCP servers,
+Phase 9, the Knowledge Brain idea, or the screen-guide idea.
 **Branch:** `main`
 **Last updated:** 2026-08-08
 
@@ -2819,6 +2825,23 @@ yet — deliberately out of scope, the backend gap was the actual ask;
 flagged in `docs/BACKLOG.md` as a natural follow-up.
 
 5 new tests (440 total), `make check` green throughout.
+
+**Batched, idle-triggered fact extraction, 2026-08-11 (ADR-050).** The
+approval-fatigue finding kept recurring across real sessions (6
+proposals from 8 utterances, 13/17 rejected, 3 more expired unactioned,
+5/6 garbage under degraded-model conditions) -- fixed at the root
+instead of patched at the UI: `core/factExtractionScheduler.ts` batches
+extraction over an idle window (debounce, 20s default, plus a 6-utterance
+safety cap for a never-quiet session) instead of running once per
+utterance. Fewer LLM calls, and better precision -- the model judges "is
+this durable" from a short recent window with real context instead of
+one isolated line. No Gate/dashboard changes: each fact in a batch still
+becomes its own individual approval, exactly as before; only *how often
+extraction runs* changed. 9 new tests (449 total). Live-verified against
+a real timed window, not just fake-clock unit tests: two real utterances
+injected 1.5s apart over a real isolated `core`'s WebSocket, confirmed
+zero approvals fired individually and both appeared together ~8s after
+the second one.
 
 ---
 
