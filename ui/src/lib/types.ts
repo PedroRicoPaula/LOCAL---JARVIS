@@ -117,7 +117,8 @@ export type ClientEvent =
   | { type: "approval.decide"; response: ApprovalResponse }
   | { type: "mute"; category: string; muted: boolean }
   | { type: "utterance.inject"; text: string }
-  | { type: "feedback"; eventId: string; rating: FeedbackRating };
+  | { type: "feedback"; eventId: string; rating: FeedbackRating }
+  | { type: "gesture.blur"; enabled: boolean };
 
 // ---------------------------------------------------------------------------
 // Dashboard live-data panels + metrics (SOAK 1) — see shared/types.ts's own

@@ -78,3 +78,19 @@ GESTURE_PREVIEW_JPEG_QUALITY = int(os.environ.get("JARVIS_GESTURE_PREVIEW_QUALIT
 # background one waiting for an occasional question. "Idle" here means no
 # hand has been seen at all.
 GESTURE_IDLE_TIMEOUT_S = float(os.environ.get("JARVIS_GESTURE_IDLE_TIMEOUT_S", "60"))
+
+# --- Background blur (2026-08-12) ----------------------------------------
+#
+# Owner-requested, real functional test done before adoption: MediaPipe's
+# free, public selfie segmenter (Apache-2.0, Google-hosted, no key) --
+# 9ms steady-state against a real image, well inside the preview's own
+# 4fps/250ms budget. Applied only to the preview frame (never to landmark
+# detection, which needs the real, unblurred pixels) and only when the
+# owner turns it on -- the segmenter model is loaded lazily on first
+# enable, so leaving it off costs nothing.
+SEGMENTER_MODEL_PATH = Path(
+    os.environ.get(
+        "JARVIS_SEGMENTER_MODEL", REPO_ROOT / "data/models/mediapipe/selfie_segmenter.tflite"
+    )
+)
+GESTURE_BLUR_KERNEL = int(os.environ.get("JARVIS_GESTURE_BLUR_KERNEL", "35"))  # must be odd

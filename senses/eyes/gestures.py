@@ -31,6 +31,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+import numpy as np
+
 from senses.eyes import config
 
 
@@ -120,6 +122,53 @@ def mirror_hands(hands: tuple[Hand, ...]) -> tuple[Hand, ...]:
     )
 
 
+class BackgroundBlurrer(Protocol):
+    def blur(self, frame: Any) -> Any:
+        """Person sharp, everything else blurred. Never called on the
+        frame handed to hand detection -- only on the preview copy."""
+        ...
+
+    def close(self) -> None: ...
+
+
+class RealBackgroundBlurrer:
+    """MediaPipe's selfie segmenter, same free/local/Apache-2.0 stack as
+    hand tracking. Verified real before adoption: 9ms steady-state
+    against a real image (250ms preview budget at 4fps), category 0 =
+    person / 255 = background confirmed against a real mask, not
+    assumed from the model card."""
+
+    def __init__(self, model_path: str | None = None) -> None:
+        import cv2
+        import mediapipe as mp
+        from mediapipe.tasks import python as mp_python
+        from mediapipe.tasks.python import vision
+
+        self._cv2 = cv2
+        self._mp = mp
+        base_options = mp_python.BaseOptions(
+            model_asset_path=str(model_path or config.SEGMENTER_MODEL_PATH)
+        )
+        options = vision.ImageSegmenterOptions(base_options=base_options, output_category_mask=True)
+        self._segmenter = vision.ImageSegmenter.create_from_options(options)
+
+    def blur(self, frame: Any) -> Any:
+        cv2 = self._cv2
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
+        # numpy_view() already comes back (H, W, 1) -- found live, not
+        # assumed: appending another axis for the broadcast gave
+        # (H, W, 1, 1) against the frame's (H, W, 3) and raised.
+        mask = self._segmenter.segment(image).category_mask.numpy_view()
+        k = config.GESTURE_BLUR_KERNEL
+        blurred = cv2.GaussianBlur(frame, (k, k), 0)
+        is_person = mask.reshape(mask.shape[0], mask.shape[1], 1) == 0
+        return np.where(is_person, frame, blurred)
+
+    def close(self) -> None:
+        self._segmenter.close()
+
+
 def encode_preview(frame: Any, width: int, quality: int) -> str:
     """Downscaled, base64 JPEG for the dashboard's live preview. Small on
     purpose -- this crosses a socket several times a second, and the
@@ -173,6 +222,7 @@ class GestureLoop:
         sleep: Callable[[float], None] = time.sleep,
         encode: Callable[[Any], str] | None = None,
         mirror: Callable[[Any], Any] = mirror_frame,
+        blurrer_factory: Callable[[], BackgroundBlurrer] = RealBackgroundBlurrer,
     ) -> None:
         self._read_raw_frame = read_raw_frame
         self._tracker = tracker
@@ -188,6 +238,9 @@ class GestureLoop:
             )
         )
         self._mirror = mirror
+        self._blurrer_factory = blurrer_factory
+        self._blurrer: BackgroundBlurrer | None = None
+        self._blur_enabled = threading.Event()
         self._stop = threading.Event()
 
     def stop(self) -> None:
@@ -197,9 +250,31 @@ class GestureLoop:
     def stopped(self) -> bool:
         return self._stop.is_set()
 
+    def set_blur(self, enabled: bool) -> None:
+        """Toggled from `main.py`'s message handler, read by the run()
+        loop on whichever thread is running it -- the segmenter is built
+        lazily on first enable so leaving blur off never pays its
+        (small) model-load cost."""
+        if enabled:
+            self._blur_enabled.set()
+        else:
+            self._blur_enabled.clear()
+
+    @property
+    def blur_enabled(self) -> bool:
+        return self._blur_enabled.is_set()
+
     def run(self) -> None:
         """Blocks until stopped or idle-timed-out. `main.py` runs this on
         its own thread."""
+        try:
+            self._run()
+        finally:
+            if self._blurrer is not None:
+                self._blurrer.close()
+                self._blurrer = None
+
+    def _run(self) -> None:
         started_at = self._now()
         last_hand_seen_at = started_at
         last_preview_at = 0.0
@@ -213,8 +288,17 @@ class GestureLoop:
                 self._emit({"type": "gesture.stopped", "cause": "error"})
                 return
 
-            frame = self._mirror(frame)
+            # Detect on the *raw* frame, then mirror the landmarks once.
+            # Bug found live 2026-08-12 (owner: "the hand connecting
+            # points are on the other side"): this used to mirror the
+            # frame *before* calling detect(), so the landmarks came back
+            # already in mirrored space -- then `mirror_hands` mirrored
+            # them a second time, cancelling back to the *unmirrored*
+            # coordinates while the preview image stayed mirrored. Net
+            # effect: skeleton drawn on the opposite side of the hand it
+            # belonged to. One flip, applied once, to each.
             hands = mirror_hands(self._tracker.detect(frame))
+            frame = self._mirror(frame)
             now = self._now()
 
             if hands:
@@ -227,8 +311,18 @@ class GestureLoop:
 
             if now - last_preview_at >= self._preview_interval:
                 last_preview_at = now
+                preview_frame = frame
+                if self._blur_enabled.is_set():
+                    try:
+                        if self._blurrer is None:
+                            self._blurrer = self._blurrer_factory()
+                        preview_frame = self._blurrer.blur(frame)
+                    except Exception as exc:
+                        # Same reasoning as the encode failure below --
+                        # blur is cosmetic, tracking must keep working.
+                        print(f"eyes: gesture background blur failed, continuing ({exc!r})")
                 try:
-                    self._emit({"type": "hand.preview", "image": self._encode(frame)})
+                    self._emit({"type": "hand.preview", "image": self._encode(preview_frame)})
                 except Exception as exc:
                     # A preview encode failing is cosmetic -- landmark
                     # tracking (the part that actually drives interaction)

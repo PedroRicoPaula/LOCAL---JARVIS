@@ -31,7 +31,13 @@ export interface WsHub {
  * console) to `onUtterance` -- `core/main.ts`'s own real handling path,
  * unchanged, so an injected line and a real transcribed one are
  * indistinguishable once they land. */
-export function createWsHub(httpServer: HttpServer, gate: Gate, memory: Memory, onUtterance: (text: string) => void): WsHub {
+export function createWsHub(
+  httpServer: HttpServer,
+  gate: Gate,
+  memory: Memory,
+  onUtterance: (text: string) => void,
+  onGestureBlur?: (enabled: boolean) => void,
+): WsHub {
   // Found live in a security review (2026-08-06): without this, `ws`
   // accepts a connection from *any* origin, and the message handler below
   // processes "approval.decide" from whatever connects with zero further
@@ -73,6 +79,9 @@ export function createWsHub(httpServer: HttpServer, gate: Gate, memory: Memory, 
       if (event.type === "feedback") {
         memory.setFeedback(event.eventId, event.rating);
         broadcast({ type: "feedback", eventId: event.eventId, rating: event.rating });
+      }
+      if (event.type === "gesture.blur") {
+        onGestureBlur?.(event.enabled);
       }
       // "mute" has no server-side effect yet — noted in ROADMAP, not this phase's scope.
     });

@@ -429,6 +429,60 @@ def test_closing_the_camera_also_stops_gesture_tracking(tmp_path):
     assert emitted[-1]["type"] == "camera.closed"
 
 
+def test_gesture_blur_toggles_a_running_loop(tmp_path):
+    holder = SessionHolder()
+    gestures = GestureHolder()
+    _armed(holder, tmp_path)
+    emitted = []
+    handle_message(
+        {"type": "gesture.start"},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+        tracker_factory=FakeHandTracker,
+        spawn=lambda fn: None,
+    )
+    loop = gestures.get()
+    assert not loop.blur_enabled
+
+    handle_message(
+        {"type": "gesture.blur", "enabled": True},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+    )
+
+    assert loop.blur_enabled
+
+    handle_message(
+        {"type": "gesture.blur", "enabled": False},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+    )
+
+    assert not loop.blur_enabled
+
+
+def test_gesture_blur_when_nothing_is_running_is_a_no_op_not_an_error(tmp_path):
+    holder = SessionHolder()
+    gestures = GestureHolder()
+    emitted = []
+
+    handle_message(
+        {"type": "gesture.blur", "enabled": True},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+    )
+
+    assert emitted == []
+
+
 def test_session_read_raw_frame_refuses_once_closed(tmp_path):
     device = FakeCameraDevice()
     session = CameraSession(device, "test", frames_dir=tmp_path)

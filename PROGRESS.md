@@ -62,6 +62,15 @@ capped and denser conversation log, and a real responsive breakpoint --
 verified in a real browser at two viewports, which is how four layout
 bugs invisible in the code were found.
 
+Two live-testing fixes the same day (ADR-055): the hand skeleton was
+drawn mirrored relative to the real hand (a real double-flip bug --
+detect() was running on an already-mirrored frame, then mirror_hands()
+flipped the result a second time, cancelling back to unmirrored
+landmarks under a mirrored preview), and background blur for the
+gesture preview (MediaPipe's free selfie segmenter, verified real
+before adoption, ~9ms/frame, applied to the preview only, toggled from
+the dashboard).
+
 **Next:** to be decided with the owner -- more MCP servers, Phase 9,
 the Knowledge Brain idea, or the screen-guide idea.
 **Branch:** `main`

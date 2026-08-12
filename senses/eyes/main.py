@@ -209,6 +209,15 @@ def handle_message(
         gestures.set(None)
         return
 
+    if msg_type == "gesture.blur":
+        if gestures is None:
+            return
+        running = gestures.get()
+        if running is None:
+            return  # nothing to blur if tracking isn't running
+        running.set_blur(bool(message.get("enabled", False)))
+        return
+
     print(f"eyes: ignoring unknown message type {msg_type!r}")
 
 

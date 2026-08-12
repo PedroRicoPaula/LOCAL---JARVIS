@@ -149,9 +149,17 @@ async function main(): Promise<void> {
   // dashboard is a view, never an authority") reach a browser.
   const history = createDashboardHistory();
   const httpServer = createHttpServer(memory, skillRegistry, gate, history, db);
-  const wsHub = createWsHub(httpServer, gate, memory, (text) => {
-    handleUtterance(text).catch((err) => console.error("core: injected utterance failed, continuing", err));
-  });
+  const wsHub = createWsHub(
+    httpServer,
+    gate,
+    memory,
+    (text) => {
+      handleUtterance(text).catch((err) => console.error("core: injected utterance failed, continuing", err));
+    },
+    (enabled) => {
+      eyesConn?.send({ type: "gesture.blur", enabled });
+    },
+  );
   // "127.0.0.1", not omitted -- found live in a security review (2026-08-06):
   // omitting the host makes Node bind every interface, not loopback only,
   // so anything on the same LAN could reach the dashboard API/WebSocket.

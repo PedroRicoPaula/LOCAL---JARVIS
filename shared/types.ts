@@ -378,7 +378,14 @@ export type ClientEvent =
   /** Rates a `jarvis` response, owner-only judgement (CLAUDE.md § 0.5:
    * never model-generated). Purely diagnostic -- never gated, never fed
    * back into `Memory.recall()`. */
-  | { type: "feedback"; eventId: string; rating: FeedbackRating };
+  | { type: "feedback"; eventId: string; rating: FeedbackRating }
+  /** Toggles background blur on the gesture-mode preview only -- landmark
+   * detection always runs on the real, unblurred frame
+   * (`senses/eyes/gestures.py`). A no-op if gesture tracking isn't
+   * currently running. Sent directly, not through a skill/capability:
+   * purely cosmetic, no side effect beyond what the owner already made
+   * visible by turning hand tracking on. */
+  | { type: "gesture.blur"; enabled: boolean };
 
 // ---------------------------------------------------------------------------
 // Camera — see SPEC.md § 6 and ADR-010

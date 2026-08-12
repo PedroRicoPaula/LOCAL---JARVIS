@@ -141,6 +141,7 @@ export interface JarvisDashboardState {
   decide(request: ApprovalRequest, decision: "approve" | "reject"): void;
   refreshSkills(): void;
   injectUtterance(text: string): void;
+  setGestureBlur(enabled: boolean): void;
   sendFeedback(eventId: string, rating: FeedbackRating): void;
   toggleTask(id: string): void;
   deleteTask(id: string): void;
@@ -353,6 +354,10 @@ export function useJarvis(): JarvisDashboardState {
     send({ type: "feedback", eventId, rating });
   }
 
+  function setGestureBlur(enabled: boolean): void {
+    send({ type: "gesture.blur", enabled });
+  }
+
   async function toggleTask(id: string): Promise<void> {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))); // optimistic
     await fetch(`${CORE_URL}/api/tasks/${id}/toggle`, { method: "POST" }).catch(() => undefined);
@@ -389,6 +394,7 @@ export function useJarvis(): JarvisDashboardState {
     decide,
     refreshSkills,
     injectUtterance,
+    setGestureBlur,
     sendFeedback,
     toggleTask,
     deleteTask,

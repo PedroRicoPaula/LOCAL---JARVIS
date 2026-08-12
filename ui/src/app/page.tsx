@@ -51,6 +51,7 @@ export default function Home() {
     gestures,
     audioLevels,
     decide,
+    setGestureBlur,
     injectUtterance,
     sendFeedback,
     toggleTask,
@@ -115,7 +116,7 @@ export default function Home() {
             <div className="flex flex-col min-h-0 shrink-0 lg:max-h-[32%]">
               <ApprovalQueue approvals={approvals} onDecide={decide} />
             </div>
-            <GesturePanel gestures={gestures} />
+            <GesturePanel gestures={gestures} onSetBlur={setGestureBlur} />
             <StorePanel
               tasks={tasks}
               shoppingItems={shoppingItems}

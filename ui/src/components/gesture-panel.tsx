@@ -60,7 +60,14 @@ function HandSkeleton({ hand, color }: { hand: GestureDashboardState["hands"][nu
   );
 }
 
-export function GesturePanel({ gestures }: { gestures: GestureDashboardState }) {
+export function GesturePanel({
+  gestures,
+  onSetBlur,
+}: {
+  gestures: GestureDashboardState;
+  /** Absent in the idle/no-preview state -- nothing running to blur. */
+  onSetBlur?: (enabled: boolean) => void;
+}) {
   // One piece of state, updated during render from the incoming landmark
   // frame -- not a `useEffect`. Dragging is a pure function of "where is
   // the pinch now" plus "what was already held"; React's own
@@ -71,6 +78,7 @@ export function GesturePanel({ gestures }: { gestures: GestureDashboardState }) 
     grabbedId: null,
   });
   const [thereminOn, setThereminOn] = useState(false);
+  const [blurOn, setBlurOn] = useState(false);
   const audioRef = useRef<{ ctx: AudioContext; osc: OscillatorNode; gain: GainNode } | null>(null);
 
   const hand = gestures.hands[0] ?? null;
@@ -113,6 +121,19 @@ export function GesturePanel({ gestures }: { gestures: GestureDashboardState }) 
       audioRef.current = null;
     };
   }, []);
+
+  // Blur is server-side, per gesture-tracking session -- a fresh session
+  // always starts unblurred, so the button shouldn't claim otherwise once
+  // tracking stops (and possibly restarts later). Adjusted during render
+  // on the active->inactive transition, React's own sanctioned pattern
+  // for "reset state when a prop changes" -- an effect here would (per
+  // the same lint rule applyPinch above was restructured to satisfy) be
+  // a cascading-render smell.
+  const [wasActive, setWasActive] = useState(gestures.active);
+  if (gestures.active !== wasActive) {
+    setWasActive(gestures.active);
+    if (!gestures.active && blurOn) setBlurOn(false);
+  }
 
   if (!gestures.active) {
     return (
@@ -182,15 +203,30 @@ export function GesturePanel({ gestures }: { gestures: GestureDashboardState }) 
 
       <div className="mt-2 flex items-center justify-between text-[9px]">
         <span className="text-jarvis-dim">Pinch to drag a shape</span>
-        <button
-          type="button"
-          onClick={() => setThereminOn((v) => !v)}
-          className={`px-2 py-1 border text-[9px] tracking-wider transition-colors ${
-            thereminOn ? "border-jarvis-green text-jarvis-green" : "border-jarvis-cyan/30 text-jarvis-dim hover:text-jarvis-cyan"
-          }`}
-        >
-          {thereminOn ? "THEREMIN ON" : "THEREMIN OFF"}
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              const next = !blurOn;
+              setBlurOn(next);
+              onSetBlur?.(next);
+            }}
+            className={`px-2 py-1 border text-[9px] tracking-wider transition-colors ${
+              blurOn ? "border-jarvis-green text-jarvis-green" : "border-jarvis-cyan/30 text-jarvis-dim hover:text-jarvis-cyan"
+            }`}
+          >
+            {blurOn ? "BLUR BG ON" : "BLUR BG OFF"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setThereminOn((v) => !v)}
+            className={`px-2 py-1 border text-[9px] tracking-wider transition-colors ${
+              thereminOn ? "border-jarvis-green text-jarvis-green" : "border-jarvis-cyan/30 text-jarvis-dim hover:text-jarvis-cyan"
+            }`}
+          >
+            {thereminOn ? "THEREMIN ON" : "THEREMIN OFF"}
+          </button>
+        </div>
       </div>
       {thereminOn ? (
         <div className="mt-1 text-[9px] text-jarvis-dim">Open palm, move up/down to play.</div>

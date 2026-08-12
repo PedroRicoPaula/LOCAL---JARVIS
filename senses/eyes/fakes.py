@@ -70,6 +70,22 @@ class FakeHandTracker:
         self.closed = True
 
 
+class FakeBackgroundBlurrer:
+    """Records what it was asked to blur; returns a marker rather than a
+    real array, matching `FakeHandTracker`'s own "opaque marker" shape."""
+
+    def __init__(self) -> None:
+        self.blurred_frames: list[object] = []
+        self.closed = False
+
+    def blur(self, frame: object) -> object:
+        self.blurred_frames.append(frame)
+        return f"blurred({frame})"
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def fake_clock(start: float = 1_000_000.0) -> tuple[list[float], Callable[[], float]]:
     """Returns a mutable `[now]` box and a `now()` function reading it --
     tests advance time by mutating `box[0]` directly, no real sleeping."""
