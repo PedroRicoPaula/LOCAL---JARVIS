@@ -167,13 +167,40 @@ class RealBackgroundBlurrer:
         # assumed: appending another axis for the broadcast gave
         # (H, W, 1, 1) against the frame's (H, W, 3) and raised.
         mask = self._segmenter.segment(image).category_mask.numpy_view()
-        k = config.GESTURE_BLUR_KERNEL
-        blurred = cv2.GaussianBlur(frame, (k, k), 0)
         is_person = mask.reshape(mask.shape[0], mask.shape[1], 1) == 0
-        return np.where(is_person, frame, blurred)
+        # Blended toward the dashboard's own background colour, not a
+        # Gaussian blur -- owner request 2026-08-12: the background
+        # should read as *completely* obscured (nothing legible behind
+        # the person) so it never competes visually with the shapes/
+        # skeleton overlay drawn on top. A weighted blend is also
+        # cheaper than a 35px Gaussian convolution -- this happened to
+        # fix a real CPU cost, not just a look, once the frame was also
+        # downscaled before this runs (see resize_for_preview's own
+        # note for the measured before/after).
+        dark = np.full_like(frame, config.GESTURE_OBSCURE_BGR)
+        alpha = config.GESTURE_OBSCURE_ALPHA
+        obscured = cv2.addWeighted(frame, 1.0 - alpha, dark, alpha, 0)
+        return np.where(is_person, frame, obscured)
 
     def close(self) -> None:
         self._segmenter.close()
+
+
+def resize_for_preview(frame: Any, width: int) -> Any:
+    """Downscales to the dashboard preview's own width -- a no-op if the
+    frame is already that size or smaller. Pulled out of `encode_preview`
+    so blur (when on) runs on the *small* frame instead of the full
+    capture: found live, 2026-08-12 (owner reported real glitches in the
+    camera/hand-tracking display) -- blur was segmenting and compositing
+    a 960x640 frame that only ever got downscaled to 480px *after*,
+    nearly doubling the loop's own CPU cost (44% -> 79% of one core,
+    measured) for work nobody could ever see the extra resolution of."""
+    import cv2
+
+    h, w = frame.shape[:2]
+    if w > width:
+        return cv2.resize(frame, (width, round(h * width / w)))
+    return frame
 
 
 def encode_preview(frame: Any, width: int, quality: int) -> str:
@@ -183,9 +210,7 @@ def encode_preview(frame: Any, width: int, quality: int) -> str:
     burned into this image."""
     import cv2
 
-    h, w = frame.shape[:2]
-    if w > width:
-        frame = cv2.resize(frame, (width, round(h * width / w)))
+    frame = resize_for_preview(frame, width)
     ok, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
     if not ok:
         raise RuntimeError("failed to JPEG-encode a gesture preview frame")
@@ -229,6 +254,7 @@ class GestureLoop:
         sleep: Callable[[float], None] = time.sleep,
         encode: Callable[[Any], str] | None = None,
         mirror: Callable[[Any], Any] = mirror_frame,
+        resize: Callable[[Any, int], Any] = resize_for_preview,
         blurrer_factory: Callable[[], BackgroundBlurrer] = RealBackgroundBlurrer,
         pointer_backend_factory: Callable[[], PointerBackend] = RealPointerBackend,
         click_trigger_factory: Callable[[], ClickTrigger] = PynputClickTrigger,
@@ -247,6 +273,7 @@ class GestureLoop:
             )
         )
         self._mirror = mirror
+        self._resize = resize
         self._blurrer_factory = blurrer_factory
         self._pointer_backend_factory = pointer_backend_factory
         self._click_trigger_factory = click_trigger_factory
@@ -376,14 +403,27 @@ class GestureLoop:
                     # even if cursor control itself hiccups.
                     print(f"eyes: pointer control failed, continuing ({exc!r})")
 
-            if now - last_preview_at >= self._preview_interval:
+            # Skipped entirely while pointer control is on -- owner
+            # request 2026-08-12: using the real cursor means looking at
+            # the real screen being pointed at, not the dashboard's own
+            # camera panel, so encoding+sending a preview nobody's
+            # watching is pure waste. `hand.landmarks` (what pointer
+            # control itself actually runs on) is emitted every frame
+            # regardless, above -- this only skips the expensive,
+            # visual-only half.
+            preview_due = now - last_preview_at >= self._preview_interval
+            if not self._pointer_enabled.is_set() and preview_due:
                 last_preview_at = now
-                preview_frame = frame
+                # Downscale *before* blur, not after -- blur (segmenter
+                # inference + GaussianBlur + composite) is real work, and
+                # nothing downstream ever shows more than the preview's
+                # own width regardless.
+                preview_frame = self._resize(frame, config.GESTURE_PREVIEW_WIDTH)
                 if self._blur_enabled.is_set():
                     try:
                         if self._blurrer is None:
                             self._blurrer = self._blurrer_factory()
-                        preview_frame = self._blurrer.blur(frame)
+                        preview_frame = self._blurrer.blur(preview_frame)
                     except Exception as exc:
                         # Same reasoning as the encode failure below --
                         # blur is cosmetic, tracking must keep working.

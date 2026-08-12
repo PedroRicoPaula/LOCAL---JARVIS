@@ -163,6 +163,16 @@ export function GesturePanel({
             alt="camera preview"
             className="absolute inset-0 w-full h-full object-cover opacity-70"
           />
+        ) : gestures.pointerControlActive ? (
+          // Preview is deliberately not generated while pointer control
+          // runs (senses/eyes/gestures.py) -- using the real cursor
+          // means looking at the real screen, not this panel, so
+          // skipping the encode is a real CPU saving, not a bug.
+          <div className="absolute inset-0 grid place-items-center text-[9px] text-jarvis-dim text-center px-4">
+            Preview off to save CPU while pointer control is active.
+            <br />
+            The skeleton below still tracks live.
+          </div>
         ) : (
           <div className="absolute inset-0 grid place-items-center text-[9px] text-jarvis-dim">waiting for camera…</div>
         )}

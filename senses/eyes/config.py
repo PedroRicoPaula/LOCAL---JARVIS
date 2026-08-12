@@ -93,7 +93,16 @@ SEGMENTER_MODEL_PATH = Path(
         "JARVIS_SEGMENTER_MODEL", REPO_ROOT / "data/models/mediapipe/selfie_segmenter.tflite"
     )
 )
-GESTURE_BLUR_KERNEL = int(os.environ.get("JARVIS_GESTURE_BLUR_KERNEL", "35"))  # must be odd
+
+# The background is blended toward this colour (OpenCV's BGR order), not
+# Gaussian-blurred -- BGR for the dashboard's own `--color-jarvis-bg`
+# (#05080f), so an obscured background reads as part of the UI rather
+# than an arbitrary dark box.
+GESTURE_OBSCURE_BGR = (15, 8, 5)
+# How strongly the background is blended toward that colour. High on
+# purpose -- owner request 2026-08-12: "completely obscured," not merely
+# softened, so it never competes with the overlay drawn on top.
+GESTURE_OBSCURE_ALPHA = float(os.environ.get("JARVIS_GESTURE_OBSCURE_ALPHA", "0.92"))
 
 # --- Pointer control (2026-08-12) ----------------------------------------
 #

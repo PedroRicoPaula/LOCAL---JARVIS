@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 from senses.eyes.fakes import (
     FakeBackgroundBlurrer,
     FakeClickTrigger,
@@ -12,7 +14,14 @@ from senses.eyes.fakes import (
     FakePointerBackend,
     fake_clock,
 )
-from senses.eyes.gestures import GestureLoop, Hand, Landmark, hands_to_wire, mirror_hands
+from senses.eyes.gestures import (
+    GestureLoop,
+    Hand,
+    Landmark,
+    hands_to_wire,
+    mirror_hands,
+    resize_for_preview,
+)
 
 
 def _hand(x: float = 0.3, handedness: str = "Right") -> Hand:
@@ -50,6 +59,10 @@ def _loop(
 
     kwargs.setdefault("pointer_backend_factory", FakePointerBackend)
     kwargs.setdefault("click_trigger_factory", FakeClickTrigger)
+    # Identity by default, same reasoning as mirror below -- resizing a
+    # real frame is cv2's job, and the fake frames here are opaque
+    # string markers with no .shape to resize.
+    kwargs.setdefault("resize", lambda f, _width: f)
 
     loop = GestureLoop(
         read_raw_frame,
@@ -117,6 +130,30 @@ def test_preview_is_rate_limited_below_the_landmark_rate() -> None:
     assert 0 < len(previews) < len(landmarks)
 
 
+def test_preview_is_skipped_entirely_while_pointer_control_is_on() -> None:
+    """Owner request 2026-08-12: using the real cursor means looking at
+    the real screen, not the dashboard's camera panel -- encoding and
+    sending a preview nobody's watching is pure waste. Landmarks (what
+    pointer control itself runs on) must still go out every frame."""
+    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])
+    emitted: list[dict[str, Any]] = []
+    box, advancing_now = fake_clock(start=0.0)
+
+    def advance() -> float:
+        box[0] += 1 / 12
+        return box[0]
+
+    loop = _loop(tracker, emitted, now=advance, stop_after=12, fps=12, preview_fps=4)
+    loop.set_pointer_control(True)
+
+    loop.run()
+
+    landmarks = [m for m in emitted if m["type"] == "hand.landmarks"]
+    previews = [m for m in emitted if m["type"] == "hand.preview"]
+    assert len(landmarks) == 12, "pointer control itself must keep running every frame"
+    assert previews == [], "no preview should be generated while pointer control is active"
+
+
 def test_idle_timeout_stops_the_loop_when_no_hand_is_ever_seen() -> None:
     tracker = FakeHandTracker([()])  # never any hands
     emitted: list[dict[str, Any]] = []
@@ -178,6 +215,29 @@ def test_stop_ends_the_loop_and_reports_owner_cause() -> None:
 
     assert loop.stopped
     assert emitted[-1] == {"type": "gesture.stopped", "cause": "owner"}
+
+
+def test_resize_for_preview_downscales_a_larger_frame() -> None:
+    frame = np.zeros((960, 640, 3), dtype=np.uint8)
+
+    resized = resize_for_preview(frame, 480)
+
+    assert resized.shape == (720, 480, 3), "height must scale proportionally with width"
+
+
+def test_resize_for_preview_is_a_no_op_when_already_narrow_enough() -> None:
+    """Regression guard for the real fix, 2026-08-12: blur used to run on
+    the full 960x640 capture and only get downscaled *after*, nearly
+    doubling the loop's own CPU cost for resolution nothing ever
+    displayed. `_run()` must resize before blur, not the other way
+    round -- this just confirms the function itself never *upscales* a
+    frame that's already small enough, so calling it twice (once before
+    blur, once inside encode_preview) stays cheap either way."""
+    frame = np.zeros((300, 400, 3), dtype=np.uint8)
+
+    resized = resize_for_preview(frame, 480)
+
+    assert resized.shape == frame.shape
 
 
 def test_blur_off_by_default_the_segmenter_is_never_built() -> None:

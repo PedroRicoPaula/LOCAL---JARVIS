@@ -74,8 +74,19 @@ or voice alone -- only a real physical keypress fires it, the same
 "real keystroke fires it" property red-tier actions already rely on,
 enforced structurally in the executor rather than via the approval
 queue. A broader, unconfirmed version was explicitly proposed and
-refused first; see the ADR for why. `make check`: 100 Python tests, 492
-TS.
+refused first; see the ADR for why.
+
+Same day, ADR-057: owner reported real glitches in the camera/hand-
+tracking display. Measured instead of guessing -- found blur nearly
+doubled the loop's own CPU cost (44% -> 79% of one core) because it ran
+on the full captured frame instead of the already-downscaled preview.
+Fixed (resize before blur; a cheaper "obscured" blend toward the
+dashboard's own background colour instead of a Gaussian blur, also
+answering the owner's own "completely obscured" request; preview
+skipped entirely while pointer control is active, since using the real
+cursor means looking at the real screen, not the dashboard). Blur's
+marginal cost dropped to +10 points, re-measured the same way. `make
+check`: 103 Python tests, 492 TS.
 
 Two live-testing fixes the same day (ADR-055): the hand skeleton was
 drawn mirrored relative to the real hand (a real double-flip bug --
