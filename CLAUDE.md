@@ -78,8 +78,15 @@ Work strictly one phase at a time, in the order given in `ROADMAP.md`.
 At the end of every phase:
 
 1. Run the phase's Definition of Done checks. Paste the actual command output.
-2. Update `PROGRESS.md`: what was built, what was decided, what is left, what
-   surprised you.
+2. Update `PROGRESS.md`'s `## Current state` section: what was built,
+   what was decided, what is left, what surprised you. For the detailed
+   phase write-up, add a new `docs/progress/phase-N.md` (or `soak-N.md`)
+   file and a row in `PROGRESS.md`'s own `## Phase log` index table —
+   same split as `DECISIONS.md`/`docs/decisions/`, done 2026-08-12
+   because the single growing file had reached 3076 lines. `## Current
+   state` is the only section that should still change shape often;
+   everything else in `PROGRESS.md` (scaffold, hardware, key numbers,
+   open questions, known issues) is closer to append-only.
 3. Record any architectural decision as a new ADR: write
    `docs/decisions/ADR-NNN.md` (next number, ADR format — Context →
    Decision → Consequences) and add its row to `DECISIONS.md`'s own
