@@ -88,6 +88,26 @@ cursor means looking at the real screen, not the dashboard). Blur's
 marginal cost dropped to +10 points, re-measured the same way. `make
 check`: 103 Python tests, 492 TS.
 
+**Same day, project reorganized for continued growth** (owner request:
+"faz o que achares realmente melhor... reorganiza se for preciso"):
+`DECISIONS.md` (4260 lines, 57 ADRs) and `PROGRESS.md`'s own Phase log
+(~2780 of its 3076 lines) split into `docs/decisions/ADR-NNN.md` and
+`docs/progress/phase-N.md`, one file each, both files now short indexes
+-- every split file verified byte-for-byte against the original before
+trusting the rewrite, not just eyeballed. `shared/types.ts` (573 lines,
+imported by 79 files) split into `shared/types/*.ts` by domain as a
+pure re-export barrel, `tsc --noEmit` confirming zero broken imports
+across the repo. `.claude/settings.json` gained a hook catching a real
+gap found this session firsthand: a new `Capability` added to
+`shared/types.ts` without `CLAUDE.md` § 5 being updated in the same
+commit, tested against a throwaway repo before trusting it. **Not yet
+done:** `core/main.ts`, `core/gate/gate.ts`, `ui/src/lib/use-jarvis.ts`,
+`senses/eyes/gestures.py`, `senses/eyes/main.py` still exceed 300 lines
+-- these carry real runtime logic and cross-module wiring, not just
+declarations, so splitting them safely needs its own dedicated,
+careful pass rather than the mechanical extraction the docs/types
+splits were.
+
 **Next:** to be decided with the owner -- more MCP servers, Phase 9,
 the Knowledge Brain idea, or the screen-guide idea.
 **Branch:** `main`
