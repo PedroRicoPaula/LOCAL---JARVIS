@@ -12,8 +12,8 @@ export function ThoughtStream({ thoughts }: { thoughts: Thought[] }) {
   }, [thoughts]);
 
   return (
-    <Panel title="Thought Stream" className="flex-1 min-h-0 flex flex-col">
-      <div ref={logRef} className="flex-1 overflow-y-auto space-y-2 min-h-0">
+    <Panel title="Thought Stream" className="lg:flex-1 lg:min-h-0 flex flex-col shrink-0">
+      <div ref={logRef} className="flex-1 overflow-y-auto space-y-2 min-h-0 max-h-48 lg:max-h-none">
         {thoughts.length === 0 ? (
           <div className="text-[10px] text-jarvis-dim">No routing activity yet.</div>
         ) : (

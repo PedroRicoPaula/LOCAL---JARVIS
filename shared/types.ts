@@ -346,6 +346,10 @@ export type ServerEvent =
    * the skeleton overlay is drawn browser-side from the landmarks above,
    * so only this (the expensive part) is throttled. */
   | { type: "hand.preview"; image: string }
+  /** Live microphone level, 0..1, log-scaled (`senses/ears/audio_level.py`).
+   * Throttled to ~10/s at the source -- decorative, and nobody perceives
+   * a level meter faster than that. */
+  | { type: "audio.level"; level: number }
   | { type: "health"; providers: Record<string, boolean> }
   /** `ears`/`voice`/`eyes` connection state, per sense -- distinct from
    * `health` (LLM router providers, above). Found live, 2026-08-07: a

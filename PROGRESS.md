@@ -53,6 +53,15 @@ never running (AppleScript's `quit` exits 0 regardless -- now checks
 System Events first), and `open_url` read entire raw URLs out loud (now
 speaks a friendly name).
 
+Dashboard refreshed the same day (ADR-054): CSS-only 3D depth (panels
+tilt toward the cursor, Orb rings at real Z-depths), the Orb at the
+Figma reference's full 480px/7 rings, a sweep animation that renders
+only while a real dispatch is in flight, a waveform driven by real
+microphone RMS (the reference's own version used `Math.random()`), a
+capped and denser conversation log, and a real responsive breakpoint --
+verified in a real browser at two viewports, which is how four layout
+bugs invisible in the code were found.
+
 **Next:** to be decided with the owner -- more MCP servers, Phase 9,
 the Knowledge Brain idea, or the screen-guide idea.
 **Branch:** `main`

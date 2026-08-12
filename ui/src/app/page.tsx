@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { ApprovalQueue } from "@/components/approval-queue";
 import { Clock } from "@/components/clock";
+import { AudioWaveform } from "@/components/audio-waveform";
 import { ErrorLog } from "@/components/error-log";
 import { GesturePanel } from "@/components/gesture-panel";
 import { MetricsWidget } from "@/components/metrics-widget";
@@ -27,7 +28,7 @@ import { useJarvis } from "@/lib/use-jarvis";
 // tricks to keep -- render it client-only instead.
 const Orb = dynamic(() => import("@/components/orb").then((m) => m.Orb), {
   ssr: false,
-  loading: () => <div style={{ width: 240, height: 240 + 40 }} />,
+  loading: () => <div style={{ width: 480, height: 480 + 48 }} />,
 });
 
 export default function Home() {
@@ -48,6 +49,7 @@ export default function Home() {
     feedback,
     camera,
     gestures,
+    audioLevels,
     decide,
     injectUtterance,
     sendFeedback,
@@ -71,13 +73,17 @@ export default function Home() {
           <div>{process.env["NEXT_PUBLIC_JARVIS_CORE_URL"] ?? "http://localhost:8787"}</div>
         </div>
 
-        <div className="absolute inset-0 flex gap-3" style={{ padding: "28px 16px 8px 16px" }}>
+        <div
+          className="absolute inset-0 flex flex-col lg:flex-row gap-3 overflow-y-auto lg:overflow-hidden"
+          style={{ padding: "28px 16px 8px 16px" }}
+        >
           {/* LEFT — telemetry. `overflow-y-auto`: SOAK 1 added Metrics on
               top of the existing four panels, and the column's natural
               height can now exceed the viewport -- found live, this scrolls
               instead of silently clipping whatever's last (was Timeline). */}
-          <div className="flex flex-col gap-3 min-w-0 min-h-0 overflow-y-auto" style={{ width: "22%" }}>
+          <div className="flex flex-col gap-3 min-w-0 min-h-0 lg:overflow-y-auto w-full lg:w-[22%]">
             <Clock />
+            <AudioWaveform levels={audioLevels} />
             <SystemStatus system={system} />
             <div className="shrink-0">
               <SkillHealthPanel skills={skills} />
@@ -87,7 +93,7 @@ export default function Home() {
           </div>
 
           {/* CENTER — orb + live activity */}
-          <div className="flex flex-col items-center flex-1 min-w-0 gap-4 pt-2">
+          <div className="flex flex-col items-center lg:flex-1 min-w-0 gap-3 pt-2 min-h-0 shrink-0">
             {lastOwnerLine ? (
               <div className="text-[11px] font-mono text-jarvis-dim opacity-60 truncate max-w-full text-center">
                 <span className="text-jarvis-cyan opacity-50 mr-1">›</span>
@@ -105,8 +111,8 @@ export default function Home() {
           {/* RIGHT — approvals + live data + conversation. Same
               `overflow-y-auto` safety net as LEFT, now that `StorePanel`
               sits between the two existing panels. */}
-          <div className="flex flex-col gap-3 min-w-0 min-h-0 overflow-y-auto" style={{ width: "26%" }}>
-            <div style={{ maxHeight: "32%" }} className="flex flex-col min-h-0 shrink-0">
+          <div className="flex flex-col gap-3 min-w-0 min-h-0 lg:overflow-y-auto w-full lg:w-[26%]">
+            <div className="flex flex-col min-h-0 shrink-0 lg:max-h-[32%]">
               <ApprovalQueue approvals={approvals} onDecide={decide} />
             </div>
             <GesturePanel gestures={gestures} />

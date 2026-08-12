@@ -23,6 +23,7 @@ from senses import ipc
 from senses.ears import config, wake_word, whisper_server
 from senses.ears.ack import Ack, SystemAck
 from senses.ears.audio_capture import AudioSource, ContinuousAudioSource
+from senses.ears.audio_level import make_level_listener
 from senses.ears.hotkey import Hotkey, PynputHotkey
 from senses.ears.transcribe import Transcriber, WhisperServerTranscriber
 from senses.ears.wake_word import OpenWakeWordDetector
@@ -264,6 +265,10 @@ def main() -> None:
 
         on_wake = make_wake_handler(busy_lock, wake_event)
         audio_source.add_frame_listener(wake_word.watch(detector, on_wake))
+        # Live mic level for the dashboard's waveform -- same extension
+        # point as the wake-word scorer above, so it sees every frame
+        # whether or not anything is being recorded.
+        audio_source.add_frame_listener(make_level_listener(holder.emit))
         audio_source.start()
         print('ears: listening continuously — say "hey jarvis" or hold Tab')
 

@@ -116,7 +116,7 @@ export function GesturePanel({ gestures }: { gestures: GestureDashboardState }) 
 
   if (!gestures.active) {
     return (
-      <Panel title="Hand tracking" className="shrink-0">
+      <Panel title="Hand tracking" className="shrink-0" flat>
         <div className="text-[10px] text-jarvis-dim leading-relaxed">
           Say <span className="text-jarvis-cyan">&quot;turn on hand tracking&quot;</span> to see the camera here.
           {gestures.lastStoppedCause === "idle" ? (
@@ -133,7 +133,7 @@ export function GesturePanel({ gestures }: { gestures: GestureDashboardState }) 
   const handColor = pinching ? "#FFB84D" : openPalm ? "#00FF9F" : "#00D4FF";
 
   return (
-    <Panel title="Hand tracking" className="shrink-0">
+    <Panel title="Hand tracking" className="shrink-0" flat>
       <div className="relative w-full aspect-video bg-black/60 overflow-hidden border border-jarvis-cyan/10">
         {gestures.previewImage ? (
           // eslint-disable-next-line @next/next/no-img-element -- a live base64 frame, not a static asset next/image can optimize

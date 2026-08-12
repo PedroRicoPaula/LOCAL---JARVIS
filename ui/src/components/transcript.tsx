@@ -54,18 +54,18 @@ export function Transcript({
   }, [lines]);
 
   return (
-    <Panel title="Conversation Log" className="flex-1 min-h-0 flex flex-col">
-      <div ref={logRef} className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-0">
+    <Panel title="Conversation Log" className="shrink-0 flex flex-col">
+      <div ref={logRef} className="overflow-y-auto space-y-2 pr-1 max-h-44">
         {lines.length === 0 ? (
-          <div className="text-[10px] text-jarvis-dim">Waiting for the first utterance.</div>
+          <div className="text-[11px] text-jarvis-dim">Waiting for the first utterance.</div>
         ) : (
           lines.map((line, i) => (
             <div key={i} className="fade-in-up">
-              <div className="text-[8px] text-jarvis-dim mb-[3px]">
+              <div className="text-[9px] text-jarvis-dim mb-[2px]">
                 {new Date(line.ts).toLocaleTimeString("en-US", { hour12: false })}
               </div>
               <div
-                className="text-[10px] leading-relaxed"
+                className="text-[11px] leading-snug"
                 style={{ color: line.speaker === "jarvis" ? "#00D4FF" : "#A8BDD4" }}
               >
                 {line.speaker === "owner" ? (

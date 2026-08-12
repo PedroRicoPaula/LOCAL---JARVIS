@@ -28,11 +28,11 @@ export function ApprovalQueue({
   onDecide: (request: ApprovalRequest, decision: "approve" | "reject") => void;
 }) {
   return (
-    <Panel title={`Approval Queue${approvals.length ? ` (${approvals.length})` : ""}`} className="flex-1 min-h-0 flex flex-col">
+    <Panel title={`Approval Queue${approvals.length ? ` (${approvals.length})` : ""}`} className="lg:flex-1 lg:min-h-0 flex flex-col shrink-0">
       {approvals.length === 0 ? (
         <div className="text-[10px] text-jarvis-dim">Nothing pending.</div>
       ) : (
-        <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+        <div className="flex-1 overflow-y-auto space-y-2 min-h-0 max-h-48 lg:max-h-none">
           {approvals.map((request) => (
             <div key={request.id} className="fade-in-up border border-jarvis-amber/30 bg-jarvis-amber/5 px-3 py-2">
               <div className="flex items-center justify-between gap-2">

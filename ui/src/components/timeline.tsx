@@ -14,8 +14,8 @@ const KIND_COLOR: Record<string, string> = {
 export function Timeline({ events }: { events: MemoryEvent[] }) {
   const newestFirst = [...events].reverse();
   return (
-    <Panel title="Timeline" className="flex-1 min-h-0 flex flex-col">
-      <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+    <Panel title="Timeline" className="lg:flex-1 lg:min-h-0 flex flex-col shrink-0">
+      <div className="flex-1 overflow-y-auto space-y-2 min-h-0 max-h-48 lg:max-h-none">
         {newestFirst.length === 0 ? (
           <div className="text-[10px] text-jarvis-dim">No events yet.</div>
         ) : (

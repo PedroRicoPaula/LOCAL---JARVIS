@@ -310,6 +310,10 @@ async function main(): Promise<void> {
 
   console.log("core: ready.");
   for await (const message of earsConn.messages()) {
+    if (message["type"] === "audio.level") {
+      wsHub.broadcast({ type: "audio.level", level: Number(message["level"]) });
+      continue;
+    }
     if (message["type"] === "listening") {
       wsHub.broadcast({ type: "state", value: "listening" });
       continue;

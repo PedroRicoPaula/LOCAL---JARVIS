@@ -137,6 +137,7 @@ export interface JarvisDashboardState {
   feedback: Record<string, FeedbackRating>;
   camera: CameraDashboardState;
   gestures: GestureDashboardState;
+  audioLevels: number[];
   decide(request: ApprovalRequest, decision: "approve" | "reject"): void;
   refreshSkills(): void;
   injectUtterance(text: string): void;
@@ -176,6 +177,9 @@ export function useJarvis(): JarvisDashboardState {
   const [feedback, setFeedback] = useState<Record<string, FeedbackRating>>({});
   const [camera, setCamera] = useState<CameraDashboardState>(INITIAL_CAMERA_STATE);
   const [gestures, setGestures] = useState<GestureDashboardState>(INITIAL_GESTURE_STATE);
+  // A short rolling window of real mic levels -- the waveform needs
+  // recent history to look like a waveform, not a single bar.
+  const [audioLevels, setAudioLevels] = useState<number[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
   const refreshSkills = () => {
@@ -296,6 +300,9 @@ export function useJarvis(): JarvisDashboardState {
           case "hand.preview":
             setGestures((prev) => ({ ...prev, previewImage: event.image }));
             break;
+          case "audio.level":
+            setAudioLevels((prev) => [...prev.slice(-31), event.level]);
+            break;
           case "error":
             setErrors((prev) => [...prev.slice(-19), { message: event.message, detail: event.detail, ts: event.ts }]);
             break;
@@ -378,6 +385,7 @@ export function useJarvis(): JarvisDashboardState {
     feedback,
     camera,
     gestures,
+    audioLevels,
     decide,
     refreshSkills,
     injectUtterance,

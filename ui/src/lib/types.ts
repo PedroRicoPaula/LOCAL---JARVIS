@@ -107,6 +107,7 @@ export type ServerEvent =
   | { type: "gesture.stopped"; cause: "owner" | "idle" | "error" }
   | { type: "hand.landmarks"; hands: HandLandmarks[]; ts: number }
   | { type: "hand.preview"; image: string }
+  | { type: "audio.level"; level: number }
   | { type: "health"; providers: Record<string, boolean> }
   | { type: "sense.connection"; sense: "ears" | "voice" | "eyes"; connected: boolean }
   | { type: "error"; message: string; detail?: string; ts: number }
