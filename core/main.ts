@@ -27,6 +27,7 @@ import { createIpcCameraHandle, type EyesEventSource } from "./skills/camera.ts"
 import { generalConversationReply } from "./converse.ts";
 import { createDashboardHistory } from "./dashboardHistory.ts";
 import { runAppControlAction } from "./executors/appControl.ts";
+import { runRemindersAction } from "./executors/reminders.ts";
 import { createMcpToolExecutor } from "./executors/mcp.ts";
 import { createWriteFactExecutor } from "./executors/memory.ts";
 import { runShellAction } from "./executors/shell.ts";
@@ -108,6 +109,7 @@ async function main(): Promise<void> {
   const gate = new Gate(db, await getSigningKey(), {
     SHELL_EXEC: runShellAction,
     APP_CONTROL: runAppControlAction,
+    REMINDERS: runRemindersAction,
     MEMORY_WRITE: createWriteFactExecutor(memory),
     MCP_TOOL_CALL: createMcpToolExecutor(mcpRegistry),
   });

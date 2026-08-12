@@ -7,46 +7,43 @@ after a break. Keep it factual and short.
 
 ## Current state
 
-**Phase:** 8 — Camera sessions + `look` — **closed, merged to `main`**
-**Status:** `senses/eyes` (camera daemon) built and tested; `core`
-wires a real `CameraHandle`, NIM + Ollama `vision()` providers on the
-`see` lane, and a `kind`-dispatched `MEMORY_WRITE` executor (`fact` |
-`observation`). `skills/look` (`open_camera`/`close_camera`/`describe`)
-live. Merged to `main` 2026-08-06 (`make check`: 401 tests green).
-Real end-to-end voice + camera testing done live 2026-08-07 (real mic,
-real speakers via `say` acoustic loopback, real webcam, real NIM vision
-call) found three real bugs; two (`core`'s sense-reconnect gap, orphaned
-observation files) fixed and live-verified 2026-08-08, one (`ears`
-hang under heavy memory pressure) stays open pending reproduction. See
-the dated entries below for full detail. Backlog organized and analyzed
-2026-08-08; owner chose generalizing the MCP tool layer next over
-Phase 9 -- GitHub added as the second real MCP server (ADR-047),
-`skills/_shared/mcpTool.ts` extracted and proven with both Gmail and
-GitHub, `docs/SKILLS.md` § 5b documents the pattern. Also built the
-`docs/BACKLOG.md`-flagged permanent benchmark gate (`bench/_shared/
-regressionGate.ts`, `make bench-gate`) -- catches a real routing-
-accuracy regression against a recorded baseline, not just the fixed
-floor, the exact class of bug that shipped twice before (ADR-024,
-ADR-026). Also built a reviewable routing-misses list (`GET /api/
-routing-misses`, `routing_stats` gained an `event_id` column -- this
-project's first real schema migration on an already-populated table,
-live-verified against a real copy of the owner's own `data/jarvis.db`).
-Also batched fact extraction (idle-triggered, `core/
-factExtractionScheduler.ts`, ADR-050) -- addresses the recurring
-approval-fatigue finding directly, live-verified against a real timed
-window, not just unit tests. Audit log now tags which channel
-(dashboard/CLI) resolved an approval. The 2026-08-07 `ears` "hang"
-(bug #1) was re-investigated and re-diagnosed 2026-08-11/12: it wasn't
-a hang (ADR-051) -- fixed the real gap it exposed instead (no owner
-feedback on an empty wake-word transcription). `make check`: 453 tests
-green (Python: 50). Owner-required, not yet done: a real GitHub PAT in
-Keychain (README § 3d) to confirm the MCP pipeline against live
-third-party data. Also researched (not built): a screen-guide overlay
-idea (`docs/BACKLOG.md`, inspired by farzaa/clicky) -- real platform
-work, not scoped. Next: to be decided with the owner -- more MCP
-servers, Phase 9, the Knowledge Brain idea, or the screen-guide idea.
+**Phase:** 8 — Camera sessions + `look` — **closed, merged to `main`**.
+Phase 9 not started -- the owner asked instead for a stretch of
+autonomous, self-directed work (2026-08-08 through 2026-08-12): full
+detail in each night's own dated log entry below (ADR-047 through
+ADR-052), condensed here to what's actually still relevant day to day.
+
+**What's real and working:** GitHub as a second MCP server alongside
+Gmail (`skills/github`, `skills/_shared/mcpTool.ts`, ADR-047); a
+permanent benchmark regression gate (`make bench-gate`, ADR-048); a
+reviewable routing-misses list (`GET /api/routing-misses`, ADR-049);
+batched, idle-triggered fact extraction that directly addresses the
+repeated approval-fatigue finding (ADR-050); audit log entries now tag
+which channel (dashboard/CLI) resolved them; the 2026-08-07 `ears`
+"hang" was re-diagnosed as not a hang at all, with the real gap it
+exposed (no feedback on an empty wake-word transcription) fixed instead
+(ADR-051); `tasks` now runs on real Reminders.app via a new green
+`REMINDERS` capability instead of a private table (ADR-052) -- `add`
+confirmed working end to end against real data, `list`/`complete` hit a
+real, precisely-isolated hang **not yet confirmed as fixed in real
+interactive use** (see that ADR's own "owner-required" section).
+`make check`: 465 tests green (Python: 50).
+
+**Owner-required, not yet done:**
+1. A real GitHub PAT in Keychain (README § 3d) to confirm the MCP
+   pipeline against live third-party data (ADR-047).
+2. Try "what are my tasks" for real via `make dev` in an actual
+   interactive terminal -- if `list_tasks`/`complete_task` hang, watch
+   for a macOS Automation permission dialog and grant it (ADR-052).
+
+**Also researched, not built:** a screen-guide overlay idea (`docs/
+BACKLOG.md`, inspired by farzaa/clicky) -- real platform work, not
+scoped.
+
+**Next:** to be decided with the owner -- more MCP servers, Phase 9,
+the Knowledge Brain idea, or the screen-guide idea.
 **Branch:** `main`
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-12
 
 (Phase 7 — the dashboard: live WebSocket channel, REST backfill, `ui/`
 Next.js + shadcn/ui project, all four DoD checks Playwright-verified —
@@ -2893,6 +2890,42 @@ data, not stale text. Permission gap is closed. `skills/clipboard`'s
 path still needs a real owner drag to fully confirm, can't be scripted);
 OCR-on-screenshot is no longer permission-blocked, just not yet built
 (real Vision-framework research still needed, unchanged).
+
+**`tasks` on real Reminders.app, 2026-08-12 (ADR-052).** Owner confirmed
+he wants tasks synced via iCloud, not a JARVIS-only private list. Real
+design question surfaced first, not decided alone: a system-app write is
+`SHELL_EXEC`'s (yellow, per-call approval) shape by default, but that
+would undo this same night's own approval-fatigue fix. Presented against
+`APP_CONTROL`'s own precedent (narrow, immediately visible, trivially
+reversible → green); owner chose the same shape. New `REMINDERS`
+capability (green, `CLAUDE.md` § 5), `core/executors/reminders.ts`
+(JXA -- real syntax verified live against the owner's actual Reminders
+.app before writing code, owner text passed as a safe `execFile` argv
+element, never interpolated into the script -- a real command-injection
+risk otherwise).
+
+`add_task` confirmed fully working end to end: a real utterance injected
+over a real isolated `core`'s WebSocket created a real Reminders.app
+item, independently verified outside `core`, then cleaned up.
+`list_tasks`/`complete_task` hit a real, carefully isolated hang --
+narrowed through six progressively simpler live repros to exactly this
+boundary: list-level operations and reading a brand-new item's own
+properties both return in under a second; re-fetching an *existing*
+reminder's properties (`.name()`, `.id()`) never returns, timing out at
+exactly the configured 15s with empty stderr. Same signature
+`focusMode.ts` already documented for Shortcuts.app (a TCC Automation-
+permission dialog a non-interactive process can't see or click) -- but
+**not confirmed** as the same cause here, since every repro used a
+backgrounded test process, not a real interactive `make dev` session,
+which may behave differently. Shipped anyway: the executor code is
+correct, degrades honestly (a genuinely informative error now --
+`.message` alone turned out useless, `.stderr` has the real reason,
+fixed mid-investigation), and has an explicit timeout so a stuck
+permission dialog fails the gate instead of hanging it forever.
+
+17 new tests (465 total), `make check` green throughout. **Owner-
+required:** try "what are my tasks" for real via `make dev`; if it
+hangs, grant the Automation permission dialog if one appears.
 
 ---
 

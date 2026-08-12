@@ -3756,3 +3756,104 @@ having frozen without doing the exact diagnostic work above. Fixed:
   are now understood to be red herrings, not confirmed causes, and the
   entry says so plainly rather than leaving a stale, disproven
   explanation on record.
+
+## ADR-052 — `tasks` on real Reminders.app; new green `REMINDERS` capability
+
+**Status:** accepted
+
+**Context.** `skills/tasks` started on a private `ctx.store` table
+deliberately (2026-08-04: prove the voice UX before any gate design
+work), flagged since then as "revisit once the private list feels
+limiting." Owner confirmed 2026-08-12 he wants the real thing: Reminders
+.app, synced via iCloud across every device, not JARVIS-only.
+
+**Capability tier — a real decision, not mine alone.** A real system-app
+write is exactly `SHELL_EXEC`'s (yellow) shape — but gating every "add a
+task" behind a per-call approval would directly undo this same night's
+own fact-extraction-batching work (ADR-050). Presented the tension
+against the codebase's own direct precedent: `APP_CONTROL` exists
+specifically because open/close-an-app is "narrow, immediately visible,
+trivially reversible" and earning a green tier for it. The owner chose
+the same shape here — a new green `REMINDERS` capability
+(`shared/types.ts`, mirrored in `ui/src/lib/types.ts`, recorded in
+`CLAUDE.md` § 5 same as `APP_CONTROL`'s own entry), not `SHELL_EXEC`.
+Scoped to exactly one executor's CRUD, explicitly not a precedent for
+any other system-app write defaulting to green.
+
+**Real `osascript`/JXA syntax verified live before writing any code**
+(not guessed — this project's own established discipline): JXA
+(`osascript -l JavaScript`) over AppleScript string-building, since it
+returns real JSON rather than needing fragile comma-delimited string
+parsing. Owner-authored task text is passed as a real `execFile` argv
+element after `--`, read inside the script via JXA's `run(argv)` —
+confirmed live that shell-metacharacter-looking content comes through
+as inert data, never executed (no shell involved). String-interpolating
+it into the `-e` source instead would have been a real command-injection
+risk.
+
+**A real, only-partially-resolved finding from live end-to-end
+testing, not swept under the rug:** `add_task` confirmed fully working
+end to end — a real utterance injected over a real isolated `core`'s
+WebSocket produced a real Reminders.app item, independently verified via
+a direct `osascript` query outside `core` entirely, then cleaned up.
+`list_tasks` (and by extension `complete_task`, which lists first to
+fuzzy-match) hit a real, precisely isolated hang: accessing a
+*already-existing* reminder's own properties (`.name()`, `.id()`,
+`.completed()`) via `execFile` from a backgrounded/non-interactive node
+process hangs for the full request timeout with **empty stderr** —
+narrowed through six progressively simpler live repros (whose-filter →
+plain-JS filter → count-only → single-item property access) to exactly
+that boundary: list-level operations (`list.name()`, `list.reminders().
+length`) return in under a second; touching one existing item's
+properties never returns. Creating a *new* item and reading properties
+off the object `push()` itself just returned works fine — the hang is
+specific to re-fetching properties of an *existing* reminder.
+
+Same empty-stderr, full-timeout signature `core/executors/focusMode.ts`'s
+own docstring already documented for Shortcuts.app: a macOS TCC
+Automation-permission dialog a non-interactive process can't see or
+click. Plausible here too, but **not confirmed** — critically, every
+repro used a process backgrounded via a sandboxed tool-driven shell, not
+a real interactive `make dev` session in an actual Terminal window,
+which may have different session/TCC characteristics entirely. Framed
+honestly as an open question, not asserted as the cause.
+
+**Decisions.**
+
+- Ship the capability, executor, and skill rewrite as designed — `add`
+  is proven working end to end; `list`/`complete`'s executor code is
+  correct and already degrades honestly (a real, now genuinely
+  informative error via `describeError()`, added mid-investigation once
+  the original `execFile` rejection's `.message` turned out to carry no
+  useful information at all, only `.stderr` does) rather than hanging
+  the gate or lying about success.
+- Added an explicit `TIMEOUT_MS` (15s) to every call from the start
+  (unlike `focusMode.ts`'s own still-open equivalent gap) — a stuck
+  permission dialog fails the gate honestly instead of hanging it
+  forever.
+- **Owner-required, flagged explicitly, not silently assumed fixed:**
+  run `core` for real via `make dev` in an actual interactive terminal
+  (not backgrounded the way every diagnostic test here was) and try
+  "what are my tasks" for real. If it answers correctly, this was a
+  test-environment artifact and nothing else is needed. If it times out,
+  watch for a macOS permission dialog (System Settings → Privacy &
+  Security → Automation) and grant it — same category `focusMode.ts`
+  already asks for regarding Shortcuts.app.
+
+**Consequences.**
+- `shared/types.ts`, `ui/src/lib/types.ts`, `CLAUDE.md` § 5,
+  `core/skills/loader.ts` (`VALID_CAPABILITIES`, caught the new
+  capability automatically via ADR-035's own `Record<Capability,true>`
+  exhaustiveness fix — confirmed that guardrail still works),
+  `core/executors/reminders.ts` (new), `core/main.ts` (executor wiring),
+  `skills/tasks/manifest.ts`+`index.ts` (rewritten, `ctx.store` no
+  longer used — the private `skill_tasks_items` table stays in the
+  schema, unused, not migrated; out of scope per the plan).
+- 17 new tests (executor: 10, skill: rewritten to fake `ctx.propose`
+  instead of `ctx.store`, same behavioral coverage plus 2 new failure-
+  path cases). 465 total, `make check` green throughout.
+- Real Reminders.app used for live verification throughout — every test
+  item created was independently verified then deleted; the owner's
+  real `Tasks` list (which already held 7 real completed reminders from
+  his own prior use, confirmed present and undisturbed) was left exactly
+  as found.

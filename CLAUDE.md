@@ -170,7 +170,7 @@ are three tiers and they are not negotiable by a model at runtime:
 
 | Tier | Capabilities | Behaviour |
 |---|---|---|
-| **Green** | `MEMORY_READ`, `FS_READ` (whitelist only), `CAMERA`, `NET_READ`, `APP_CONTROL` | Runs automatically. Logged. |
+| **Green** | `MEMORY_READ`, `FS_READ` (whitelist only), `CAMERA`, `NET_READ`, `APP_CONTROL`, `REMINDERS` | Runs automatically. Logged. |
 | **Yellow** | `FS_WRITE`, `GIT_WRITE`, `SHELL_EXEC`, `MEMORY_WRITE`, `WEBHOOK` | Requires approval. Blocks until answered or expired. |
 | **Red** | Credential access, `rm`, package publish, anything that moves money, anything that sends a message to another human | Never automatic. Never proposed by a model. Only reachable by the owner typing it. |
 
@@ -184,6 +184,17 @@ capability that deletes something (files, messages, anything not
 trivially recoverable) stays yellow at minimum, red if it's
 irreversible/`rm`-class — this tier is not a precedent for widening
 `SHELL_EXEC` wholesale.
+
+`REMINDERS` (added 2026-08-12, owner request): reading/writing the
+owner's real Reminders.app tasks via exactly one executor
+(`core/executors/reminders.ts`) — create, list, mark-complete. Same
+reasoning as `APP_CONTROL`: narrow, immediately visible in
+Reminders.app itself, trivially reversible (delete/uncheck an item).
+Chosen explicitly over `SHELL_EXEC`/yellow — a system-app write would
+default there, but per-call approval on every "add a task" would
+undo this project's own approval-fatigue work. Not a precedent for
+any other system-app write defaulting to green; each one is its own
+decision, same as this and `APP_CONTROL` were.
 
 "Only reachable by the owner typing it" survives voice-first design
 intact: the *content* of a red-tier action (e.g. a message to send) can

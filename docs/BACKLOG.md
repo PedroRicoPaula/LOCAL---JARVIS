@@ -15,13 +15,27 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 - `workbench` — Arduino / assembly step tracking with confirmation prompts
 - Calendar and email triage
 - LeadHunter / HoqueiManager read-only widgets
-- **Real macOS Reminders/Calendar instead of `tasks`'s own private
-  table** — `osascript` can read/write Reminders.app and Calendar.app
-  directly, so "add a task" would show up in the same list Siri/Reminders
-  already syncs across every device, not a JARVIS-only list. `tasks`
-  (2026-08-04) deliberately started with `ctx.store` instead — no gate
-  design work needed to prove the voice UX first. Worth revisiting once
-  the private list feels limiting.
+- ~~Real macOS Reminders instead of `tasks`'s own private table~~ —
+  **built 2026-08-12, ADR-052.** New green `REMINDERS` capability
+  (owner-chosen over `SHELL_EXEC`, same reasoning as `APP_CONTROL` --
+  see `CLAUDE.md` § 5), `core/executors/reminders.ts` (JXA, real syntax
+  verified live, owner text passed as safe `execFile` argv, never
+  interpolated into the script). `add_task` confirmed working fully end
+  to end against the owner's real Reminders.app, independently verified
+  outside `core`, then cleaned up. **`list_tasks`/`complete_task` hit a
+  real, precisely isolated hang** (reading an *existing* reminder's own
+  properties via `execFile` from a non-interactive process; list-level
+  ops and creating-then-reading a brand-new item both work fine) --
+  same empty-stderr, full-timeout signature `focusMode.ts` already
+  documented for Shortcuts.app, but **not confirmed** as the same TCC
+  cause here, since every repro used a backgrounded test process, not a
+  real interactive `make dev` session. **Owner-required:** try "what are
+  my tasks" for real via `make dev` in an actual terminal; if it hangs,
+  watch for a macOS Automation permission dialog (System Settings ->
+  Privacy & Security -> Automation) and grant it.
+  Calendar.app integration was not part of this pass -- Reminders only,
+  matching what `tasks` actually needed; Calendar stays a separate,
+  unscoped idea if ever wanted.
 - ~~Music control (play/pause/skip/what's playing)~~ — **built
   2026-08-04**, `skills/media`. Spotify not covered, Music.app only
   (see ADR-025).

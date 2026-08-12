@@ -1,9 +1,10 @@
 /**
- * skills/tasks/manifest.ts — docs/SKILLS.md § 2. Skill-owned storage
- * (`ctx.store`, table `skill_tasks_items`) -- private, low-stakes,
- * frequently-updated data, not the shared `facts`/`events` model
- * `MEMORY_WRITE` is for. No capability needed: writing to a skill's own
- * namespaced table isn't a gated side effect (docs/SKILLS.md § 1).
+ * skills/tasks/manifest.ts — docs/SKILLS.md § 2. Real Reminders.app
+ * tasks (`REMINDERS`, green -- narrow, immediately visible, trivially
+ * reversible, same reasoning as `APP_CONTROL`; see `CLAUDE.md` § 5 and
+ * `core/executors/reminders.ts`), not a private table -- swapped
+ * 2026-08-12, owner request (iCloud sync across every device instead of
+ * a JARVIS-only list).
  *
  * Multi-lane (`converse` + `act`), added 2026-08-07 as a preventive
  * fix, not a live-caught bug: `shopping_list`'s near-identical
@@ -18,8 +19,8 @@ import type { SkillManifest } from "../../shared/types.ts";
 
 export const manifest: SkillManifest = {
   id: "tasks",
-  version: "1.0.0",
-  description: "A private daily task list -- add, list, and complete tasks by voice.",
+  version: "1.1.0",
+  description: "Real Reminders.app tasks -- add, list, and complete tasks by voice, synced via iCloud.",
 
   intents: [
     {
@@ -74,5 +75,5 @@ export const manifest: SkillManifest = {
     },
   ],
 
-  capabilities: [],
+  capabilities: ["REMINDERS"],
 };

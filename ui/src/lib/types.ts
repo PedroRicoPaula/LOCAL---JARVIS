@@ -18,6 +18,7 @@ export type Capability =
   | "CAMERA"
   | "NET_READ"
   | "APP_CONTROL"
+  | "REMINDERS"
   | "MEMORY_WRITE"
   | "FS_WRITE"
   | "GIT_WRITE"

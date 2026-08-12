@@ -87,6 +87,17 @@ export type Capability =
   // sensitive content; this tier is reserved for "opens/closes a
   // window," nothing that reads or captures anything).
   | "APP_CONTROL"
+  // Reading/writing the owner's real Reminders.app tasks -- owner
+  // request, 2026-08-12: same reasoning as APP_CONTROL above (narrow,
+  // immediately visible in Reminders.app itself, trivially reversible
+  // by deleting/unchecking an item), presented and explicitly chosen
+  // over the SHELL_EXEC/yellow default that a system-app write would
+  // otherwise get, because per-call approval on every "add a task"
+  // would undo this same SOAK's own approval-fatigue fix. Scoped to
+  // exactly one executor's CRUD (`core/executors/reminders.ts`) --
+  // not a precedent for widening SHELL_EXEC, same explicit boundary
+  // APP_CONTROL's own entry draws.
+  | "REMINDERS"
   // yellow — requires approval
   | "MEMORY_WRITE"
   | "FS_WRITE"
@@ -111,6 +122,7 @@ export const GREEN_CAPABILITIES: readonly Capability[] = [
   "CAMERA",
   "NET_READ",
   "APP_CONTROL",
+  "REMINDERS",
 ] as const;
 
 export type ApprovalState =
