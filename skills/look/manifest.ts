@@ -84,6 +84,39 @@ export const manifest: SkillManifest = {
       lanes: ["see", "converse"],
       requiresCamera: true,
     },
+    {
+      id: "start_gestures",
+      description: "Turn on live hand tracking -- shows the camera feed on the dashboard and tracks hand movement.",
+      examples: [
+        "turn on hand tracking",
+        "start hand tracking",
+        "track my hands",
+        "turn on gesture mode",
+        "let me control it with my hands",
+        "show me the camera feed",
+        // PT-PT paraphrases (ADR-033)
+        "liga o rastreio de mãos",
+        "ativa o modo de gestos",
+        "segue as minhas mãos",
+        "mostra-me a câmara",
+      ],
+      lanes: [...CAMERA_CONTROL_LANES],
+    },
+    {
+      id: "stop_gestures",
+      description: "Turn off live hand tracking, leaving the camera session itself alone.",
+      examples: [
+        "turn off hand tracking",
+        "stop hand tracking",
+        "stop tracking my hands",
+        "turn off gesture mode",
+        // PT-PT paraphrases (ADR-033)
+        "desliga o rastreio de mãos",
+        "desativa o modo de gestos",
+        "para de seguir as minhas mãos",
+      ],
+      lanes: [...CAMERA_CONTROL_LANES],
+    },
   ],
 
   capabilities: ["CAMERA", "MEMORY_WRITE"],

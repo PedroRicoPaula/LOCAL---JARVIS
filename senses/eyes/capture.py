@@ -16,7 +16,7 @@ failure honestly instead of hanging or guessing why `read()` failed.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 import cv2
 
@@ -40,6 +40,16 @@ class CameraDevice(Protocol):
     def read_frame(self) -> bytes:
         """Grabs one frame, returns it JPEG-encoded. Raises
         CameraPermissionError if the read fails."""
+        ...
+
+    def read_raw_frame(self) -> Any:
+        """Grabs one frame as a raw BGR numpy array, unencoded -- for
+        gesture tracking's hot path, which feeds a local model directly
+        and would otherwise pay a pointless JPEG encode/decode round trip
+        every frame. Returns whatever OpenCV returns (typed loosely on
+        purpose: `senses/eyes`'s own fakes don't import numpy, and this
+        module is the only place that cares about the concrete type).
+        Raises CameraPermissionError if the read fails."""
         ...
 
     def release(self) -> None:
@@ -67,15 +77,19 @@ class OpenCvCameraDevice:
             )
         self._cap = cap
 
-    def read_frame(self) -> bytes:
+    def read_raw_frame(self) -> Any:
         if self._cap is None:
-            raise CameraPermissionError("read_frame() called before open()")
+            raise CameraPermissionError("read_raw_frame() called before open()")
         ok, frame = self._cap.read()
         if not ok:
             raise CameraPermissionError(
                 "camera device opened but a frame read failed -- permission may have been "
                 "revoked mid-session, or the device disconnected"
             )
+        return frame
+
+    def read_frame(self) -> bytes:
+        frame = self.read_raw_frame()
         encoded_ok, buffer = cv2.imencode(
             ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self._jpeg_quality]
         )

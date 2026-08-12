@@ -40,6 +40,19 @@ interactive use** (see that ADR's own "owner-required" section).
 BACKLOG.md`, inspired by farzaa/clicky) -- real platform work, not
 scoped.
 
+**Also built 2026-08-12:** real-time hand tracking as a distinct camera
+mode (`senses/eyes/gestures.py`, `ui/src/components/gesture-panel.tsx`,
+ADR-053) -- live camera feed on the dashboard with a hand skeleton
+overlay, pinch-to-drag, and a finger-position theremin. Fully local and
+free (mediapipe, verified working on this machine before adoption). Two
+real bugs found by live measurement during the build (an effect-based
+drag React rightly rejected, and a frame-pacing bug measured at 7.4fps
+against a 12fps target, fixed and re-measured at 11.5fps). Plus two live
+bug fixes the owner hit: `close_app` claimed success for apps that were
+never running (AppleScript's `quit` exits 0 regardless -- now checks
+System Events first), and `open_url` read entire raw URLs out loud (now
+speaks a friendly name).
+
 **Next:** to be decided with the owner -- more MCP servers, Phase 9,
 the Knowledge Brain idea, or the screen-guide idea.
 **Branch:** `main`

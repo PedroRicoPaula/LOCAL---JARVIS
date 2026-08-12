@@ -38,8 +38,36 @@ class FakeCameraDevice:
         index = min(self.read_count - 1, len(self._frames) - 1)
         return self._frames[index]
 
+    def read_raw_frame(self) -> object:
+        """Gesture tracking's unencoded path. Returns an opaque marker
+        rather than a real numpy array -- nothing in the tested logic
+        inspects the frame's contents, only that one was read and handed
+        to the tracker, so this fake stays numpy-free."""
+        self.read_count += 1
+        return f"fake-raw-frame-{self.read_count}"
+
     def release(self) -> None:
         self.released = True
+
+
+class FakeHandTracker:
+    """Scripted detection results, one per `detect()` call. Same
+    "repeats the last item forever" shape as `FakeCameraDevice` above."""
+
+    def __init__(self, results: list[tuple] | None = None) -> None:
+        self._results = list(results) if results is not None else [()]
+        self.detect_count = 0
+        self.closed = False
+        self.seen_frames: list[object] = []
+
+    def detect(self, frame: object) -> tuple:
+        self.seen_frames.append(frame)
+        self.detect_count += 1
+        index = min(self.detect_count - 1, len(self._results) - 1)
+        return self._results[index]
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def fake_clock(start: float = 1_000_000.0) -> tuple[list[float], Callable[[], float]]:

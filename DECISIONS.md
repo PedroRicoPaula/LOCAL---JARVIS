@@ -3857,3 +3857,69 @@ honestly as an open question, not asserted as the cause.
   real `Tasks` list (which already held 7 real completed reminders from
   his own prior use, confirmed present and undisturbed) was left exactly
   as found.
+
+## ADR-053 — Real-time hand tracking as a distinct camera mode
+
+**Status:** accepted
+
+**Context.** Owner's idea (2026-08-12): show the camera feed on the
+dashboard and let hand movement drive real interaction — drag things,
+play notes by finger position. Researched feasibility for real before
+planning: `mediapipe` (Google, Apache-2.0, fully local, free) has a real
+wheel for this exact machine (py3.13/arm64), and a real functional test
+against a real image returned 21 landmarks per hand with correct
+handedness at 0.94-0.96 confidence, Metal GPU delegate active. Checked
+first precisely because `tflite-runtime` failed this same hardware bar
+in Phase 2 (PROGRESS.md's own log) — the precedent is why it was
+verified rather than assumed.
+
+**Decisions.**
+
+- **A distinct mode, not a loosening of SPEC.md § 6.** That rule ("no
+  frame is captured without an explicit request") governs
+  vision-description captures: a frame written to `data/frames/`, sent to
+  a remote model, potentially remembered as an observation. Gesture
+  tracking does none of those — frames are analyzed in memory by a local
+  model and dropped, nothing written, nothing leaving the machine. It
+  still gets an explicitly-armed session, an owner-spoken start, a
+  dashboard indicator, and its own idle timeout, so the camera can never
+  be quietly running. `CameraSession.read_raw_frame()` is deliberately
+  separate from `capture()` and writes nothing.
+- **Landmarks and preview images are rate-limited independently**
+  (12fps vs 4fps). Landmark payloads are ~1.8KB (measured) and are what
+  needs to feel smooth; base64 preview images are ~19KB (measured) and
+  are the expensive part. The skeleton overlay is drawn browser-side
+  from landmark data rather than burned into the JPEG, so hand movement
+  stays smooth between preview frames.
+- **Rides the existing `CAMERA` green tier**, no new capability: the
+  camera session is already owner-armed, visible, and trivially closed,
+  and tracking can't outlive it (closing the camera — by voice, timeout,
+  or error — stops tracking first, tested).
+- **All interaction logic lives in `ui/src/lib/hand.ts`, not the React
+  component** — pinch detection, open-palm detection, note mapping, and
+  the pinch-to-drag reducer are pure functions over coordinate arrays,
+  tested offline in `core/tests/handGeometry.test.ts` (17 tests, no DOM,
+  no browser, no camera). Pinch detection scales by the hand's own size
+  rather than using a fixed distance, so it works at any distance from
+  the camera (tested).
+
+**Consequences.**
+- 488 tests total, `make check` green. New: 9 Python (gesture loop, fake
+  clock/tracker), 8 Python (message handling, session), 5 skill tests,
+  17 TS geometry tests.
+- **Two real bugs found and fixed by live measurement, not assumed:**
+  React lint correctly rejected an effect-based drag implementation
+  (cascading renders) — restructured as derived-during-render state with
+  a pure reducer, which is also what made it testable. And the loop's
+  fixed `sleep` made the real achieved rate 1/(work + interval): measured
+  7.4fps against a 12fps target, fixed by sleeping only the remainder of
+  the frame budget, re-measured at 11.5fps.
+- Real end-to-end verification against the real camera: 3-second run,
+  real detection (~41ms steady-state, 83ms budget), real rates confirmed.
+- **Owner-required:** how it actually *feels* (is 12fps enough, is the
+  pinch threshold right for a real hand at a real distance) needs the
+  owner's own hand in front of the camera. The plumbing and the logic are
+  proven; the experience isn't.
+- The owner's follow-on idea — hand drives the *real* macOS cursor with a
+  voice-triggered click — deliberately not built; see `docs/BACKLOG.md`'s
+  own entry for the full reasoning.

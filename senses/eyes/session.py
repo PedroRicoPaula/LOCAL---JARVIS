@@ -108,6 +108,30 @@ class CameraSession:
             return "idle"
         return None
 
+    def read_raw_frame(self) -> object:
+        """A raw, unencoded frame straight off the device -- for gesture
+        tracking's continuous loop (`gestures.py`), which analyzes frames
+        in memory with a local model and never writes one to disk.
+
+        Deliberately NOT `capture()`: nothing is saved, nothing enters
+        `self.frames`, nothing is ever sent to a remote model, and this
+        is not the path SPEC.md § 6's "no frame captured without an
+        explicit request" rule governs (that rule is about
+        vision-description captures -- see `gestures.py`'s own
+        docstring). It does still refuse once the session is closed or
+        timed out, so gesture tracking can't outlive its own session.
+
+        Resets the idle timeout: a hand actively being tracked is the
+        session very much being used, and shouldn't idle out mid-gesture.
+        """
+        if self.closed:
+            raise SessionNotArmedError(f"session {self.id} is already closed")
+        if self.is_timed_out():
+            raise SessionNotArmedError(f"session {self.id} has timed out")
+        frame = self._device.read_raw_frame()
+        self.idle_until = self._now() + self._idle_timeout_s
+        return frame
+
     def capture(self) -> Frame:
         """ARMED -> CAPTURE -> ARMED. Always grabs a fresh frame from the
         real device -- never reuses a previous one (ADR-010: "every

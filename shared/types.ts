@@ -333,6 +333,19 @@ export type ServerEvent =
   | { type: "camera.armed"; sessionId: string; reason: string; expiresAt: number }
   | { type: "camera.captured"; sessionId: string; frameId: string; path: string }
   | { type: "camera.closed"; sessionId: string; cause: "owner" | "idle" | "cap" | "error" }
+  /** Continuous hand tracking (2026-08-12, `senses/eyes/gestures.py`).
+   * A distinct mode from the camera's single-shot `capture()`, not a
+   * loosening of SPEC.md § 6: frames are analyzed in memory by a local
+   * model and dropped -- nothing written to disk, nothing sent to a
+   * remote model. Landmarks are normalized 0..1, already mirrored to
+   * match the preview image so the overlay lines up. */
+  | { type: "gesture.started" }
+  | { type: "gesture.stopped"; cause: "owner" | "idle" | "error" }
+  | { type: "hand.landmarks"; hands: HandLandmarks[]; ts: number }
+  /** Base64 JPEG, deliberately rate-limited below the landmark rate --
+   * the skeleton overlay is drawn browser-side from the landmarks above,
+   * so only this (the expensive part) is throttled. */
+  | { type: "hand.preview"; image: string }
   | { type: "health"; providers: Record<string, boolean> }
   /** `ears`/`voice`/`eyes` connection state, per sense -- distinct from
    * `health` (LLM router providers, above). Found live, 2026-08-07: a
@@ -386,6 +399,14 @@ export interface CameraSession {
   capture(): Promise<Frame>;
   /** Deletes every frame not referenced by an approved observation. */
   close(): Promise<void>;
+  /** Starts/stops continuous hand tracking on this session's own device
+   * (`senses/eyes/gestures.py`). Fire-and-forget on purpose: the result
+   * is a continuous `hand.landmarks` stream to the dashboard, not a
+   * single reply worth awaiting here. Stopping is idempotent, and
+   * `close()` stops tracking too -- tracking can never outlive the
+   * session that owns the camera. */
+  startGestures(): void;
+  stopGestures(): void;
 }
 
 export interface CameraHandle {
@@ -400,6 +421,16 @@ export interface Frame {
   sessionId: string;
   /** True once an approved observation references it; survives session close. */
   retained: boolean;
+}
+
+/** One detected hand: MediaPipe's own 21-point topology, normalized
+ * 0..1. Index 4 is the thumb tip and index 8 the index-finger tip (the
+ * two the dashboard's pinch detection uses) -- that ordering is
+ * MediaPipe's fixed, documented convention, not something this project
+ * chose. `handedness` is the model's own "Left"/"Right" label. */
+export interface HandLandmarks {
+  handedness: string;
+  landmarks: { x: number; y: number; z: number }[];
 }
 
 export type CameraEvent =

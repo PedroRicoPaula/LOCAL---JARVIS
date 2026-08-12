@@ -208,3 +208,48 @@ test("unknown intent: honest fallback, does not throw", async () => {
 
   assert.match(result.speech, /not sure what you want/i);
 });
+
+test("start_gestures arms the camera itself -- the owner shouldn't have to open it first", async () => {
+  const camera = fakeCamera([FRAME]);
+  const ctx = fakeSkillContext({ camera, conversation: fakeConversation() });
+  const skill = createLookSkill(fakeDeps());
+
+  const result = await skill.handle({ utterance: "turn on hand tracking", intent: "start_gestures", sessionId: "s1" }, ctx);
+
+  assert.match(result.speech, /hand tracking's on/i);
+  assert.equal(camera.state, "armed");
+  assert.deepEqual(camera.gestureCalls, ["start"]);
+});
+
+test("stop_gestures with the camera already off says so, never touches the device", async () => {
+  const camera = fakeCamera([FRAME]);
+  const ctx = fakeSkillContext({ camera, conversation: fakeConversation() });
+  const skill = createLookSkill(fakeDeps());
+
+  const result = await skill.handle({ utterance: "stop hand tracking", intent: "stop_gestures", sessionId: "s1" }, ctx);
+
+  assert.match(result.speech, /isn't running/i);
+  assert.deepEqual(camera.gestureCalls, []);
+});
+
+test("stop_gestures on a live session stops tracking without closing the camera", async () => {
+  const camera = fakeCamera([FRAME]);
+  await camera.open("armed earlier");
+  const ctx = fakeSkillContext({ camera, conversation: fakeConversation() });
+  const skill = createLookSkill(fakeDeps());
+
+  const result = await skill.handle({ utterance: "stop hand tracking", intent: "stop_gestures", sessionId: "s1" }, ctx);
+
+  assert.match(result.speech, /hand tracking's off/i);
+  assert.deepEqual(camera.gestureCalls, ["stop"]);
+  assert.equal(camera.state, "armed", "the camera session itself stays open");
+});
+
+test("start_gestures: a camera failure is reported honestly, does not throw", async () => {
+  const ctx = fakeSkillContext({ conversation: fakeConversation() }); // default camera handle throws on open()
+  const skill = createLookSkill(fakeDeps());
+
+  const result = await skill.handle({ utterance: "turn on hand tracking", intent: "start_gestures", sessionId: "s1" }, ctx);
+
+  assert.match(result.speech, /couldn't start hand tracking/i);
+});

@@ -76,16 +76,20 @@ export function fakeLogger(): Logger {
  * enough for a skill test to exercise open -> capture -> close without
  * a real device or socket -- `docs/SKILLS.md` § 7's own worked example
  * names this exact helper. */
-export function fakeCamera(frames: readonly Frame[]): CameraHandle & { closedSessionIds: string[] } {
+export function fakeCamera(
+  frames: readonly Frame[],
+): CameraHandle & { closedSessionIds: string[]; gestureCalls: string[] } {
   let state: CameraHandle["state"] = "idle";
   let captureCount = 0;
   const closedSessionIds: string[] = [];
+  const gestureCalls: string[] = [];
 
   return {
     get state(): CameraHandle["state"] {
       return state;
     },
     closedSessionIds,
+    gestureCalls,
     async open(reason: string): Promise<CameraSession> {
       state = "armed";
       const id = "fake-session";
@@ -105,6 +109,12 @@ export function fakeCamera(frames: readonly Frame[]): CameraHandle & { closedSes
         async close(): Promise<void> {
           state = "idle";
           closedSessionIds.push(id);
+        },
+        startGestures(): void {
+          gestureCalls.push("start");
+        },
+        stopGestures(): void {
+          gestureCalls.push("stop");
         },
       };
     },

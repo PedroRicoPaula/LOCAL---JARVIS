@@ -1071,3 +1071,27 @@ deliberately left to the owner.
 _(add as you find them — this section is the most valuable one)_
 
 - 
+
+## Hand-gesture camera mode — built 2026-08-12
+
+Owner's idea: show the camera feed on the dashboard, track hands in real
+time, and interact with things using hand movement (drag widgets, play
+notes by finger position). Built as `senses/eyes/gestures.py` +
+`ui/src/components/gesture-panel.tsx` — see ADR-053.
+
+**Deliberately NOT built, and why** — the owner's own follow-on idea in
+the same message: *"o cursor segue o meu dedo e quando falo 'clica' o
+cursor clica onde está posicionado"* (hand drives the real macOS cursor,
+voice triggers a real click). This is a genuinely different risk class
+from everything above: the dashboard demos can only move shapes inside
+their own panel, but a real cursor+click can hit "Delete", a password
+field, "Send", or anything else on screen — with the click target
+decided by a hand-position estimate, not by the owner reading a
+confirmation. It lands squarely in the same territory this file's own
+Tier-2 "computer-use" research already scoped carefully (permission-first,
+sandboxed, macOS Accessibility API for real element identification rather
+than raw coordinates). Recommend it stays a separate, properly-designed
+capability with its own ADR and its own safety model — not a fast follow
+bolted onto the gesture demo. The gesture *plumbing* built here (real
+landmark stream, pinch detection, per-frame position) is exactly what
+that feature would build on when it happens.

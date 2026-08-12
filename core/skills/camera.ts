@@ -127,6 +127,22 @@ export function createIpcCameraHandle(sendToEyes: (message: Record<string, unkno
         const reply = await request({ type: "close", cause: "owner" });
         if (reply.type === "error") throw new Error(reply.message);
       },
+
+      // Fire-and-forget, unlike capture()/close(): the whole point of
+      // gesture mode is a continuous stream of `hand.landmarks` events
+      // going to the dashboard, not one reply to await here. `eyes` does
+      // send a `gesture.started` confirmation, but it's relayed straight
+      // to the dashboard by `core/main.ts` -- correlating it into this
+      // handle's single-pending-request slot would mean a *skill* waiting
+      // on something it has no use for, and would collide with the real
+      // capture/close requests that slot exists for.
+      startGestures(): void {
+        sendToEyes({ type: "gesture.start" });
+      },
+
+      stopGestures(): void {
+        sendToEyes({ type: "gesture.stop" });
+      },
     };
   }
 

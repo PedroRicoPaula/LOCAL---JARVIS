@@ -29,10 +29,29 @@ from typing import Any
 from senses import ipc
 from senses.eyes import config
 from senses.eyes.capture import CameraDevice, CameraPermissionError, OpenCvCameraDevice
+from senses.eyes.gestures import GestureLoop, HandTracker, RealHandTracker
 from senses.eyes.session import CameraSession, SessionNotArmedError
 
 Emit = Callable[[dict[str, Any]], None]
 DeviceFactory = Callable[[], CameraDevice]
+TrackerFactory = Callable[[], HandTracker]
+
+
+class GestureHolder:
+    """The one running gesture loop, if any -- same "one lock, one
+    current thing" shape as `SessionHolder` below."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._loop: GestureLoop | None = None
+
+    def get(self) -> GestureLoop | None:
+        with self._lock:
+            return self._loop
+
+    def set(self, loop: GestureLoop | None) -> None:
+        with self._lock:
+            self._loop = loop
 
 
 class SessionHolder:
@@ -60,9 +79,16 @@ def handle_message(
     holder: SessionHolder,
     device_factory: DeviceFactory,
     emit: Emit,
+    gestures: GestureHolder | None = None,
+    tracker_factory: TrackerFactory = RealHandTracker,
+    spawn: Callable[[Callable[[], None]], None] | None = None,
 ) -> None:
     """One incoming request, handled. Pure enough to unit-test directly
-    with a fake device_factory/emit -- no socket touched here."""
+    with a fake device_factory/emit -- no socket touched here.
+
+    `gestures`/`tracker_factory`/`spawn` are only needed for the
+    gesture-mode messages; `spawn` defaults to a real daemon thread and
+    is injectable so tests can run the loop synchronously instead."""
     msg_type = message.get("type")
 
     if msg_type == "arm":
@@ -125,6 +151,13 @@ def handle_message(
         session = holder.get()
         if session is None or session.closed:
             return  # already closed / never armed -- idempotent, not an error
+        # Stop gesture tracking first if it's running -- it holds the same
+        # device the session about to be closed owns.
+        if gestures is not None:
+            running = gestures.get()
+            if running is not None:
+                running.stop()
+                gestures.set(None)
         cause = message.get("cause", "owner")
         keep_frame_ids = frozenset(message.get("keepFrameIds", []))
         session.close(cause, keep_frame_ids)
@@ -132,11 +165,58 @@ def handle_message(
         holder.set(None)
         return
 
+    if msg_type == "gesture.start":
+        if gestures is None:
+            emit({"type": "error", "message": "gesture mode is not available"})
+            return
+        if gestures.get() is not None:
+            emit({"type": "gesture.started"})  # idempotent, same shape as arm
+            return
+        session = holder.get()
+        if session is None or session.closed:
+            emit({"type": "error", "message": "no camera session is armed -- arm it first"})
+            return
+        try:
+            tracker = tracker_factory()
+        except Exception as exc:
+            emit({"type": "error", "message": f"couldn't start hand tracking: {exc}"})
+            return
+        loop = GestureLoop(session.read_raw_frame, tracker, emit)
+        gestures.set(loop)
+        emit({"type": "gesture.started"})
+
+        def run_and_clear() -> None:
+            try:
+                loop.run()
+            finally:
+                tracker.close()
+                if gestures.get() is loop:
+                    gestures.set(None)
+
+        if spawn is not None:
+            spawn(run_and_clear)
+        else:
+            threading.Thread(target=run_and_clear, daemon=True).start()
+        return
+
+    if msg_type == "gesture.stop":
+        if gestures is None:
+            return
+        running = gestures.get()
+        if running is None:
+            return  # not running -- idempotent, not an error
+        running.stop()
+        gestures.set(None)
+        return
+
     print(f"eyes: ignoring unknown message type {msg_type!r}")
 
 
 def check_timeouts_forever(
-    holder: SessionHolder, emit: Emit, interval_s: float = config.TIMEOUT_CHECK_INTERVAL_S
+    holder: SessionHolder,
+    emit: Emit,
+    interval_s: float = config.TIMEOUT_CHECK_INTERVAL_S,
+    gestures: GestureHolder | None = None,
 ) -> None:
     """Background thread: closes the current session for real the moment
     its own idle/absolute deadline passes, even with no capture/close
@@ -149,6 +229,12 @@ def check_timeouts_forever(
             continue
         cause = session.is_timed_out()
         if cause is not None:
+            # Stop tracking before releasing the device it's reading from.
+            if gestures is not None:
+                running = gestures.get()
+                if running is not None:
+                    running.stop()
+                    gestures.set(None)
             session.close(cause)
             emit({"type": "camera.closed", "sessionId": session.id, "cause": cause})
             holder.set(None)
@@ -186,11 +272,15 @@ class ConnectionHolder:
 
 
 def run_forever(
-    conn: socket.socket, holder: SessionHolder, device_factory: DeviceFactory, emit: Emit
+    conn: socket.socket,
+    holder: SessionHolder,
+    device_factory: DeviceFactory,
+    emit: Emit,
+    gestures: GestureHolder | None = None,
 ) -> None:
     for message in ipc.read_lines(conn):
         try:
-            handle_message(message, holder, device_factory, emit)
+            handle_message(message, holder, device_factory, emit, gestures)
         except Exception as exc:  # supervisor boundary -- one bad message must not kill the daemon
             print(f"eyes: failed to handle {message!r}, continuing ({exc!r})")
 
@@ -206,10 +296,13 @@ def _on_sigterm(signum: int, frame: object) -> None:
 def main() -> None:
     signal.signal(signal.SIGTERM, _on_sigterm)
     holder = SessionHolder()
+    gestures = GestureHolder()
     connection_holder = ConnectionHolder()
 
     threading.Thread(
-        target=check_timeouts_forever, args=(holder, connection_holder.emit), daemon=True
+        target=check_timeouts_forever,
+        args=(holder, connection_holder.emit, config.TIMEOUT_CHECK_INTERVAL_S, gestures),
+        daemon=True,
     ).start()
 
     server = ipc.listen(config.SOCKET_PATH)
@@ -219,9 +312,12 @@ def main() -> None:
             conn = ipc.accept_one(server)
             print("eyes: core connected")
             connection_holder.set(conn)
-            run_forever(conn, holder, OpenCvCameraDevice, connection_holder.emit)
+            run_forever(conn, holder, OpenCvCameraDevice, connection_holder.emit, gestures)
             print("eyes: core disconnected, waiting for reconnect")
     finally:
+        running = gestures.get()
+        if running is not None:
+            running.stop()
         session = holder.get()
         if session is not None and not session.closed:
             session.close("error")

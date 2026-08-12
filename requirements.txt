@@ -26,3 +26,13 @@ onnxruntime==1.28.0
 # Phase 8: camera. cv2.VideoCapture for a single JPEG frame grab -- boring,
 # standard choice over pyobjc/AVFoundation's extra native-binding complexity.
 opencv-python==4.10.0.84
+
+# Hand tracking (2026-08-12, senses/eyes/gestures.py). Google's own
+# Apache-2.0 library, running a free public model fully locally -- no key,
+# no network, CLAUDE.md § 0.2 clean. Verified working on this exact
+# machine before being adopted (real wheel for py3.13/arm64, real
+# detection at 0.94-0.96 confidence, Metal GPU delegate active) rather
+# than assumed -- the tflite-runtime precedent (PROGRESS.md's Phase 2 log)
+# is why that check happened first. Pulls opencv-contrib-python as its own
+# dependency, which coexists with opencv-python above.
+mediapipe==1.0.0

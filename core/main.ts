@@ -21,6 +21,7 @@
  * its own tests.
  */
 
+import type { HandLandmarks } from "../shared/types.ts";
 import { connectWithRetry } from "./ipc.ts";
 import { wrapSenseConnection, type SenseConnection } from "./senseConnection.ts";
 import { createIpcCameraHandle, type EyesEventSource } from "./skills/camera.ts";
@@ -384,6 +385,29 @@ async function relayCameraStatus(
         say(announcement);
         wsHub.broadcast({ type: "transcript", text: announcement, final: true, speaker: "jarvis" });
       }
+    } else if (type === "gesture.started") {
+      wsHub.broadcast({ type: "gesture.started" });
+    } else if (type === "gesture.stopped") {
+      const rawCause = message["cause"];
+      const cause = rawCause === "idle" || rawCause === "error" ? rawCause : "owner";
+      wsHub.broadcast({ type: "gesture.stopped", cause });
+      // A self-triggered stop (nobody's hand seen for a while, or the
+      // camera failed) is the one case nothing else in the turn narrates
+      // -- same reasoning as the camera's own timeout announcements above.
+      if (cause !== "owner") {
+        const announcement =
+          cause === "idle" ? "Hand tracking timed out and stopped." : "Hand tracking stopped -- something went wrong with the camera.";
+        say(announcement);
+        wsHub.broadcast({ type: "transcript", text: announcement, final: true, speaker: "jarvis" });
+      }
+    } else if (type === "hand.landmarks") {
+      wsHub.broadcast({
+        type: "hand.landmarks",
+        hands: message["hands"] as HandLandmarks[],
+        ts: Number(message["ts"]),
+      });
+    } else if (type === "hand.preview") {
+      wsHub.broadcast({ type: "hand.preview", image: String(message["image"]) });
     }
   }
 }

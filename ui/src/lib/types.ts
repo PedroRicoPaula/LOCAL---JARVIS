@@ -85,6 +85,14 @@ export type JarvisState = "idle" | "listening" | "thinking";
 
 export type FeedbackRating = "up" | "down";
 
+/** MediaPipe's fixed 21-point hand topology, normalized 0..1, already
+ * mirrored server-side to match the preview image. Index 4 = thumb tip,
+ * 8 = index-finger tip (the pair pinch detection uses). */
+export interface HandLandmarks {
+  handedness: string;
+  landmarks: { x: number; y: number; z: number }[];
+}
+
 export type ServerEvent =
   | { type: "thought"; text: string; lane: Lane; ts: number }
   | { type: "approval.new"; request: ApprovalRequest }
@@ -95,6 +103,10 @@ export type ServerEvent =
   | { type: "camera.armed"; sessionId: string; reason: string; expiresAt: number }
   | { type: "camera.captured"; sessionId: string; frameId: string; path: string }
   | { type: "camera.closed"; sessionId: string; cause: "owner" | "idle" | "cap" | "error" }
+  | { type: "gesture.started" }
+  | { type: "gesture.stopped"; cause: "owner" | "idle" | "error" }
+  | { type: "hand.landmarks"; hands: HandLandmarks[]; ts: number }
+  | { type: "hand.preview"; image: string }
   | { type: "health"; providers: Record<string, boolean> }
   | { type: "sense.connection"; sense: "ears" | "voice" | "eyes"; connected: boolean }
   | { type: "error"; message: string; detail?: string; ts: number }

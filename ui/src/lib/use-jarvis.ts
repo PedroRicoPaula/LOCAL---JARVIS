@@ -30,6 +30,7 @@ import type {
   ClientEvent,
   DashboardMetrics,
   FeedbackRating,
+  HandLandmarks,
   JarvisState,
   MemoryEvent,
   ServerEvent,
@@ -98,6 +99,27 @@ const INITIAL_CAMERA_STATE: CameraDashboardState = {
   lastClosedCause: null,
 };
 
+/** Live hand-tracking state (`senses/eyes/gestures.py`). `hands` is the
+ * *current* position, replaced every frame -- not a log. `previewImage`
+ * arrives at a lower rate than landmarks on purpose (it's the expensive
+ * part), so the two are stored separately rather than as one frame
+ * object. */
+export interface GestureDashboardState {
+  active: boolean;
+  hands: HandLandmarks[];
+  previewImage: string | null;
+  lastLandmarkAt: number | null;
+  lastStoppedCause: "owner" | "idle" | "error" | null;
+}
+
+const INITIAL_GESTURE_STATE: GestureDashboardState = {
+  active: false,
+  hands: [],
+  previewImage: null,
+  lastLandmarkAt: null,
+  lastStoppedCause: null,
+};
+
 export interface JarvisDashboardState {
   connection: ConnectionState;
   connectedSince: number | null;
@@ -114,6 +136,7 @@ export interface JarvisDashboardState {
   metrics: DashboardMetrics | null;
   feedback: Record<string, FeedbackRating>;
   camera: CameraDashboardState;
+  gestures: GestureDashboardState;
   decide(request: ApprovalRequest, decision: "approve" | "reject"): void;
   refreshSkills(): void;
   injectUtterance(text: string): void;
@@ -152,6 +175,7 @@ export function useJarvis(): JarvisDashboardState {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [feedback, setFeedback] = useState<Record<string, FeedbackRating>>({});
   const [camera, setCamera] = useState<CameraDashboardState>(INITIAL_CAMERA_STATE);
+  const [gestures, setGestures] = useState<GestureDashboardState>(INITIAL_GESTURE_STATE);
   const wsRef = useRef<WebSocket | null>(null);
 
   const refreshSkills = () => {
@@ -255,6 +279,22 @@ export function useJarvis(): JarvisDashboardState {
             break;
           case "camera.closed":
             setCamera((prev) => ({ ...prev, state: "idle", reason: null, expiresAt: null, lastClosedCause: event.cause }));
+            setGestures(INITIAL_GESTURE_STATE); // tracking can't outlive the session
+            break;
+          case "gesture.started":
+            setGestures((prev) => ({ ...prev, active: true, lastStoppedCause: null }));
+            break;
+          case "gesture.stopped":
+            setGestures((prev) => ({ ...prev, active: false, hands: [], lastStoppedCause: event.cause }));
+            break;
+          case "hand.landmarks":
+            // Replaces rather than appends: this is live position, not a
+            // log. An empty array is real information (the hand left the
+            // frame), so it's stored as-is, not ignored.
+            setGestures((prev) => ({ ...prev, hands: event.hands, lastLandmarkAt: event.ts }));
+            break;
+          case "hand.preview":
+            setGestures((prev) => ({ ...prev, previewImage: event.image }));
             break;
           case "error":
             setErrors((prev) => [...prev.slice(-19), { message: event.message, detail: event.detail, ts: event.ts }]);
@@ -337,6 +377,7 @@ export function useJarvis(): JarvisDashboardState {
     metrics,
     feedback,
     camera,
+    gestures,
     decide,
     refreshSkills,
     injectUtterance,

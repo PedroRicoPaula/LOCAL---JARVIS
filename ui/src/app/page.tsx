@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { ApprovalQueue } from "@/components/approval-queue";
 import { Clock } from "@/components/clock";
 import { ErrorLog } from "@/components/error-log";
+import { GesturePanel } from "@/components/gesture-panel";
 import { MetricsWidget } from "@/components/metrics-widget";
 import { SkillHealthPanel } from "@/components/skill-health";
 import { StatusBar } from "@/components/status-bar";
@@ -46,6 +47,7 @@ export default function Home() {
     metrics,
     feedback,
     camera,
+    gestures,
     decide,
     injectUtterance,
     sendFeedback,
@@ -107,6 +109,7 @@ export default function Home() {
             <div style={{ maxHeight: "32%" }} className="flex flex-col min-h-0 shrink-0">
               <ApprovalQueue approvals={approvals} onDecide={decide} />
             </div>
+            <GesturePanel gestures={gestures} />
             <StorePanel
               tasks={tasks}
               shoppingItems={shoppingItems}

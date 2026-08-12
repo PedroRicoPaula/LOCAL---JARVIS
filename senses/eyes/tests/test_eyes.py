@@ -7,8 +7,8 @@ import socket
 
 from senses import ipc
 from senses.eyes.capture import CameraPermissionError
-from senses.eyes.fakes import FakeCameraDevice, fake_clock
-from senses.eyes.main import SessionHolder, handle_message, run_forever
+from senses.eyes.fakes import FakeCameraDevice, FakeHandTracker, fake_clock
+from senses.eyes.main import GestureHolder, SessionHolder, handle_message, run_forever
 from senses.eyes.session import CameraSession, SessionNotArmedError
 
 # --- CameraSession (session.py) ---------------------------------------
@@ -293,3 +293,161 @@ def test_run_forever_survives_one_bad_message_and_keeps_handling_later_ones(tmp_
 
     types = [e["type"] for e in emitted]
     assert types == ["camera.armed", "camera.captured"]
+
+
+# --- gesture mode (main.py's gesture.start/stop handling) ---------------
+
+
+def _armed(holder, tmp_path, device=None):
+    session = CameraSession(device or FakeCameraDevice(), "test", frames_dir=tmp_path)
+    holder.set(session)
+    return session
+
+
+def test_gesture_start_refuses_when_no_camera_session_is_armed(tmp_path):
+    holder = SessionHolder()
+    gestures = GestureHolder()
+    emitted = []
+
+    handle_message(
+        {"type": "gesture.start"},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+        tracker_factory=FakeHandTracker,
+        spawn=lambda fn: None,
+    )
+
+    assert emitted[0]["type"] == "error"
+    assert "arm it first" in emitted[0]["message"]
+    assert gestures.get() is None
+
+
+def test_gesture_start_launches_a_loop_and_confirms(tmp_path):
+    holder = SessionHolder()
+    gestures = GestureHolder()
+    _armed(holder, tmp_path)
+    emitted = []
+    spawned = []
+
+    handle_message(
+        {"type": "gesture.start"},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+        tracker_factory=FakeHandTracker,
+        spawn=spawned.append,
+    )
+
+    assert emitted == [{"type": "gesture.started"}]
+    assert gestures.get() is not None
+    assert len(spawned) == 1, "the loop was handed to the injected spawner, not run inline"
+
+
+def test_gesture_start_twice_is_idempotent_not_two_loops(tmp_path):
+    holder = SessionHolder()
+    gestures = GestureHolder()
+    _armed(holder, tmp_path)
+    emitted = []
+    spawned = []
+
+    for _ in range(2):
+        handle_message(
+            {"type": "gesture.start"},
+            holder,
+            lambda: FakeCameraDevice(),
+            emitted.append,
+            gestures,
+            tracker_factory=FakeHandTracker,
+            spawn=spawned.append,
+        )
+
+    assert [e["type"] for e in emitted] == ["gesture.started", "gesture.started"]
+    assert len(spawned) == 1, "only one real loop was ever started"
+
+
+def test_gesture_stop_stops_a_running_loop(tmp_path):
+    holder = SessionHolder()
+    gestures = GestureHolder()
+    _armed(holder, tmp_path)
+    emitted = []
+    handle_message(
+        {"type": "gesture.start"},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+        tracker_factory=FakeHandTracker,
+        spawn=lambda fn: None,
+    )
+    loop = gestures.get()
+
+    handle_message(
+        {"type": "gesture.stop"}, holder, lambda: FakeCameraDevice(), emitted.append, gestures
+    )
+
+    assert loop.stopped
+    assert gestures.get() is None
+
+
+def test_gesture_stop_when_nothing_is_running_is_a_no_op_not_an_error(tmp_path):
+    holder = SessionHolder()
+    gestures = GestureHolder()
+    emitted = []
+
+    handle_message(
+        {"type": "gesture.stop"}, holder, lambda: FakeCameraDevice(), emitted.append, gestures
+    )
+
+    assert emitted == []
+
+
+def test_closing_the_camera_also_stops_gesture_tracking(tmp_path):
+    """Gesture tracking reads from the very device `close()` releases --
+    it must never outlive the session that owns it."""
+    holder = SessionHolder()
+    gestures = GestureHolder()
+    _armed(holder, tmp_path)
+    emitted = []
+    handle_message(
+        {"type": "gesture.start"},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+        tracker_factory=FakeHandTracker,
+        spawn=lambda fn: None,
+    )
+    loop = gestures.get()
+
+    handle_message({"type": "close"}, holder, lambda: FakeCameraDevice(), emitted.append, gestures)
+
+    assert loop.stopped
+    assert gestures.get() is None
+    assert emitted[-1]["type"] == "camera.closed"
+
+
+def test_session_read_raw_frame_refuses_once_closed(tmp_path):
+    device = FakeCameraDevice()
+    session = CameraSession(device, "test", frames_dir=tmp_path)
+    session.close("owner")
+
+    try:
+        session.read_raw_frame()
+        raise AssertionError("expected SessionNotArmedError")
+    except SessionNotArmedError:
+        pass
+
+
+def test_session_read_raw_frame_never_writes_a_file(tmp_path):
+    """Gesture frames are analyzed in memory and dropped -- unlike
+    capture(), nothing lands on disk and nothing enters session.frames."""
+    device = FakeCameraDevice()
+    session = CameraSession(device, "test", frames_dir=tmp_path)
+
+    session.read_raw_frame()
+
+    assert session.frames == []
+    assert not (tmp_path / session.id).exists()

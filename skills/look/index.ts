@@ -77,6 +77,44 @@ export function createLookSkill(deps: LookDeps = DEFAULT_DEPS): Skill {
           return { speech };
         }
 
+        case "start_gestures": {
+          try {
+            // Arms the camera if it isn't already (idempotent on eyes's
+            // side), then starts tracking on that same session -- the
+            // owner shouldn't have to say "open the camera" first.
+            const session = await ctx.camera.open(input.utterance);
+            session.startGestures();
+          } catch (err) {
+            const speech = "I couldn't start hand tracking just now.";
+            ctx.say(speech);
+            ctx.log.error("look: start_gestures failed", { err: String(err) });
+            return { speech };
+          }
+          const speech = "Hand tracking's on -- you should see yourself on the dashboard.";
+          ctx.say(speech);
+          return { speech };
+        }
+
+        case "stop_gestures": {
+          if (ctx.camera.state === "idle") {
+            const speech = "Hand tracking isn't running.";
+            ctx.say(speech);
+            return { speech };
+          }
+          try {
+            const session = await ctx.camera.open(input.utterance);
+            session.stopGestures();
+          } catch (err) {
+            const speech = "I couldn't stop hand tracking just now.";
+            ctx.say(speech);
+            ctx.log.error("look: stop_gestures failed", { err: String(err) });
+            return { speech };
+          }
+          const speech = "Hand tracking's off.";
+          ctx.say(speech);
+          return { speech };
+        }
+
         case "close_camera": {
           if (ctx.camera.state === "idle") {
             const speech = "The camera's already off.";
