@@ -982,17 +982,37 @@ deliberately left to the owner.
   in `PROGRESS.md`'s dated entry for that night). #2 and #3 fixed and
   live-verified the same night; #1 stays open pending focused
   reproduction.
-  1. **Open, not fixed.** `senses/ears` hung indefinitely capturing a
-     second wake-word utterance in the same running session (first
-     utterance worked fine). Confirmed genuinely stuck, not slow, via
-     `sample` -- unresolved past both the 32s hard recording cap and
-     the 10s whisper-server HTTP timeout, either of which should have
-     fired regardless. Machine was under real, severe memory pressure
-     at the time (~64MB free, `vm_stat`) -- plausible cause, not
-     confirmed; a race in `arm()`/`_process_frame`'s armed-check wasn't
-     ruled out either. Recovered by restarting the daemon, not by a
-     fix. Needs focused reproduction outside a heavy-load session
-     before attempting a real fix.
+  1. **Re-diagnosed 2026-08-11/12: not a hang at all -- fixed for real,
+     but the fix is a UX one, not a concurrency fix.** Reproduced the
+     original scenario again under the same kind of memory pressure
+     (~58MB free, confirmed this machine runs close to that most of the
+     time, not just that one night) -- `sample`'d the "stuck" process
+     again and saw the same picture as before (no thread inside the
+     whisper-server HTTP call, frame-processing thread cycling normally,
+     low steady CPU). The decisive test the original investigation never
+     ran: fired a *third* wake word without restarting anything. It
+     triggered and completed immediately -- `busy_lock` was already
+     free. The "hung" second capture had actually already finished,
+     silently, with an empty transcription (`transcribe.py`'s own
+     "never guessed at" rule: no text means no `emit()` at all,
+     structurally indistinguishable from a hang to an observer watching
+     for a specific log line that was never going to appear). Root
+     cause of the *empty* transcription itself: `say`-synthesized speech
+     with no pause after "Hey Jarvis" gives the wake-word falling-edge
+     detector too little runway before the real command starts, same
+     family as the already-documented "It is."/"and the camera."
+     truncation cases -- just severe enough here to lose the whole
+     utterance instead of the first word or two. **Real, fixed gap
+     found from this correction:** a wake-word capture that transcribes
+     to nothing gave the owner zero feedback -- the wake ack fires, then
+     silence, genuinely indistinguishable from a hang without doing the
+     third-wake-word test. Fixed: `Ack` gained `fire_no_speech()`
+     (`senses/ears/ack.py`, a distinct `Pop.aiff` + notification, not
+     `Tink.aiff` again and not an error sound -- nothing went wrong, the
+     owner just wasn't heard), wired through `capture_and_transcribe`'s
+     new `on_empty` callback for the wake-word path only (the hotkey
+     path already has physical key-release feedback, no real ambiguity
+     there). 2 new tests.
   2. **Fixed 2026-08-08.** `core/main.ts`'s ears-reading loop had no
      reconnect logic -- `connectWithRetry` only ran once, at boot. If
      `ears` (or `voice`) died after that, `core`'s utterance pipeline

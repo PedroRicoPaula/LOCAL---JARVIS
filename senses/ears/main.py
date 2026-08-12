@@ -36,12 +36,22 @@ def capture_and_transcribe(
     disarm: Callable[[], Path],
     transcriber: Transcriber,
     emit: Emit,
+    on_empty: Callable[[], None] = lambda: None,
 ) -> str:
     """The shared core of both trigger paths: arm, block until whatever
     signals the command is over (key release, or auto-stop silence),
     disarm, transcribe, emit if non-empty. Returns the transcribed text
     ("" if nothing was heard — never guessed at, per CLAUDE.md § 0.5's
     spirit applied to speech, not just numbers).
+
+    `on_empty` fires instead of `emit` when nothing was heard -- default
+    no-op (the hotkey path already has physical key-release feedback, no
+    real ambiguity there). The wake-word path passes a real callback
+    (`ack.fire_no_speech`, see ack.py): a silent "nothing to emit" here
+    previously looked identical to the whole capture pipeline having
+    hung, confirmed live (2026-08-11/12) it hadn't -- busy_lock was
+    already free, the cycle had finished correctly, just with nothing
+    to say about it.
 
     Emits {"type": "listening"} right as capture actually starts -- a
     real state transition (the mic is recording now), not a guess at
@@ -58,6 +68,8 @@ def capture_and_transcribe(
     text = transcriber.transcribe(wav_path)
     if text:
         emit({"type": "utterance", "text": text, "ts": end_of_speech_ts})
+    else:
+        on_empty()
     return text
 
 
@@ -87,6 +99,7 @@ def handle_wakeword_utterance(
         disarm=audio_source.disarm,
         transcriber=transcriber,
         emit=emit,
+        on_empty=ack.fire_no_speech,
     )
 
 

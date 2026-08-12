@@ -145,3 +145,18 @@ SILENCE_RMS_THRESHOLD = float(os.environ.get("JARVIS_SILENCE_RMS_THRESHOLD", "15
 # see PROGRESS.md's Phase 2 log for why.
 ACK_SOUND = os.environ.get("JARVIS_ACK_SOUND", "/System/Library/Sounds/Tink.aiff")
 ACK_NOTIFICATION_TEXT = "Listening..."
+
+# A distinct sound for "heard the wake word, but caught no usable speech
+# after it" -- found live, 2026-08-11/12: a real wake-word-triggered
+# capture that transcribes to nothing (whisper's own [BLANK_AUDIO]/silence
+# case, filtered to "" by transcribe.py) previously gave the owner zero
+# feedback at all -- the wake ack fires, then silence, indistinguishable
+# from the system having hung. It hadn't: capture_and_transcribe's own
+# "emit only if non-empty" rule (CLAUDE.md § 0.5's spirit) means nothing
+# was ever going to arrive, correctly, just with no signal that that's
+# what happened. Not Basso/Sosumi (macOS's own "error" sounds) -- nothing
+# went wrong, the owner just wasn't heard; a soft, neutral cue.
+ACK_NO_SPEECH_SOUND = os.environ.get(
+    "JARVIS_ACK_NO_SPEECH_SOUND", "/System/Library/Sounds/Pop.aiff"
+)
+ACK_NO_SPEECH_NOTIFICATION_TEXT = "Didn't catch that."

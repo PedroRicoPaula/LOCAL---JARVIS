@@ -69,11 +69,47 @@ def test_handle_wakeword_utterance_fires_ack_and_uses_auto_stop() -> None:
 
     assert result == "what's the weather"
     assert ack.fired
+    assert not ack.fired_no_speech  # real speech was heard -- no "didn't catch that" cue
     assert audio_source.armed and audio_source.last_auto_stop  # auto_stop=True, unlike hotkey path
     assert audio_source.auto_stop_waited
     assert audio_source.disarmed
     assert emitted[0] == {"type": "listening", "ts": emitted[0]["ts"]}
     assert emitted[1]["text"] == "what's the weather"
+
+
+def test_handle_wakeword_utterance_empty_transcription_fires_no_speech_ack() -> None:
+    """The real incident this fixes (2026-08-11/12): a wake-word capture
+    that transcribes to nothing previously gave zero feedback -- the wake
+    ack fires, then silence, indistinguishable from the whole pipeline
+    having hung. Confirmed live it hadn't (busy_lock was already free);
+    this is the fix -- a distinct, honest "didn't catch that" cue instead
+    of silence."""
+    audio_source = FakeAudioSource(wav_path=Path("/fake/wake.wav"))
+    transcriber = FakeTranscriber(text="")
+    ack = FakeAck()
+    emitted: list[dict] = []
+
+    result = handle_wakeword_utterance(audio_source, transcriber, emitted.append, ack)
+
+    assert result == ""
+    assert ack.fired  # the wake word itself was still heard
+    assert ack.fired_no_speech  # but nothing usable followed it -- said so
+    assert emitted == [{"type": "listening", "ts": emitted[0]["ts"]}]  # no utterance emitted
+
+
+def test_handle_hotkey_utterance_empty_transcription_does_not_need_a_no_speech_cue() -> None:
+    """The hotkey path already has physical key-release feedback -- no
+    real ambiguity the way the wake-word path has, so capture_and_transcribe's
+    on_empty default (a no-op) is left as-is here rather than wiring an
+    Ack through a path that doesn't need one."""
+    hotkey = FakeHotkey()
+    audio_source = FakeAudioSource()
+    transcriber = FakeTranscriber(text="")
+    emitted: list[dict] = []
+
+    result = handle_hotkey_utterance(hotkey, audio_source, transcriber, emitted.append)
+
+    assert result == ""  # on_empty's default no-op must not raise or alter the result
 
 
 class _Raising:

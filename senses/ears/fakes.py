@@ -71,6 +71,10 @@ class FakeWakeWordDetector:
 class FakeAck:
     def __init__(self) -> None:
         self.fired = False
+        self.fired_no_speech = False
 
     def fire(self) -> None:
         self.fired = True
+
+    def fire_no_speech(self) -> None:
+        self.fired_no_speech = True

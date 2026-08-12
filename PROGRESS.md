@@ -35,13 +35,16 @@ Also batched fact extraction (idle-triggered, `core/
 factExtractionScheduler.ts`, ADR-050) -- addresses the recurring
 approval-fatigue finding directly, live-verified against a real timed
 window, not just unit tests. Audit log now tags which channel
-(dashboard/CLI) resolved an approval. `make check`: 453 tests green.
-Owner-required, not yet done: a real GitHub PAT in Keychain (README
-§ 3d) to confirm the MCP pipeline against live third-party data. Also
-researched (not built): a screen-guide overlay idea (`docs/
-BACKLOG.md`, inspired by farzaa/clicky) -- real platform work, not
-scoped. Next: to be decided with the owner -- more MCP servers,
-Phase 9, the Knowledge Brain idea, or the screen-guide idea.
+(dashboard/CLI) resolved an approval. The 2026-08-07 `ears` "hang"
+(bug #1) was re-investigated and re-diagnosed 2026-08-11/12: it wasn't
+a hang (ADR-051) -- fixed the real gap it exposed instead (no owner
+feedback on an empty wake-word transcription). `make check`: 453 tests
+green (Python: 50). Owner-required, not yet done: a real GitHub PAT in
+Keychain (README § 3d) to confirm the MCP pipeline against live
+third-party data. Also researched (not built): a screen-guide overlay
+idea (`docs/BACKLOG.md`, inspired by farzaa/clicky) -- real platform
+work, not scoped. Next: to be decided with the owner -- more MCP
+servers, Phase 9, the Knowledge Brain idea, or the screen-guide idea.
 **Branch:** `main`
 **Last updated:** 2026-08-08
 
@@ -2843,6 +2846,41 @@ a real timed window, not just fake-clock unit tests: two real utterances
 injected 1.5s apart over a real isolated `core`'s WebSocket, confirmed
 zero approvals fired individually and both appeared together ~8s after
 the second one.
+
+**The 2026-08-07 `ears` "hang" (bug #1), re-investigated and closed,
+2026-08-11/12 (ADR-051).** Reproduced the original scenario again (real
+`say`-driven wake word, back-to-back utterances) under comparable real
+memory pressure -- and confirmed via `vm_stat` that this machine sits
+close to that most of the time, not just that one specific night. Same
+`sample` picture as before (no thread in the whisper HTTP call, steady
+low CPU). The test the original investigation never ran: fired a
+*third* wake word without restarting anything -- it triggered and
+completed immediately, proving `busy_lock` was already free. The
+"hung" second capture had already finished, silently, with an *empty*
+transcription (never emitted, per `transcribe.py`'s own honest-silence
+rule) -- structurally indistinguishable from a hang to an observer
+watching for a log line that was never coming. Root cause of the empty
+transcription: `say`'s synthesized speech with no pause after "Hey
+Jarvis" starves the wake-word falling-edge detector of runway, same
+family as the already-documented "It is."/"and the camera." truncation
+cases, just severe enough to lose the whole utterance this time -- a
+known sensitivity of scripted acoustic testing, not a concurrency bug.
+
+The original "memory pressure" and "race condition" theories are now
+understood to be unconfirmed red herrings, not causes -- `docs/
+BACKLOG.md`'s entry corrected in place to say so rather than leaving a
+disproven explanation on record.
+
+**Real, fixed gap found from doing this correction properly:** a
+wake-word capture that transcribes to nothing gave the owner zero
+feedback -- the wake ack fires, then silence, genuinely indistinguishable
+from a hang without the third-wake-word test above. Fixed: `Ack` gained
+`fire_no_speech()` (`senses/ears/ack.py`, a distinct `Pop.aiff` +
+notification, not `Tink.aiff` again and not an error sound), wired
+through `capture_and_transcribe`'s new `on_empty` callback for the
+wake-word path only (the hotkey path already has physical key-release
+feedback). 2 new tests (50 pytest total), `ruff` clean, `make check`
+green throughout.
 
 ---
 
