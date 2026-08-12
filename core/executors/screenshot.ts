@@ -21,8 +21,18 @@
  * this. `screencapture` itself gives no clear error in that case (exit
  * code 0 either way), so this executor can't reliably detect success
  * from the exit code alone -- reported honestly in `skills/clipboard`'s
- * response instead of assumed. Owner-required: grant the permission,
- * confirm live once granted.
+ * response instead of assumed.
+ *
+ * **Re-tested 2026-08-12, confirmed granted:** the exact same
+ * non-interactive capture-to-clipboard test, re-run through a real
+ * `node`-spawned `screencapture` child process (matching this
+ * executor's own invocation shape), now lands real image data
+ * (`clipboard info` reports `«class PNGf»`/`8BPS`/etc., not stale text)
+ * -- the permission gap is closed, not just assumed fixed. The `-i`
+ * interactive-selection path this executor actually uses still needs a
+ * real owner drag-select to fully confirm (can't be scripted headlessly),
+ * but the permission itself -- the part that was actually broken -- is
+ * confirmed working now.
  */
 
 import { execFile } from "node:child_process";
