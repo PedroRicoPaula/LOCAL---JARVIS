@@ -76,9 +76,10 @@ contracts, and the reasoning behind every boundary: [`SPEC.md`](SPEC.md).
 Building in public, one phase at a time — see [`ROADMAP.md`](ROADMAP.md) for
 all 14 phases and their acceptance criteria, and
 [`PROGRESS.md`](PROGRESS.md) for exactly where things stand right now,
-including what's still open. Every real architectural decision (55 and
-counting) is logged as an ADR in [`DECISIONS.md`](DECISIONS.md) — including
-the ones that turned out wrong and got reversed.
+including what's still open. Every real architectural decision is logged
+as its own ADR under `docs/decisions/`, indexed from
+[`DECISIONS.md`](DECISIONS.md) — including the ones that turned out
+wrong and got reversed.
 
 ---
 
@@ -90,7 +91,7 @@ the ones that turned out wrong and got reversed.
 | [`ROADMAP.md`](ROADMAP.md) | 14 phases with verifiable acceptance criteria |
 | [`docs/SKILLS.md`](docs/SKILLS.md) | **How to write a skill.** Read before touching `skills/` |
 | [`CLAUDE.md`](CLAUDE.md) | Conduct rules this project is built under |
-| [`DECISIONS.md`](DECISIONS.md) | Why things are the way they are (55 ADRs) |
+| [`DECISIONS.md`](DECISIONS.md) | Why things are the way they are — an index into `docs/decisions/`, one ADR per file |
 | [`PROGRESS.md`](PROGRESS.md) | Where things actually are |
 
 ---

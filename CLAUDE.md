@@ -80,7 +80,12 @@ At the end of every phase:
 1. Run the phase's Definition of Done checks. Paste the actual command output.
 2. Update `PROGRESS.md`: what was built, what was decided, what is left, what
    surprised you.
-3. Append any architectural decision to `DECISIONS.md` in ADR format.
+3. Record any architectural decision as a new ADR: write
+   `docs/decisions/ADR-NNN.md` (next number, ADR format — Context →
+   Decision → Consequences) and add its row to `DECISIONS.md`'s own
+   index table. `DECISIONS.md` itself is index-only, one file per ADR
+   since 2026-08-12 (57 ADRs by then, still growing) — see
+   `docs/decisions/ADR-057.md` for that split's own reasoning.
 4. `git commit` with the message format `phase(N): <summary>`.
 5. **STOP. Write "Phase N complete. Awaiting approval for Phase N+1." and end
    your turn.**
