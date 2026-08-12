@@ -10,6 +10,13 @@
             "command": "changed=$(git diff --name-only HEAD~1 HEAD 2>/dev/null); [ -z \"$changed\" ] && exit 0; echo \"$changed\" | grep -qE '^(core/|senses/|skills/|shared/|bench/|ui/|SPEC\\.md|ROADMAP\\.md)' || exit 0; echo \"$changed\" | grep -qE '^(PROGRESS\\.md|DECISIONS\\.md|docs/ARCHITECTURE\\.md)$' && exit 0; jq -n --arg m \"Commit touched core/senses/skills/shared/bench/ui or SPEC.md/ROADMAP.md but not PROGRESS.md, DECISIONS.md or docs/ARCHITECTURE.md. Update them if this was a phase-end or a real architectural decision; otherwise ignore.\" '{systemMessage:$m,hookSpecificOutput:{hookEventName:\"PostToolUse\",additionalContext:$m}}'",
             "timeout": 15,
             "statusMessage": "Checking whether docs need updating..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(git commit*)",
+            "command": "changed=$(git diff --name-only HEAD~1 HEAD 2>/dev/null); echo \"$changed\" | grep -q '^shared/types.ts$' || exit 0; git diff HEAD~1 HEAD -- shared/types.ts | grep -qE '^\\+\\s*\\|\\s*\"[A-Z_]+\"' || exit 0; echo \"$changed\" | grep -q '^CLAUDE.md$' && exit 0; jq -n --arg m \"shared/types.ts's Capability union changed in this commit but CLAUDE.md was not touched. Every capability tier decision (green/yellow/red) is recorded in CLAUDE.md section 5, matching the APP_CONTROL/REMINDERS/POINTER_CONTROL precedent -- update it now if this added a real new capability, or ignore if this was just a comment or reorder.\" '{systemMessage:$m,hookSpecificOutput:{hookEventName:\"PostToolUse\",additionalContext:$m}}'",
+            "timeout": 15,
+            "statusMessage": "Checking whether a new capability needs recording in CLAUDE.md..."
           }
         ]
       }
