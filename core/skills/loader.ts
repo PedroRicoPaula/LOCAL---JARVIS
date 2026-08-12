@@ -34,6 +34,7 @@ const VALID_CAPABILITIES_SET: Record<Capability, true> = {
   NET_READ: true,
   APP_CONTROL: true,
   REMINDERS: true,
+  POINTER_CONTROL: true,
   MEMORY_WRITE: true,
   FS_WRITE: true,
   GIT_WRITE: true,

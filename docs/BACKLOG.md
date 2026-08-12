@@ -1079,19 +1079,26 @@ time, and interact with things using hand movement (drag widgets, play
 notes by finger position). Built as `senses/eyes/gestures.py` +
 `ui/src/components/gesture-panel.tsx` — see ADR-053.
 
-**Deliberately NOT built, and why** — the owner's own follow-on idea in
-the same message: *"o cursor segue o meu dedo e quando falo 'clica' o
-cursor clica onde está posicionado"* (hand drives the real macOS cursor,
-voice triggers a real click). This is a genuinely different risk class
-from everything above: the dashboard demos can only move shapes inside
-their own panel, but a real cursor+click can hit "Delete", a password
-field, "Send", or anything else on screen — with the click target
-decided by a hand-position estimate, not by the owner reading a
-confirmation. It lands squarely in the same territory this file's own
-Tier-2 "computer-use" research already scoped carefully (permission-first,
-sandboxed, macOS Accessibility API for real element identification rather
-than raw coordinates). Recommend it stays a separate, properly-designed
-capability with its own ADR and its own safety model — not a fast follow
-bolted onto the gesture demo. The gesture *plumbing* built here (real
-landmark stream, pinch detection, per-frame position) is exactly what
-that feature would build on when it happens.
+**Update, 2026-08-12 — the cursor half is now built, in a scoped form.**
+The owner's follow-on idea (*"o cursor segue o meu dedo e quando falo
+'clica' o cursor clica onde está posicionado"* — hand drives the real
+macOS cursor, voice triggers a real click) was proposed in that exact
+unrestricted shape and explicitly refused: a click that can land
+anywhere can't tell a harmless link from "Delete," a password field, or
+"Send," so it has to be judged by the worst thing it could hit. Built
+instead, and shipped as `POINTER_CONTROL` (green tier, CLAUDE.md § 5,
+`senses/eyes/pointer.py`, ADR-056): the cursor genuinely does follow the
+hand in real time, system-wide, automatically — but a click **never**
+fires from the gesture or a voice command alone, only from a real,
+physical keypress at that instant. This is a strictly safer design than
+the one refused, not a relaxation of the refusal.
+
+**Still not built**: the fully autonomous version (voice alone decides
+and fires a click, no physical confirmation) stays refused, and would
+need its own capability-tier decision to ever change — this is not a
+precedent for building it later without one. Also still open: real
+on-screen *element* identification (Accessibility API reading a real
+button/field rather than raw coordinates) for anything beyond "click
+where the cursor visually is" — this file's own Tier-2 "computer-use"
+research already scoped that direction, and it remains a separate,
+larger piece of work, not needed for what shipped.

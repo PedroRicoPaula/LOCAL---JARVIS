@@ -5,7 +5,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from senses.eyes.fakes import FakeBackgroundBlurrer, FakeHandTracker, fake_clock
+from senses.eyes.fakes import (
+    FakeBackgroundBlurrer,
+    FakeClickTrigger,
+    FakeHandTracker,
+    FakePointerBackend,
+    fake_clock,
+)
 from senses.eyes.gestures import GestureLoop, Hand, Landmark, hands_to_wire, mirror_hands
 
 
@@ -25,12 +31,25 @@ def _loop(
 ) -> GestureLoop:
     """Builds a loop whose collaborators are all fake. `stop_after`
     auto-stops the loop after N frames so `run()` terminates in a test
-    without a real thread or real time passing."""
+    without a real thread or real time passing.
+
+    `pointer_backend_factory`/`click_trigger_factory` default to fakes
+    here (not left to each call site) after a real crash: a test that
+    called `set_pointer_control(True)` without overriding
+    `click_trigger_factory` fell through to `GestureLoop`'s own default
+    (`PynputClickTrigger`), which starts a *real* macOS-wide keyboard
+    listener thread -- several of those piling up across a test run
+    segfaulted the interpreter. Defaulting here means forgetting is no
+    longer possible; a test that wants to inspect a specific fake still
+    overrides these via `**kwargs` exactly as before."""
     reads = [0]
 
     def read_raw_frame() -> object:
         reads[0] += 1
         return f"frame-{reads[0]}"
+
+    kwargs.setdefault("pointer_backend_factory", FakePointerBackend)
+    kwargs.setdefault("click_trigger_factory", FakeClickTrigger)
 
     loop = GestureLoop(
         read_raw_frame,
@@ -264,6 +283,202 @@ def test_a_failing_blur_is_cosmetic_tracking_keeps_going() -> None:
 
     landmark_msgs = [m for m in emitted if m["type"] == "hand.landmarks"]
     assert len(landmark_msgs) == 2, "a broken blurrer must not stop landmark tracking"
+
+
+def _hand_at(x: float, y: float) -> Hand:
+    """21 landmarks, all at the same point except index 8 (fingertip) --
+    only the fingertip position drives the cursor, so tests only need to
+    control that one."""
+    landmarks = [Landmark(0.5, 0.5, 0.0)] * 21
+    landmarks[8] = Landmark(x, y, 0.0)
+    return Hand(handedness="Right", landmarks=tuple(landmarks))
+
+
+def test_pointer_control_off_by_default_the_cursor_never_moves() -> None:
+    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])
+    backend = FakePointerBackend()
+    emitted: list[dict[str, Any]] = []
+
+    _loop(tracker, emitted, stop_after=3, pointer_backend_factory=lambda: backend).run()
+
+    assert backend.moves == []
+
+
+def test_pointer_control_moves_the_real_cursor_to_the_mapped_fingertip() -> None:
+    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])
+    backend = FakePointerBackend(screen_w=1440.0, screen_h=900.0)
+    trigger = FakeClickTrigger()
+    emitted: list[dict[str, Any]] = []
+
+    loop = _loop(
+        tracker,
+        emitted,
+        stop_after=1,
+        pointer_backend_factory=lambda: backend,
+        click_trigger_factory=lambda: trigger,
+    )
+    loop.set_pointer_control(True)
+    assert loop.pointer_control_enabled
+    loop.run()
+
+    assert backend.moves == [(720.0, 450.0)]
+
+
+def test_pointer_control_never_moves_the_cursor_when_no_hand_is_visible() -> None:
+    tracker = FakeHandTracker([()])  # no hands this frame
+    backend = FakePointerBackend()
+    emitted: list[dict[str, Any]] = []
+
+    loop = _loop(tracker, emitted, stop_after=1, pointer_backend_factory=lambda: backend)
+    loop.set_pointer_control(True)
+    loop.run()
+
+    assert backend.moves == []
+
+
+def test_click_fires_once_on_key_down_not_repeatedly_while_held() -> None:
+    """The real, physical safety property this whole feature rests on:
+    a click only fires on the down-edge of a real keypress, never a
+    gesture, never a spoken word, and never once per frame while a key
+    happens to still be held."""
+    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])
+    backend = FakePointerBackend()
+    trigger = FakeClickTrigger()
+    emitted: list[dict[str, Any]] = []
+
+    loop = _loop(
+        tracker,
+        emitted,
+        stop_after=4,
+        pointer_backend_factory=lambda: backend,
+        click_trigger_factory=lambda: trigger,
+    )
+    loop.set_pointer_control(True)
+    trigger.pressed = True  # held down for every one of the 4 frames
+
+    loop.run()
+
+    assert backend.click_count == 1, "one held key-press must fire exactly one click, not four"
+
+
+def test_click_never_fires_from_a_gesture_alone_no_trigger_configured() -> None:
+    """Even a hand that looks like it's "clicking" (e.g. a pinch) must
+    never itself fire a real click -- only `ClickTrigger.is_pressed()`
+    (a real physical key) can. This test simulates "gesture wants to
+    click" by simply never pressing the real key at all."""
+    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])
+    backend = FakePointerBackend()
+    trigger = FakeClickTrigger()
+    emitted: list[dict[str, Any]] = []
+
+    loop = _loop(
+        tracker,
+        emitted,
+        stop_after=5,
+        pointer_backend_factory=lambda: backend,
+        click_trigger_factory=lambda: trigger,
+    )
+    loop.set_pointer_control(True)
+    # trigger.pressed deliberately left False throughout.
+
+    loop.run()
+
+    assert backend.click_count == 0
+
+
+def test_pressing_and_releasing_twice_fires_two_clicks() -> None:
+    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])
+    backend = FakePointerBackend()
+    trigger = FakeClickTrigger()
+    emitted: list[dict[str, Any]] = []
+    presses = iter([True, False, True, False])
+
+    def read_raw_frame_and_toggle() -> object:
+        trigger.pressed = next(presses, False)
+        return "frame"
+
+    loop = _loop(
+        tracker,
+        emitted,
+        stop_after=4,
+        pointer_backend_factory=lambda: backend,
+        click_trigger_factory=lambda: trigger,
+    )
+    loop._read_raw_frame = read_raw_frame_and_toggle  # noqa: SLF001 -- deliberately overriding the fixture's own stub
+    loop.set_pointer_control(True)
+
+    loop.run()
+
+    assert backend.click_count == 2
+
+
+def test_pointer_control_can_be_turned_back_off() -> None:
+    loop = _loop(FakeHandTracker(), [], pointer_backend_factory=FakePointerBackend)
+    loop.set_pointer_control(True)
+    assert loop.pointer_control_enabled
+    loop.set_pointer_control(False)
+    assert not loop.pointer_control_enabled
+
+
+def test_disabling_pointer_control_closes_the_real_keyboard_listener() -> None:
+    """The click trigger is a system-wide keyboard listener -- it must
+    not keep running (silently watching every keypress) once the owner
+    turns pointer control off."""
+    trigger = FakeClickTrigger()
+    loop = _loop(
+        FakeHandTracker(),
+        [],
+        pointer_backend_factory=FakePointerBackend,
+        click_trigger_factory=lambda: trigger,
+    )
+    loop.set_pointer_control(True)
+    assert not trigger.closed
+
+    loop.set_pointer_control(False)
+
+    assert trigger.closed
+
+
+def test_click_trigger_is_closed_when_the_loop_exits_while_pointer_control_is_on() -> None:
+    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])
+    backend = FakePointerBackend()
+    trigger = FakeClickTrigger()
+    emitted: list[dict[str, Any]] = []
+
+    loop = _loop(
+        tracker,
+        emitted,
+        stop_after=1,
+        pointer_backend_factory=lambda: backend,
+        click_trigger_factory=lambda: trigger,
+    )
+    loop.set_pointer_control(True)
+    loop.run()
+
+    assert trigger.closed
+
+
+def test_a_failing_pointer_backend_is_cosmetic_tracking_keeps_going() -> None:
+    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])
+    emitted: list[dict[str, Any]] = []
+
+    class BrokenBackend:
+        def screen_size(self) -> tuple[float, float]:
+            raise RuntimeError("no display attached")
+
+        def move_to(self, x: float, y: float) -> None:
+            pass
+
+        def click(self) -> None:
+            pass
+
+    loop = _loop(tracker, emitted, stop_after=3, pointer_backend_factory=BrokenBackend)
+    loop.set_pointer_control(True)
+
+    loop.run()
+
+    landmark_msgs = [m for m in emitted if m["type"] == "hand.landmarks"]
+    assert len(landmark_msgs) == 3, "a broken pointer backend must not stop landmark tracking"
 
 
 def test_detection_runs_on_the_raw_frame_not_the_mirrored_one() -> None:

@@ -110,6 +110,10 @@ export interface GestureDashboardState {
   previewImage: string | null;
   lastLandmarkAt: number | null;
   lastStoppedCause: "owner" | "idle" | "error" | null;
+  /** Real macOS cursor control (`senses/eyes/pointer.py`) -- purely a
+   * status echo for display; the click safety itself lives entirely in
+   * `pointer.py`'s `ClickTrigger`, not here. */
+  pointerControlActive: boolean;
 }
 
 const INITIAL_GESTURE_STATE: GestureDashboardState = {
@@ -118,6 +122,7 @@ const INITIAL_GESTURE_STATE: GestureDashboardState = {
   previewImage: null,
   lastLandmarkAt: null,
   lastStoppedCause: null,
+  pointerControlActive: false,
 };
 
 export interface JarvisDashboardState {
@@ -290,7 +295,10 @@ export function useJarvis(): JarvisDashboardState {
             setGestures((prev) => ({ ...prev, active: true, lastStoppedCause: null }));
             break;
           case "gesture.stopped":
-            setGestures((prev) => ({ ...prev, active: false, hands: [], lastStoppedCause: event.cause }));
+            // Pointer control can't outlive tracking either -- the real
+            // click-trigger listener is torn down server-side the moment
+            // the loop exits (gestures.py's own run()'s finally block).
+            setGestures((prev) => ({ ...prev, active: false, hands: [], lastStoppedCause: event.cause, pointerControlActive: false }));
             break;
           case "hand.landmarks":
             // Replaces rather than appends: this is live position, not a
@@ -300,6 +308,9 @@ export function useJarvis(): JarvisDashboardState {
             break;
           case "hand.preview":
             setGestures((prev) => ({ ...prev, previewImage: event.image }));
+            break;
+          case "pointer.control":
+            setGestures((prev) => ({ ...prev, pointerControlActive: event.enabled }));
             break;
           case "audio.level":
             setAudioLevels((prev) => [...prev.slice(-31), event.level]);

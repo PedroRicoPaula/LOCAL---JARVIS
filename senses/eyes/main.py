@@ -30,11 +30,14 @@ from senses import ipc
 from senses.eyes import config
 from senses.eyes.capture import CameraDevice, CameraPermissionError, OpenCvCameraDevice
 from senses.eyes.gestures import GestureLoop, HandTracker, RealHandTracker
+from senses.eyes.pointer import ClickTrigger, PointerBackend, PynputClickTrigger, RealPointerBackend
 from senses.eyes.session import CameraSession, SessionNotArmedError
 
 Emit = Callable[[dict[str, Any]], None]
 DeviceFactory = Callable[[], CameraDevice]
 TrackerFactory = Callable[[], HandTracker]
+PointerBackendFactory = Callable[[], PointerBackend]
+ClickTriggerFactory = Callable[[], ClickTrigger]
 
 
 class GestureHolder:
@@ -81,6 +84,8 @@ def handle_message(
     emit: Emit,
     gestures: GestureHolder | None = None,
     tracker_factory: TrackerFactory = RealHandTracker,
+    pointer_backend_factory: PointerBackendFactory = RealPointerBackend,
+    click_trigger_factory: ClickTriggerFactory = PynputClickTrigger,
     spawn: Callable[[Callable[[], None]], None] | None = None,
 ) -> None:
     """One incoming request, handled. Pure enough to unit-test directly
@@ -88,7 +93,13 @@ def handle_message(
 
     `gestures`/`tracker_factory`/`spawn` are only needed for the
     gesture-mode messages; `spawn` defaults to a real daemon thread and
-    is injectable so tests can run the loop synchronously instead."""
+    is injectable so tests can run the loop synchronously instead.
+    `pointer_backend_factory`/`click_trigger_factory` default to the real
+    ones (production behaviour unchanged) but tests calling
+    `"pointer.control"` MUST override both -- the real
+    `click_trigger_factory` starts an actual macOS-wide keyboard
+    listener thread the moment `set_pointer_control(True)` runs, found
+    live via a segfault from several piling up during a test run."""
     msg_type = message.get("type")
 
     if msg_type == "arm":
@@ -181,7 +192,13 @@ def handle_message(
         except Exception as exc:
             emit({"type": "error", "message": f"couldn't start hand tracking: {exc}"})
             return
-        loop = GestureLoop(session.read_raw_frame, tracker, emit)
+        loop = GestureLoop(
+            session.read_raw_frame,
+            tracker,
+            emit,
+            pointer_backend_factory=pointer_backend_factory,
+            click_trigger_factory=click_trigger_factory,
+        )
         gestures.set(loop)
         emit({"type": "gesture.started"})
 
@@ -216,6 +233,17 @@ def handle_message(
         if running is None:
             return  # nothing to blur if tracking isn't running
         running.set_blur(bool(message.get("enabled", False)))
+        return
+
+    if msg_type == "pointer.control":
+        if gestures is None:
+            return
+        running = gestures.get()
+        if running is None:
+            return  # nothing to point with if tracking isn't running
+        enabled = bool(message.get("enabled", False))
+        running.set_pointer_control(enabled)
+        emit({"type": "pointer.control", "enabled": enabled})
         return
 
     print(f"eyes: ignoring unknown message type {msg_type!r}")

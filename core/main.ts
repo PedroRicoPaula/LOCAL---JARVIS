@@ -420,6 +420,8 @@ async function relayCameraStatus(
       });
     } else if (type === "hand.preview") {
       wsHub.broadcast({ type: "hand.preview", image: String(message["image"]) });
+    } else if (type === "pointer.control") {
+      wsHub.broadcast({ type: "pointer.control", enabled: Boolean(message["enabled"]) });
     }
   }
 }

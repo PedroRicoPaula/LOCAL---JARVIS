@@ -143,6 +143,14 @@ export function createIpcCameraHandle(sendToEyes: (message: Record<string, unkno
       stopGestures(): void {
         sendToEyes({ type: "gesture.stop" });
       },
+
+      startPointerControl(): void {
+        sendToEyes({ type: "pointer.control", enabled: true });
+      },
+
+      stopPointerControl(): void {
+        sendToEyes({ type: "pointer.control", enabled: false });
+      },
     };
   }
 

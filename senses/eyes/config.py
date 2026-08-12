@@ -94,3 +94,15 @@ SEGMENTER_MODEL_PATH = Path(
     )
 )
 GESTURE_BLUR_KERNEL = int(os.environ.get("JARVIS_GESTURE_BLUR_KERNEL", "35"))  # must be odd
+
+# --- Pointer control (2026-08-12) ----------------------------------------
+#
+# Real macOS cursor, driven by the index fingertip. Owner-requested, and
+# owner-approved specifically in this scoped form after a broader "click
+# anywhere, no confirmation" version was refused: CLAUDE.md § 5's own
+# red-tier pattern ("a real keystroke fires it") is reused here as a
+# structural safety property, not a suggestion -- see pointer.py's own
+# docstring. The click-trigger key is deliberately imported lazily
+# (pynput.keyboard) alongside its own module, same reasoning as every
+# other native-library import in this package.
+POINTER_CLICK_KEY_NAME = os.environ.get("JARVIS_POINTER_CLICK_KEY", "space")

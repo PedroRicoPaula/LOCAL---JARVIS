@@ -98,6 +98,24 @@ export type Capability =
   // not a precedent for widening SHELL_EXEC, same explicit boundary
   // APP_CONTROL's own entry draws.
   | "REMINDERS"
+  // Real macOS cursor movement + clicks, hand-driven -- owner request,
+  // 2026-08-12. A broader "click anywhere, no confirmation" version was
+  // proposed first and explicitly refused (see DECISIONS.md's ADR):
+  // a click that can land anywhere has no way to know whether it's
+  // hitting a harmless link or a "Send"/"Delete"/payment-confirm
+  // button, so it has to be judged at the worst case it could reach --
+  // which is red-tier territory. This capability is green anyway,
+  // because it isn't the same shape as the rest of the green tier: cursor
+  // *movement* is the harmless, auto-run part (visible, trivially
+  // undone), but the actual *click* never fires from a gesture, a
+  // model, or a voice command alone -- only a real, physical keypress
+  // fires it (`senses/eyes/pointer.py`'s `ClickTrigger`), reusing
+  // CLAUDE.md § 5's own red-tier pattern ("a real keystroke fires it")
+  // as a structural property of the executor itself rather than
+  // routing every individual click through the approval queue, which
+  // would be absurd for something as routine as a mouse click and would
+  // defeat hands-free pointing entirely.
+  | "POINTER_CONTROL"
   // yellow — requires approval
   | "MEMORY_WRITE"
   | "FS_WRITE"
@@ -123,6 +141,7 @@ export const GREEN_CAPABILITIES: readonly Capability[] = [
   "NET_READ",
   "APP_CONTROL",
   "REMINDERS",
+  "POINTER_CONTROL",
 ] as const;
 
 export type ApprovalState =
@@ -346,6 +365,11 @@ export type ServerEvent =
    * the skeleton overlay is drawn browser-side from the landmarks above,
    * so only this (the expensive part) is throttled. */
   | { type: "hand.preview"; image: string }
+  /** Real macOS cursor control (2026-08-12, `senses/eyes/pointer.py`,
+   * `POINTER_CONTROL` capability). Purely a status echo -- the click
+   * safety itself lives entirely in `pointer.py`'s `ClickTrigger`, not
+   * in anything this event or the dashboard does. */
+  | { type: "pointer.control"; enabled: boolean }
   /** Live microphone level, 0..1, log-scaled (`senses/ears/audio_level.py`).
    * Throttled to ~10/s at the source -- decorative, and nobody perceives
    * a level meter faster than that. */
@@ -418,6 +442,16 @@ export interface CameraSession {
    * session that owns the camera. */
   startGestures(): void;
   stopGestures(): void;
+  /** Real macOS cursor, driven by the index fingertip
+   * (`senses/eyes/pointer.py`) -- requires gesture tracking to already
+   * be running (there's no hand position without it). Fire-and-forget,
+   * same reasoning as startGestures/stopGestures. Clicks never fire
+   * from this alone: only a real, physical keypress fires a click, a
+   * structural safety property of `senses/eyes/pointer.py`'s
+   * `ClickTrigger`, not something this method or the Gate mediates --
+   * see the `POINTER_CONTROL` capability's own comment above for why. */
+  startPointerControl(): void;
+  stopPointerControl(): void;
 }
 
 export interface CameraHandle {

@@ -199,6 +199,22 @@ export function GesturePanel({
         <div className="absolute bottom-1 left-2 text-[8px] tracking-widest text-jarvis-dim">
           {gestures.hands.length === 0 ? "NO HAND" : pinching ? "PINCH" : openPalm ? "OPEN PALM" : "TRACKING"}
         </div>
+        {gestures.pointerControlActive ? (
+          <div className="absolute top-1 right-2 flex items-center gap-1 text-[8px] tracking-widest text-jarvis-green">
+            <span className="rounded-full status-dot-active" style={{ width: 5, height: 5, background: "#00FF9F" }} />
+            POINTER ON · HOLD SPACE TO CLICK
+          </div>
+        ) : null}
+      </div>
+
+      {/* Voice-armed, not a dashboard button -- a real click can land
+          anywhere on the real screen, so turning it on is deliberately
+          the same "say it" weight as arming hand tracking itself, not a
+          casual toggle next to blur/theremin. */}
+      <div className="mt-2 text-[9px] text-jarvis-dim">
+        {gestures.pointerControlActive
+          ? "Cursor follows your index finger. Press Space to click -- never a gesture or voice alone."
+          : <>Say <span className="text-jarvis-cyan">&quot;point with my hand&quot;</span> to control the real cursor.</>}
       </div>
 
       <div className="mt-2 flex items-center justify-between text-[9px]">

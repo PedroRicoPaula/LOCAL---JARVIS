@@ -19,6 +19,7 @@ export type Capability =
   | "NET_READ"
   | "APP_CONTROL"
   | "REMINDERS"
+  | "POINTER_CONTROL"
   | "MEMORY_WRITE"
   | "FS_WRITE"
   | "GIT_WRITE"
@@ -107,6 +108,7 @@ export type ServerEvent =
   | { type: "gesture.stopped"; cause: "owner" | "idle" | "error" }
   | { type: "hand.landmarks"; hands: HandLandmarks[]; ts: number }
   | { type: "hand.preview"; image: string }
+  | { type: "pointer.control"; enabled: boolean }
   | { type: "audio.level"; level: number }
   | { type: "health"; providers: Record<string, boolean> }
   | { type: "sense.connection"; sense: "ears" | "voice" | "eyes"; connected: boolean }

@@ -253,3 +253,61 @@ test("start_gestures: a camera failure is reported honestly, does not throw", as
 
   assert.match(result.speech, /couldn't start hand tracking/i);
 });
+
+test("start_pointer_control starts gesture tracking first, then pointer control -- never just the latter", async () => {
+  const camera = fakeCamera([FRAME]);
+  const ctx = fakeSkillContext({ camera, conversation: fakeConversation() });
+  const skill = createLookSkill(fakeDeps());
+
+  const result = await skill.handle(
+    { utterance: "point with my hand", intent: "start_pointer_control", sessionId: "s1" },
+    ctx,
+  );
+
+  assert.match(result.speech, /pointer control's on/i);
+  assert.match(result.speech, /space/i);
+  assert.equal(camera.state, "armed");
+  assert.deepEqual(camera.gestureCalls, ["start", "pointer-start"]);
+});
+
+test("stop_pointer_control with the camera already off says so, never touches the device", async () => {
+  const camera = fakeCamera([FRAME]);
+  const ctx = fakeSkillContext({ camera, conversation: fakeConversation() });
+  const skill = createLookSkill(fakeDeps());
+
+  const result = await skill.handle(
+    { utterance: "stop controlling the cursor", intent: "stop_pointer_control", sessionId: "s1" },
+    ctx,
+  );
+
+  assert.match(result.speech, /isn't running/i);
+  assert.deepEqual(camera.gestureCalls, []);
+});
+
+test("stop_pointer_control on a live session stops pointing without stopping hand tracking or closing the camera", async () => {
+  const camera = fakeCamera([FRAME]);
+  await camera.open("armed earlier");
+  const ctx = fakeSkillContext({ camera, conversation: fakeConversation() });
+  const skill = createLookSkill(fakeDeps());
+
+  const result = await skill.handle(
+    { utterance: "stop controlling the cursor", intent: "stop_pointer_control", sessionId: "s1" },
+    ctx,
+  );
+
+  assert.match(result.speech, /pointer control's off/i);
+  assert.deepEqual(camera.gestureCalls, ["pointer-stop"]);
+  assert.equal(camera.state, "armed", "the camera session itself stays open");
+});
+
+test("start_pointer_control: a camera failure is reported honestly, does not throw", async () => {
+  const ctx = fakeSkillContext({ conversation: fakeConversation() }); // default camera handle throws on open()
+  const skill = createLookSkill(fakeDeps());
+
+  const result = await skill.handle(
+    { utterance: "point with my hand", intent: "start_pointer_control", sessionId: "s1" },
+    ctx,
+  );
+
+  assert.match(result.speech, /couldn't start pointer control/i);
+});

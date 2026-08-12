@@ -115,6 +115,48 @@ export function createLookSkill(deps: LookDeps = DEFAULT_DEPS): Skill {
           return { speech };
         }
 
+        case "start_pointer_control": {
+          try {
+            // Pointer control needs real hand positions, which only
+            // exist while gesture tracking is running -- start that
+            // first (idempotent on eyes's side, same as start_gestures
+            // arming the camera) so the owner doesn't need to say two
+            // separate commands, and so this can never silently no-op
+            // because tracking wasn't already on.
+            const session = await ctx.camera.open(input.utterance);
+            session.startGestures();
+            session.startPointerControl();
+          } catch (err) {
+            const speech = "I couldn't start pointer control just now.";
+            ctx.say(speech);
+            ctx.log.error("look: start_pointer_control failed", { err: String(err) });
+            return { speech };
+          }
+          const speech = "Pointer control's on -- hold Space to click where your finger's pointing.";
+          ctx.say(speech);
+          return { speech };
+        }
+
+        case "stop_pointer_control": {
+          if (ctx.camera.state === "idle") {
+            const speech = "Pointer control isn't running.";
+            ctx.say(speech);
+            return { speech };
+          }
+          try {
+            const session = await ctx.camera.open(input.utterance);
+            session.stopPointerControl();
+          } catch (err) {
+            const speech = "I couldn't stop pointer control just now.";
+            ctx.say(speech);
+            ctx.log.error("look: stop_pointer_control failed", { err: String(err) });
+            return { speech };
+          }
+          const speech = "Pointer control's off.";
+          ctx.say(speech);
+          return { speech };
+        }
+
         case "close_camera": {
           if (ctx.camera.state === "idle") {
             const speech = "The camera's already off.";

@@ -117,7 +117,35 @@ export const manifest: SkillManifest = {
       ],
       lanes: [...CAMERA_CONTROL_LANES],
     },
+    {
+      id: "start_pointer_control",
+      description: "Turn on hand-driven cursor control -- the real mouse cursor follows the index finger. Requires hand tracking to already be running. Clicks never fire from voice or gesture alone; only a real, physical key press (Space by default) fires a click, on purpose (DECISIONS.md's ADR).",
+      examples: [
+        "point with my hand",
+        "control the cursor with my hand",
+        "let my hand control the mouse",
+        "turn on pointer control",
+        // PT-PT paraphrases (ADR-033)
+        "controla o cursor com a minha mão",
+        "liga o controlo do cursor",
+        "deixa a minha mão mover o rato",
+      ],
+      lanes: [...CAMERA_CONTROL_LANES],
+    },
+    {
+      id: "stop_pointer_control",
+      description: "Turn off hand-driven cursor control, leaving hand tracking itself running.",
+      examples: [
+        "stop controlling the cursor",
+        "turn off pointer control",
+        "let go of the mouse",
+        // PT-PT paraphrases (ADR-033)
+        "desliga o controlo do cursor",
+        "larga o rato",
+      ],
+      lanes: [...CAMERA_CONTROL_LANES],
+    },
   ],
 
-  capabilities: ["CAMERA", "MEMORY_WRITE"],
+  capabilities: ["CAMERA", "MEMORY_WRITE", "POINTER_CONTROL"],
 };

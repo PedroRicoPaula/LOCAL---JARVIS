@@ -170,7 +170,7 @@ are three tiers and they are not negotiable by a model at runtime:
 
 | Tier | Capabilities | Behaviour |
 |---|---|---|
-| **Green** | `MEMORY_READ`, `FS_READ` (whitelist only), `CAMERA`, `NET_READ`, `APP_CONTROL`, `REMINDERS` | Runs automatically. Logged. |
+| **Green** | `MEMORY_READ`, `FS_READ` (whitelist only), `CAMERA`, `NET_READ`, `APP_CONTROL`, `REMINDERS`, `POINTER_CONTROL` | Runs automatically. Logged. |
 | **Yellow** | `FS_WRITE`, `GIT_WRITE`, `SHELL_EXEC`, `MEMORY_WRITE`, `WEBHOOK` | Requires approval. Blocks until answered or expired. |
 | **Red** | Credential access, `rm`, package publish, anything that moves money, anything that sends a message to another human | Never automatic. Never proposed by a model. Only reachable by the owner typing it. |
 
@@ -195,6 +195,25 @@ default there, but per-call approval on every "add a task" would
 undo this project's own approval-fatigue work. Not a precedent for
 any other system-app write defaulting to green; each one is its own
 decision, same as this and `APP_CONTROL` were.
+
+`POINTER_CONTROL` (added 2026-08-12, owner request, after a broader
+version was refused): the real macOS cursor follows the hand
+(`senses/eyes/pointer.py`). A first proposal — a spoken "clicar aqui"
+firing a real click immediately, anywhere on screen — was refused: a
+click that can land anywhere can't tell a harmless link from
+"Send"/"Delete"/a payment confirm/a password field, so it has to be
+judged by the worst thing it could hit, which is red-tier territory.
+What's built instead, and what makes this green rather than red or even
+yellow: cursor *movement* is the automatic, harmless, always-on part
+(visible, trivially undone) — but a click **never** fires from a
+gesture, a model, or a voice command alone. Only a real, physical
+keypress fires it (`ClickTrigger`, not the Gate), the exact same "a
+real keystroke fires it" property red-tier actions already rely on,
+just enforced structurally in the executor instead of via the approval
+queue — routing every individual mouse click through yellow-tier
+approval would be absurd and would defeat hands-free pointing entirely.
+See DECISIONS.md's ADR for the full reasoning and the refused
+alternative.
 
 "Only reachable by the owner typing it" survives voice-first design
 intact: the *content* of a red-tier action (e.g. a message to send) can

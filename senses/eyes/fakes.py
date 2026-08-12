@@ -86,6 +86,44 @@ class FakeBackgroundBlurrer:
         self.closed = True
 
 
+class FakePointerBackend:
+    """Records every move/click instead of touching a real cursor.
+    Default screen size matches this project's own real dev machine
+    (1440x900, confirmed live via Quartz) -- arbitrary for a fake, but a
+    realistic one costs nothing."""
+
+    def __init__(self, screen_w: float = 1440.0, screen_h: float = 900.0) -> None:
+        self._screen_w = screen_w
+        self._screen_h = screen_h
+        self.moves: list[tuple[float, float]] = []
+        self.click_count = 0
+
+    def screen_size(self) -> tuple[float, float]:
+        return (self._screen_w, self._screen_h)
+
+    def move_to(self, x: float, y: float) -> None:
+        self.moves.append((x, y))
+
+    def click(self) -> None:
+        self.click_count += 1
+
+
+class FakeClickTrigger:
+    """A scripted, real, physical key state -- tests drive `pressed`
+    directly rather than a real keyboard, matching every other fake in
+    this module (CLAUDE.md § 3: no real hardware in tests)."""
+
+    def __init__(self) -> None:
+        self.pressed = False
+        self.closed = False
+
+    def is_pressed(self) -> bool:
+        return self.pressed
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def fake_clock(start: float = 1_000_000.0) -> tuple[list[float], Callable[[], float]]:
     """Returns a mutable `[now]` box and a `now()` function reading it --
     tests advance time by mutating `box[0]` directly, no real sleeping."""

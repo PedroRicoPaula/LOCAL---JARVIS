@@ -7,7 +7,13 @@ import socket
 
 from senses import ipc
 from senses.eyes.capture import CameraPermissionError
-from senses.eyes.fakes import FakeCameraDevice, FakeHandTracker, fake_clock
+from senses.eyes.fakes import (
+    FakeCameraDevice,
+    FakeClickTrigger,
+    FakeHandTracker,
+    FakePointerBackend,
+    fake_clock,
+)
 from senses.eyes.main import GestureHolder, SessionHolder, handle_message, run_forever
 from senses.eyes.session import CameraSession, SessionNotArmedError
 
@@ -474,6 +480,62 @@ def test_gesture_blur_when_nothing_is_running_is_a_no_op_not_an_error(tmp_path):
 
     handle_message(
         {"type": "gesture.blur", "enabled": True},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+    )
+
+    assert emitted == []
+
+
+def test_pointer_control_toggles_a_running_loop(tmp_path):
+    holder = SessionHolder()
+    gestures = GestureHolder()
+    _armed(holder, tmp_path)
+    emitted = []
+    handle_message(
+        {"type": "gesture.start"},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+        tracker_factory=FakeHandTracker,
+        pointer_backend_factory=FakePointerBackend,
+        click_trigger_factory=FakeClickTrigger,
+        spawn=lambda fn: None,
+    )
+    loop = gestures.get()
+    assert not loop.pointer_control_enabled
+
+    handle_message(
+        {"type": "pointer.control", "enabled": True},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+    )
+
+    assert loop.pointer_control_enabled
+
+    handle_message(
+        {"type": "pointer.control", "enabled": False},
+        holder,
+        lambda: FakeCameraDevice(),
+        emitted.append,
+        gestures,
+    )
+
+    assert not loop.pointer_control_enabled
+
+
+def test_pointer_control_when_nothing_is_running_is_a_no_op_not_an_error(tmp_path):
+    holder = SessionHolder()
+    gestures = GestureHolder()
+    emitted = []
+
+    handle_message(
+        {"type": "pointer.control", "enabled": True},
         holder,
         lambda: FakeCameraDevice(),
         emitted.append,

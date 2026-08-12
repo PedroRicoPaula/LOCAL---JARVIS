@@ -34,6 +34,13 @@ from typing import Any, Protocol
 import numpy as np
 
 from senses.eyes import config
+from senses.eyes.pointer import (
+    ClickTrigger,
+    PointerBackend,
+    PynputClickTrigger,
+    RealPointerBackend,
+    map_to_screen,
+)
 
 
 @dataclass(frozen=True)
@@ -223,6 +230,8 @@ class GestureLoop:
         encode: Callable[[Any], str] | None = None,
         mirror: Callable[[Any], Any] = mirror_frame,
         blurrer_factory: Callable[[], BackgroundBlurrer] = RealBackgroundBlurrer,
+        pointer_backend_factory: Callable[[], PointerBackend] = RealPointerBackend,
+        click_trigger_factory: Callable[[], ClickTrigger] = PynputClickTrigger,
     ) -> None:
         self._read_raw_frame = read_raw_frame
         self._tracker = tracker
@@ -239,6 +248,12 @@ class GestureLoop:
         )
         self._mirror = mirror
         self._blurrer_factory = blurrer_factory
+        self._pointer_backend_factory = pointer_backend_factory
+        self._click_trigger_factory = click_trigger_factory
+        self._pointer_backend: PointerBackend | None = None
+        self._click_trigger: ClickTrigger | None = None
+        self._pointer_enabled = threading.Event()
+        self._click_was_pressed = False
         self._blurrer: BackgroundBlurrer | None = None
         self._blur_enabled = threading.Event()
         self._stop = threading.Event()
@@ -264,6 +279,33 @@ class GestureLoop:
     def blur_enabled(self) -> bool:
         return self._blur_enabled.is_set()
 
+    def set_pointer_control(self, enabled: bool) -> None:
+        """Toggled from `main.py`'s message handler, on whichever thread
+        that is -- not necessarily the loop's own thread. Ordering
+        matters for safety, not just correctness: on enable, the backend
+        and the *real, physical* key listener are built *before* the
+        enabled flag is set, so `_run()` never reads a live flag with a
+        not-yet-built trigger. On disable, the flag is cleared *before*
+        the key listener is torn down, so a system-wide keyboard listener
+        never keeps running once the owner has turned pointer control
+        off -- it doesn't sit around eavesdropping on every keypress
+        between sessions the way leaving it "just idle" would."""
+        if enabled:
+            if self._pointer_backend is None:
+                self._pointer_backend = self._pointer_backend_factory()
+            if self._click_trigger is None:
+                self._click_trigger = self._click_trigger_factory()
+            self._pointer_enabled.set()
+        else:
+            self._pointer_enabled.clear()
+            if self._click_trigger is not None:
+                self._click_trigger.close()
+                self._click_trigger = None
+
+    @property
+    def pointer_control_enabled(self) -> bool:
+        return self._pointer_enabled.is_set()
+
     def run(self) -> None:
         """Blocks until stopped or idle-timed-out. `main.py` runs this on
         its own thread."""
@@ -273,6 +315,9 @@ class GestureLoop:
             if self._blurrer is not None:
                 self._blurrer.close()
                 self._blurrer = None
+            if self._click_trigger is not None:
+                self._click_trigger.close()
+                self._click_trigger = None
 
     def _run(self) -> None:
         started_at = self._now()
@@ -308,6 +353,28 @@ class GestureLoop:
                 return
 
             self._emit({"type": "hand.landmarks", "hands": hands_to_wire(hands), "ts": now})
+
+            if self._pointer_enabled.is_set() and hands and self._pointer_backend is not None:
+                try:
+                    index_tip = hands[0].landmarks[8]
+                    screen_w, screen_h = self._pointer_backend.screen_size()
+                    sx, sy = map_to_screen(index_tip.x, index_tip.y, screen_w, screen_h)
+                    self._pointer_backend.move_to(sx, sy)
+
+                    # Edge-triggered: a held key fires exactly one click,
+                    # not one per frame -- the key going *down* is the
+                    # real, single, deliberate action that fires it. See
+                    # pointer.py's module docstring for why this is the
+                    # entire safety model, not a convenience detail.
+                    pressed = self._click_trigger.is_pressed() if self._click_trigger else False
+                    if pressed and not self._click_was_pressed:
+                        self._pointer_backend.click()
+                    self._click_was_pressed = pressed
+                except Exception as exc:
+                    # Same reasoning as blur below: pointer control is a
+                    # layer on top of tracking, which must keep working
+                    # even if cursor control itself hiccups.
+                    print(f"eyes: pointer control failed, continuing ({exc!r})")
 
             if now - last_preview_at >= self._preview_interval:
                 last_preview_at = now

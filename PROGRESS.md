@@ -62,6 +62,21 @@ capped and denser conversation log, and a real responsive breakpoint --
 verified in a real browser at two viewports, which is how four layout
 bugs invisible in the code were found.
 
+Two rounds of live-testing fixes and one new capability, 2026-08-12:
+ADR-055 fixed a real hand-skeleton mirroring bug (detection was running
+on an already-mirrored frame, then mirroring the result a second time,
+cancelling back to unmirrored landmarks under a mirrored preview) and
+added background blur to the gesture preview (MediaPipe's free selfie
+segmenter, verified real before adoption). ADR-056 shipped
+`POINTER_CONTROL` (new green-tier capability, CLAUDE.md § 5): the real
+macOS cursor follows the hand, but a click never fires from a gesture
+or voice alone -- only a real physical keypress fires it, the same
+"real keystroke fires it" property red-tier actions already rely on,
+enforced structurally in the executor rather than via the approval
+queue. A broader, unconfirmed version was explicitly proposed and
+refused first; see the ADR for why. `make check`: 100 Python tests, 492
+TS.
+
 Two live-testing fixes the same day (ADR-055): the hand skeleton was
 drawn mirrored relative to the real hand (a real double-flip bug --
 detect() was running on an already-mirrored frame, then mirror_hands()

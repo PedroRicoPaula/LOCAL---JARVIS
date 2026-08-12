@@ -116,6 +116,12 @@ export function fakeCamera(
         stopGestures(): void {
           gestureCalls.push("stop");
         },
+        startPointerControl(): void {
+          gestureCalls.push("pointer-start");
+        },
+        stopPointerControl(): void {
+          gestureCalls.push("pointer-stop");
+        },
       };
     },
   };
