@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fakeConversation, fakeRouter, fakeSkillContext } from "../../core/skills/tests/fakes.ts";
 import type { ProposedAction } from "../../shared/types.ts";
-import { createLauncherSkill } from "./index.ts";
+import { createLauncherSkill, friendlyUrlName } from "./index.ts";
 
 test("happy path: open_app proposes APP_CONTROL with the exact app named, speaks success", async () => {
   const proposals: ProposedAction[] = [];
@@ -186,8 +186,18 @@ test("open_url proposes APP_CONTROL with the extracted URL", async () => {
 
   const result = await skill.handle({ utterance: "open GitHub", intent: "open_url", sessionId: "s1" }, ctx);
 
-  assert.equal(result.speech, "Opened https://github.com.");
+  // Spoken: a friendly name, not the raw URL read out loud (found live).
+  assert.equal(result.speech, "Opened Github.");
+  // Audit log: still the full, exact URL -- only speech changed.
+  assert.equal(proposals[0]?.humanSummary, "Open https://github.com");
   assert.deepEqual(proposals[0]?.payload, { action: "open_url", url: "https://github.com" });
+});
+
+test("friendlyUrlName strips scheme/www/path, leaving a speakable name", () => {
+  assert.equal(friendlyUrlName("https://www.instagram.com/somepath"), "Instagram");
+  assert.equal(friendlyUrlName("https://github.com"), "Github");
+  assert.equal(friendlyUrlName("http://news.ycombinator.com/news"), "News");
+  assert.equal(friendlyUrlName("https://www.bbc.co.uk"), "Bbc");
 });
 
 test("open_url with nothing extracted falls back to asking which website", async () => {
@@ -201,5 +211,5 @@ test("open_url with nothing extracted falls back to asking which website", async
 
   const result = await skill.handle({ utterance: "open a website", intent: "open_url", sessionId: "s1" }, ctx);
 
-  assert.equal(result.speech, "Opened https://example.com.");
+  assert.equal(result.speech, "Opened Example.");
 });

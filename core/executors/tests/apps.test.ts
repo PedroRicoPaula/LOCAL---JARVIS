@@ -7,7 +7,22 @@ function fakeExecFile(shouldFail = false) {
   const fn = async (file: string, args: readonly string[]) => {
     calls.push({ file, args });
     if (shouldFail) throw new Error("open: application not found");
-    return { stdout: "", stderr: "" };
+    // `closeApp` asks System Events whether the app is running before
+    // quitting it -- default this fake to "yes" so the existing
+    // happy-path tests still exercise the real quit call.
+    const isRunningCheck = args.some((a) => a.includes("name of processes"));
+    return { stdout: isRunningCheck ? "true\n" : "", stderr: "" };
+  };
+  return { fn: fn as unknown as Parameters<typeof openApp>[1], calls };
+}
+
+/** A fake whose System Events check reports the app is NOT running. */
+function fakeExecFileNotRunning() {
+  const calls: { file: string; args: readonly string[] }[] = [];
+  const fn = async (file: string, args: readonly string[]) => {
+    calls.push({ file, args });
+    const isRunningCheck = args.some((a) => a.includes("name of processes"));
+    return { stdout: isRunningCheck ? "false\n" : "", stderr: "" };
   };
   return { fn: fn as unknown as Parameters<typeof openApp>[1], calls };
 }
@@ -56,13 +71,29 @@ test("rejects a non-object open_app payload", async () => {
 
 // --- closeApp ---------------------------------------------------------
 
-test("closes an app by name via a graceful AppleScript quit", async () => {
+test("closes an app by name via a graceful AppleScript quit, after confirming it's running", async () => {
   const { fn, calls } = fakeExecFile();
 
   const outcome = await closeApp({ action: "close_app", app: "Spotify" }, fn);
 
   assert.deepEqual(outcome, { ok: true, result: { app: "Spotify" } });
-  assert.deepEqual(calls, [{ file: "osascript", args: ["-e", 'tell application "Spotify" to quit'] }]);
+  assert.equal(calls.length, 2, "checks whether it's running first, then quits");
+  assert.match(calls[0]!.args[1]!, /name of processes.*Spotify/);
+  assert.deepEqual(calls[1], { file: "osascript", args: ["-e", 'tell application "Spotify" to quit'] });
+});
+
+test("an app that isn't running reports so honestly and never attempts a quit -- the real 'said closed but wasn't' bug", async () => {
+  // Found live, 2026-08-12: `tell application "Instagram" to quit` exits
+  // 0 with no error even though no such app exists, so trusting the exit
+  // code made every close look successful. "Instagram" was a browser tab
+  // (opened via open_url), never a closeable app.
+  const { fn, calls } = fakeExecFileNotRunning();
+
+  const outcome = await closeApp({ action: "close_app", app: "Instagram" }, fn);
+
+  assert.equal(outcome.ok, false);
+  assert.match(outcome.error!, /isn't running/);
+  assert.equal(calls.length, 1, "only the running-check ran -- no quit attempted");
 });
 
 test("a real quit failure (app not running) reports the error, doesn't throw", async () => {

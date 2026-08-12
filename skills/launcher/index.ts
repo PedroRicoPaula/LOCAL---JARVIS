@@ -97,13 +97,28 @@ async function proposeClose(ctx: SkillContext, app: string): Promise<{ speech: s
   return { speech };
 }
 
+/** "https://www.instagram.com/somepath" -> "Instagram". Found live,
+ * 2026-08-12: the spoken confirmation read the entire raw URL back
+ * ("Opened https colon slash slash www dot instagram dot com"), which
+ * is both tedious and unlike how a person would say it. The audit log
+ * still records the full URL -- only what the owner *hears* changes. */
+export function friendlyUrlName(url: string): string {
+  const host = url
+    .replace(/^[a-z]+:\/\//i, "")
+    .split("/")[0]!
+    .replace(/^www\./i, "");
+  const label = host.split(".")[0];
+  if (!label) return url;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 async function proposeOpenUrl(ctx: SkillContext, url: string): Promise<{ speech: string }> {
   const outcome = await ctx.propose({
     capability: "APP_CONTROL",
     humanSummary: `Open ${url}`,
     payload: { action: "open_url" as const, url },
   });
-  const speech = speechForOutcome(url, outcome, "open");
+  const speech = speechForOutcome(friendlyUrlName(url), outcome, "open");
   ctx.say(speech);
   return { speech };
 }

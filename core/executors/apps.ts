@@ -93,6 +93,22 @@ export async function closeApp(
     return { ok: false, error: `malformed close_app payload: ${JSON.stringify(payload)}` };
   }
   try {
+    // Check the app is genuinely running *before* quitting it -- found
+    // live, 2026-08-12 (the owner asked JARVIS to close "Instagram",
+    // heard "Closed Instagram", and nothing had happened). AppleScript's
+    // `tell application "X" to quit` exits 0 with no error even when no
+    // such application exists at all, so trusting the exit code alone
+    // made every close look successful, including ones that did nothing.
+    // "Instagram" was never a closeable app in the first place -- it's a
+    // website opened as a browser tab (`open_url`), which is exactly the
+    // case this now reports honestly instead of claiming success for.
+    const { stdout } = await execFileFn("osascript", [
+      "-e",
+      `tell application "System Events" to (name of processes) contains "${payload.app}"`,
+    ]);
+    if (stdout.trim() !== "true") {
+      return { ok: false, error: `${payload.app} isn't running` };
+    }
     await execFileFn("osascript", ["-e", `tell application "${payload.app}" to quit`]);
     return { ok: true, result: { app: payload.app } };
   } catch (cause) {
