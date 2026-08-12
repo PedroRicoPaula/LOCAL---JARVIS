@@ -2882,6 +2882,18 @@ wake-word path only (the hotkey path already has physical key-release
 feedback). 2 new tests (50 pytest total), `ruff` clean, `make check`
 green throughout.
 
+**Screen Recording permission confirmed granted, 2026-08-12.** Owner
+asked to confirm live whether `core`'s own process (not just an
+interactive shell) can actually use `screencapture` — re-ran the exact
+test that found this gap on 2026-08-06 (`core/executors/screenshot.ts`'s
+own docstring), through a real `node`-spawned child process matching
+the executor's own invocation shape: the clipboard now holds real image
+data, not stale text. Permission gap is closed. `skills/clipboard`'s
+`capture_screenshot` is fully functional now (the `-i` interactive-select
+path still needs a real owner drag to fully confirm, can't be scripted);
+OCR-on-screenshot is no longer permission-blocked, just not yet built
+(real Vision-framework research still needed, unchanged).
+
 ---
 
 ## Key numbers to record as we go
