@@ -100,8 +100,12 @@ pure re-export barrel, `tsc --noEmit` confirming zero broken imports
 across the repo. `.claude/settings.json` gained a hook catching a real
 gap found this session firsthand: a new `Capability` added to
 `shared/types.ts` without `CLAUDE.md` § 5 being updated in the same
-commit, tested against a throwaway repo before trusting it. **Not yet
-done:** `core/main.ts`, `core/gate/gate.ts`, `ui/src/lib/use-jarvis.ts`,
+commit, tested against a throwaway repo before trusting it.
+`ui/src/lib/use-jarvis.ts`'s state-shape types also extracted to
+`use-jarvis-types.ts` (414 -> 333 lines; the 6 components importing
+these types from `@/lib/use-jarvis` grepped and confirmed working via
+a re-export, then verified in a real browser, not just a clean
+compile). **Not yet done:** `core/main.ts`, `core/gate/gate.ts`,
 `senses/eyes/gestures.py`, `senses/eyes/main.py` still exceed 300 lines
 -- these carry real runtime logic and cross-module wiring, not just
 declarations, so splitting them safely needs its own dedicated,
