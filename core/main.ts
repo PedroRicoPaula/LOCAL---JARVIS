@@ -24,7 +24,7 @@
 import type { HandLandmarks } from "../shared/types.ts";
 import { connectWithRetry } from "./ipc.ts";
 import { wrapSenseConnection, type SenseConnection } from "./senseConnection.ts";
-import { createIpcCameraHandle, type EyesEventSource } from "./skills/camera.ts";
+import { createIpcCameraHandle, restrictPointerControl, type EyesEventSource } from "./skills/camera.ts";
 import { generalConversationReply } from "./converse.ts";
 import { createDashboardHistory } from "./dashboardHistory.ts";
 import { runAppControlAction } from "./executors/appControl.ts";
@@ -190,7 +190,7 @@ async function main(): Promise<void> {
   // and self-triggered timeout events on the same connection. Only
   // started when eyes actually connected.
   if (eyesConn && cameraHandle) {
-    relayCameraStatus(eyesConn, wsHub, cameraHandle, conversation.say).catch((err) => console.error("core: camera status relay failed", err));
+    relayCameraStatus(eyesConn, wsHub, cameraHandle, conversation.say, memory).catch((err) => console.error("core: camera status relay failed", err));
   }
 
   // Batched, idle-triggered fact extraction (core/factExtractionScheduler.ts)
@@ -243,9 +243,17 @@ async function main(): Promise<void> {
           // declares CAMERA, and only when eyes is actually connected,
           // gets the real one. Every other skill gets `undefined`,
           // which `buildSkillContext` turns into the honest throwing
-          // stub on its own.
+          // stub on its own. POINTER_CONTROL is a second, narrower gate
+          // on top of CAMERA (security review, 2026-08-13) -- a skill
+          // can have a working camera without also being able to drive
+          // the real cursor.
           const skill = skillRegistry.get(skillId);
-          const camera = cameraHandle && skill?.manifest.capabilities.includes("CAMERA") ? cameraHandle : undefined;
+          const hasCamera = cameraHandle && skill?.manifest.capabilities.includes("CAMERA");
+          const camera = hasCamera
+            ? skill?.manifest.capabilities.includes("POINTER_CONTROL")
+              ? cameraHandle
+              : restrictPointerControl(cameraHandle)
+            : undefined;
           return buildSkillContext(
             { db, memory, routerRegistry, conversation, gate, mcp: mcpRegistry, fsRoots: [PROJECTS_ROOT], ...(camera ? { camera } : {}) },
             skillId,
@@ -370,6 +378,7 @@ async function relayCameraStatus(
   wsHub: ReturnType<typeof createWsHub>,
   cameraHandle: EyesEventSource,
   say: (text: string) => void,
+  memory: Memory,
 ): Promise<void> {
   for await (const message of eyesConn.messages()) {
     cameraHandle.offerEvent(message);
@@ -422,6 +431,13 @@ async function relayCameraStatus(
       wsHub.broadcast({ type: "hand.preview", image: String(message["image"]) });
     } else if (type === "pointer.control") {
       wsHub.broadcast({ type: "pointer.control", enabled: Boolean(message["enabled"]) });
+    } else if (type === "pointer.click") {
+      // Durable record, not just the ephemeral WS broadcast above --
+      // security review, 2026-08-13: this is the one green-tier action
+      // with a real, potentially-irreversible external side effect, so
+      // it gets a real `events` row the way nothing else in the green
+      // tier currently does.
+      memory.appendEvent({ kind: "action", actor: "jarvis", content: "Pointer control clicked", sessionId: SESSION_ID });
     }
   }
 }

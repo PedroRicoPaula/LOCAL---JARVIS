@@ -1102,3 +1102,11 @@ button/field rather than raw coordinates) for anything beyond "click
 where the cursor visually is" — this file's own Tier-2 "computer-use"
 research already scoped that direction, and it remains a separate,
 larger piece of work, not needed for what shipped.
+
+**Update, 2026-08-13 — a dedicated security review found the physical
+key alone wasn't enough.** The default trigger (Space) was overloaded
+with real OS/app meaning, so an ordinary keypress for an unrelated
+reason could fire an accidental click. Fixed: the default trigger moved
+to a bare modifier (`ctrl_r`), and a click now also requires a
+deliberate pointing pose at that instant, not just a keypress plus any
+visible hand. Full detail: ADR-058.

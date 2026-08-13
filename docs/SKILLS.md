@@ -156,7 +156,12 @@ export interface SkillContext {
   /** Reads are free. Writes go through propose(). */
   memory: Memory;
 
-  /** Camera. Only available if the manifest declares CAMERA. */
+  /** Camera. Only available if the manifest declares CAMERA. Its
+   * session's startPointerControl()/stopPointerControl() are a second,
+   * narrower gate on top of that: they throw unless the manifest also
+   * declares POINTER_CONTROL, even though `camera` itself is real --
+   * enforced in core/main.ts (`restrictPointerControl`), not just this
+   * comment (security review, 2026-08-13). */
   camera: CameraHandle;
 
   /** The only way to cause a side effect. Returns after the owner decides. */

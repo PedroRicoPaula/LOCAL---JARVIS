@@ -15,6 +15,25 @@ the same way a real keystroke is what fires a drafted red-tier send.
 Gating every individual click through the yellow-tier queue would be
 absurd for something as routine as a mouse click, and would defeat the
 whole point of hands-free pointing.
+
+**Real gap found by a security review, 2026-08-13, fixed here:** the
+original default trigger key was Space -- the single most overloaded
+key on a keyboard (types a character, pauses media, activates a
+focused button in most UI toolkits). The physical key proved *a
+keypress happened*, not that the owner *intended a click there*: an
+ordinary Space press for an unrelated reason, while pointer control
+happened to be on and a hand happened to be visible, fired a real,
+extra click wherever the hand last mapped to on screen -- reproducing
+exactly the harm this design exists to prevent (ADR-056). Two
+independent fixes, not one:
+1. Default trigger changed to a bare modifier key (`ctrl_r`, right
+   Control) -- pressed and released alone, with no other key, it types
+   nothing and has no bound meaning in virtually any macOS app or
+   system shortcut, unlike Space.
+2. A click's edge no longer counts unless the hand is *also* in a
+   deliberate pointing pose (`is_pointing`, index extended, other
+   fingers curled) at that instant -- not just any visible hand, so an
+   incidental hand near the camera can't arm a click on its own either.
 """
 
 from __future__ import annotations
@@ -111,7 +130,17 @@ def map_to_screen(x: float, y: float, screen_w: float, screen_h: float) -> tuple
     whether the full camera frame maps comfortably to the full screen or
     needs a smaller "active region" for precision is a real UX question
     that needs the owner's own hand at a real distance from the camera
-    to answer, not something to guess at here."""
+    to answer, not something to guess at here.
+
+    Not reachable today -- landmarks come only from the local on-device
+    MediaPipe model, never wire-deserialized -- but `min`/`max` with a
+    NaN operand is not well-defined in Python, so a degenerate hand pose
+    or a future `HandTracker` implementation is cheap to harden against
+    now (security review, 2026-08-13)."""
+    import math
+
+    if not (math.isfinite(x) and math.isfinite(y)):
+        return (screen_w / 2, screen_h / 2)
     return (
         max(0.0, min(screen_w, x * screen_w)),
         max(0.0, min(screen_h, y * screen_h)),

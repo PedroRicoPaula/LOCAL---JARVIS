@@ -114,4 +114,13 @@ GESTURE_OBSCURE_ALPHA = float(os.environ.get("JARVIS_GESTURE_OBSCURE_ALPHA", "0.
 # docstring. The click-trigger key is deliberately imported lazily
 # (pynput.keyboard) alongside its own module, same reasoning as every
 # other native-library import in this package.
-POINTER_CLICK_KEY_NAME = os.environ.get("JARVIS_POINTER_CLICK_KEY", "space")
+#
+# Was "space" -- a security review (2026-08-13) found Space is the most
+# overloaded key on a keyboard (types a character, pauses media,
+# activates a focused button), and the listener never suppressed it, so
+# an ordinary Space press for an unrelated reason fired a real extra
+# click. `ctrl_r` (right Control alone, no other key) types nothing and
+# has no bound meaning in virtually any macOS app -- see pointer.py's
+# own module docstring for the full finding and the second, independent
+# fix (a required pointing pose) alongside this one.
+POINTER_CLICK_KEY_NAME = os.environ.get("JARVIS_POINTER_CLICK_KEY", "ctrl_r")

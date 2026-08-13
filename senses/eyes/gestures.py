@@ -129,6 +129,45 @@ def mirror_hands(hands: tuple[Hand, ...]) -> tuple[Hand, ...]:
     )
 
 
+# MediaPipe's fixed 21-point topology (same indices `ui/src/lib/hand.ts`
+# uses browser-side for the pinch/open-palm demos).
+_WRIST = 0
+_INDEX_TIP, _INDEX_JOINT = 8, 6
+_MIDDLE_TIP, _MIDDLE_JOINT = 12, 10
+_RING_TIP, _RING_JOINT = 16, 14
+_PINKY_TIP, _PINKY_JOINT = 20, 18
+
+
+def _distance(a: Landmark, b: Landmark) -> float:
+    return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2) ** 0.5
+
+
+def is_pointing(hand: Hand) -> bool:
+    """Index finger extended, the other three curled -- the deliberate
+    "I am pointing at something" pose. Added 2026-08-13 after a security
+    review found that requiring *only* a physical keypress to fire a
+    click was not enough on its own: an incidental hand near the camera
+    (plausible on a laptop, whose built-in camera commonly sees hands
+    near the keyboard) could arm a click on a coincidental keypress
+    unrelated to pointing. This closes that gap independently of the
+    keypress fix -- a click now needs *both* a real key edge *and* a
+    real pointing hand at that instant, not either alone."""
+    lm = hand.landmarks
+    if len(lm) <= max(_PINKY_TIP, _PINKY_JOINT):
+        return False
+    wrist = lm[_WRIST]
+
+    def extended(tip: int, joint: int) -> bool:
+        return _distance(wrist, lm[tip]) > _distance(wrist, lm[joint])
+
+    return (
+        extended(_INDEX_TIP, _INDEX_JOINT)
+        and not extended(_MIDDLE_TIP, _MIDDLE_JOINT)
+        and not extended(_RING_TIP, _RING_JOINT)
+        and not extended(_PINKY_TIP, _PINKY_JOINT)
+    )
+
+
 class BackgroundBlurrer(Protocol):
     def blur(self, frame: Any) -> Any:
         """Person sharp, everything else blurred. Never called on the
@@ -322,6 +361,12 @@ class GestureLoop:
                 self._pointer_backend = self._pointer_backend_factory()
             if self._click_trigger is None:
                 self._click_trigger = self._click_trigger_factory()
+                # A fresh trigger has never observed a press, so it can
+                # only ever report a real transition from here -- reset
+                # explicitly anyway (security review, 2026-08-13) rather
+                # than relying on that being true of every ClickTrigger
+                # implementation.
+                self._click_was_pressed = False
             self._pointer_enabled.set()
         else:
             self._pointer_enabled.clear()
@@ -390,12 +435,23 @@ class GestureLoop:
 
                     # Edge-triggered: a held key fires exactly one click,
                     # not one per frame -- the key going *down* is the
-                    # real, single, deliberate action that fires it. See
-                    # pointer.py's module docstring for why this is the
-                    # entire safety model, not a convenience detail.
+                    # real, single, deliberate action that fires it. AND
+                    # gated on a deliberate pointing pose at that same
+                    # instant (not just any visible hand) -- security
+                    # review, 2026-08-13: a keypress alone proves *a*
+                    # keypress happened, not that the owner meant to
+                    # click *here*. Both conditions independently narrow
+                    # the safety margin; see pointer.py's own module
+                    # docstring for the full finding.
                     pressed = self._click_trigger.is_pressed() if self._click_trigger else False
-                    if pressed and not self._click_was_pressed:
+                    if pressed and not self._click_was_pressed and is_pointing(hands[0]):
                         self._pointer_backend.click()
+                        # A durable record that a real click fired, not
+                        # just the ephemeral pointer.control status --
+                        # security review, 2026-08-13: this matters most
+                        # exactly when a click was unintended, which is
+                        # the one time nothing else says so afterward.
+                        self._emit({"type": "pointer.click", "ts": now})
                     self._click_was_pressed = pressed
                 except Exception as exc:
                     # Same reasoning as blur below: pointer control is a

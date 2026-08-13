@@ -19,6 +19,7 @@ from senses.eyes.gestures import (
     Hand,
     Landmark,
     hands_to_wire,
+    is_pointing,
     mirror_hands,
     resize_for_preview,
 )
@@ -348,9 +349,30 @@ def test_a_failing_blur_is_cosmetic_tracking_keeps_going() -> None:
 def _hand_at(x: float, y: float) -> Hand:
     """21 landmarks, all at the same point except index 8 (fingertip) --
     only the fingertip position drives the cursor, so tests only need to
-    control that one."""
+    control that one. Deliberately NOT a pointing pose (every joint sits
+    on top of the wrist, so nothing reads as "extended") -- use
+    `_pointing_hand_at` for anything that needs a click to actually
+    fire, now that clicks also require `is_pointing`."""
     landmarks = [Landmark(0.5, 0.5, 0.0)] * 21
     landmarks[8] = Landmark(x, y, 0.0)
+    return Hand(handedness="Right", landmarks=tuple(landmarks))
+
+
+def _pointing_hand_at(x: float, y: float) -> Hand:
+    """A real pointing pose: wrist at the frame centre, index tip clearly
+    extended toward (x, y), the other three fingertips clearly curled
+    back near the wrist -- the shape `is_pointing` looks for."""
+    wrist = (0.5, 0.5)
+    landmarks = [Landmark(wrist[0], wrist[1], 0.0)] * 21
+    landmarks = list(landmarks)
+    landmarks[0] = Landmark(wrist[0], wrist[1], 0.0)  # WRIST
+    landmarks[6] = Landmark(wrist[0], wrist[1], 0.0)  # index joint: at wrist
+    landmarks[8] = Landmark(x, y, 0.0)  # index tip: far from wrist -> extended
+    # Other three fingers' tips sit ON their own joints (curled, not
+    # extended) -- both landmarks of each pair identical is unambiguous.
+    for tip, joint in ((12, 10), (16, 14), (20, 18)):
+        landmarks[tip] = Landmark(wrist[0] + 0.01, wrist[1], 0.0)
+        landmarks[joint] = Landmark(wrist[0] + 0.01, wrist[1], 0.0)
     return Hand(handedness="Right", landmarks=tuple(landmarks))
 
 
@@ -401,7 +423,7 @@ def test_click_fires_once_on_key_down_not_repeatedly_while_held() -> None:
     a click only fires on the down-edge of a real keypress, never a
     gesture, never a spoken word, and never once per frame while a key
     happens to still be held."""
-    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])
+    tracker = FakeHandTracker([(_pointing_hand_at(0.8, 0.3),)])
     backend = FakePointerBackend()
     trigger = FakeClickTrigger()
     emitted: list[dict[str, Any]] = []
@@ -447,7 +469,7 @@ def test_click_never_fires_from_a_gesture_alone_no_trigger_configured() -> None:
 
 
 def test_pressing_and_releasing_twice_fires_two_clicks() -> None:
-    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])
+    tracker = FakeHandTracker([(_pointing_hand_at(0.8, 0.3),)])
     backend = FakePointerBackend()
     trigger = FakeClickTrigger()
     emitted: list[dict[str, Any]] = []
@@ -470,6 +492,55 @@ def test_pressing_and_releasing_twice_fires_two_clicks() -> None:
     loop.run()
 
     assert backend.click_count == 2
+
+
+def test_click_does_not_fire_on_a_real_key_edge_without_a_pointing_pose() -> None:
+    """Security review, 2026-08-13: a real key edge alone used to be
+    enough. A hand that's visible but not in a deliberate pointing pose
+    (e.g. resting near the keyboard while the owner types) must not let
+    an unrelated key edge fire a click."""
+    tracker = FakeHandTracker([(_hand_at(0.5, 0.5),)])  # visible, not pointing
+    backend = FakePointerBackend()
+    trigger = FakeClickTrigger()
+    emitted: list[dict[str, Any]] = []
+
+    loop = _loop(
+        tracker,
+        emitted,
+        stop_after=1,
+        pointer_backend_factory=lambda: backend,
+        click_trigger_factory=lambda: trigger,
+    )
+    loop.set_pointer_control(True)
+    trigger.pressed = True
+
+    loop.run()
+
+    assert backend.click_count == 0
+
+
+def test_is_pointing_true_for_index_extended_others_curled() -> None:
+    assert is_pointing(_pointing_hand_at(0.8, 0.2)) is True
+
+
+def test_is_pointing_false_for_an_open_palm() -> None:
+    wrist = (0.5, 0.5)
+    landmarks = [Landmark(wrist[0], wrist[1], 0.0)] * 21
+    landmarks = list(landmarks)
+    # All four fingertips extended -- an open palm, not a point.
+    for tip in (8, 12, 16, 20):
+        landmarks[tip] = Landmark(wrist[0], wrist[1] - 0.3, 0.0)
+    hand = Hand(handedness="Right", landmarks=tuple(landmarks))
+    assert is_pointing(hand) is False
+
+
+def test_is_pointing_false_for_a_closed_fist() -> None:
+    hand = _hand_at(0.5, 0.5)  # index tip at the wrist too -- nothing extended
+    assert is_pointing(hand) is False
+
+
+def test_is_pointing_degrades_honestly_on_missing_landmarks() -> None:
+    assert is_pointing(Hand(handedness="Right", landmarks=())) is False
 
 
 def test_pointer_control_can_be_turned_back_off() -> None:

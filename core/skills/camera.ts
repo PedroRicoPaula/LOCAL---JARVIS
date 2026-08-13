@@ -48,6 +48,40 @@ export function createStubCameraHandle(): CameraHandle {
   };
 }
 
+/**
+ * Wraps a real `CameraHandle` so `startPointerControl`/`stopPointerControl`
+ * throw honestly instead of reaching `eyes` -- for a skill that declares
+ * `CAMERA` (and so gets a real, working handle for capture/gestures) but
+ * not `POINTER_CONTROL`. Found by a security review, 2026-08-13: the
+ * capability was documented (CLAUDE.md § 5, shared/types.ts) but nothing
+ * actually checked it at the point `ctx.camera` is handed to a skill --
+ * every other capability-gated method on `CameraSession` was gated by
+ * which *handle* a skill received (`docs/SKILLS.md` § 4's own pattern),
+ * this pair alone reached the real implementation regardless. Not
+ * exploitable today (`look` is the only `CAMERA`-declaring skill and it
+ * legitimately declares both) -- this closes the gap before a second one
+ * exists.
+ */
+export function restrictPointerControl(handle: CameraHandle): CameraHandle {
+  return {
+    get state() {
+      return handle.state;
+    },
+    async open(reason: string): Promise<CameraSession> {
+      const session = await handle.open(reason);
+      return {
+        ...session,
+        startPointerControl(): never {
+          throw new Error("pointer control is not available -- this skill's manifest doesn't declare POINTER_CONTROL");
+        },
+        stopPointerControl(): never {
+          throw new Error("pointer control is not available -- this skill's manifest doesn't declare POINTER_CONTROL");
+        },
+      };
+    },
+  };
+}
+
 /** `core/main.ts`'s eyes-read-loop calls `offerEvent` for every message
  * `eyes` sends. Returns true if the event was consumed as the reply to a
  * pending request, false if it was a spontaneous event (e.g. a

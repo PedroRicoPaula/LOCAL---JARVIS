@@ -232,7 +232,12 @@ def handle_message(
         running = gestures.get()
         if running is None:
             return  # nothing to blur if tracking isn't running
-        running.set_blur(bool(message.get("enabled", False)))
+        # `is True`, not `bool(...)` -- security review, 2026-08-13:
+        # `bool("false")` is `True` in Python, a real trap for anything
+        # that could send a JSON string instead of a boolean. The real
+        # TypeScript caller always sends a JSON boolean, but a message
+        # handler this close to a raw socket shouldn't depend on that.
+        running.set_blur(message.get("enabled") is True)
         return
 
     if msg_type == "pointer.control":
@@ -241,7 +246,7 @@ def handle_message(
         running = gestures.get()
         if running is None:
             return  # nothing to point with if tracking isn't running
-        enabled = bool(message.get("enabled", False))
+        enabled = message.get("enabled") is True
         running.set_pointer_control(enabled)
         emit({"type": "pointer.control", "enabled": enabled})
         return

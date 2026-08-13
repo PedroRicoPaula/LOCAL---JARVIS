@@ -112,6 +112,23 @@ declarations, so splitting them safely needs its own dedicated,
 careful pass rather than the mechanical extraction the docs/types
 splits were.
 
+**Same day, a dedicated security review of `POINTER_CONTROL` (ADR-058)
+found 8 real issues, all fixed, none deferred silently.** The one that
+mattered most: the click-safety key was Space -- the most overloaded
+key on a keyboard -- so an ordinary Space press for an unrelated reason
+could fire a real, unintended click while pointer control happened to
+be on. Fixed with two independent changes: the default trigger moved
+to `ctrl_r` (a bare modifier, types nothing, no bound OS meaning), and
+a click now also requires the hand to be in a deliberate pointing pose
+(`is_pointing`, new) at that instant, not just any visible hand. Also
+fixed: `POINTER_CONTROL` was documented but never actually enforced at
+the point a skill receives `ctx.camera` (`restrictPointerControl`,
+`core/skills/camera.ts`); clicks now get a durable `events` row, not
+just an ephemeral WS broadcast; the `eyes` IPC socket is `chmod 0o600`;
+plus four smaller hardening fixes (stale click-state reset, a Python
+`bool()` truthy-string trap, an `isfinite` guard, a bounded IPC read
+buffer). `make check`: 108 Python tests, 497 TS.
+
 **Next:** to be decided with the owner -- more MCP servers, Phase 9,
 the Knowledge Brain idea, or the screen-guide idea.
 **Branch:** `main`

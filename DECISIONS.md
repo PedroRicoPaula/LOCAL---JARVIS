@@ -69,4 +69,5 @@ Format: Context → Decision → Consequences.
 | [ADR-055](docs/decisions/ADR-055.md) | Hand-tracking fixes from live testing: mirroring bug, background blur |
 | [ADR-056](docs/decisions/ADR-056.md) | Hand-driven real cursor, click gated by a physical key |
 | [ADR-057](docs/decisions/ADR-057.md) | Real performance fixes for gesture tracking, found by measuring, not guessing |
+| [ADR-058](docs/decisions/ADR-058.md) | Pointer control: 8 real findings from a dedicated security review, all fixed |
 
