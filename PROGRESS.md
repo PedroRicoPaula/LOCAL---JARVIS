@@ -373,3 +373,28 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
   control work while re-running the healthy-model benchmark as a check
   (a "cursor"/"Cursor"-app-name example collision) -- `bench_skill_
   routing.ts`: 88.6% -> 94.3%.
+- **Machine-wide disk pressure, found via `getSystemMetrics()` and
+  cleaned up 2026-08-17.** `df` on `/System/Volumes/Data` (the real data
+  volume behind `/Users`) showed 96% used, 9.6 GB free of 245 GB --
+  RAM was also at 99% (7.9/8 GB), a plausible contributor to this
+  session's own observed Ollama slowness (little headroom left to load
+  a model into). Investigated before deleting anything: the two biggest
+  items on disk, `~/.colima` (24 GB) and `~/.ollama` (11 GB), are both
+  real and in use -- `.colima` backs a live Docker stack for an
+  unrelated project (`agente-crm`, containers up 4 days at the time of
+  the check) and `.ollama` holds this project's own local models --
+  neither was touched. Cleared instead: `npm`/`pip`/Homebrew package
+  caches, and known-regenerable `~/Library/Caches` entries (Electron
+  auto-updater staging for two desktop apps, Chrome's disk cache,
+  Spotify's stream cache, `dotslash`/`node-gyp`/`next-swc` build-tool
+  caches) -- none of these are project data, all regenerate on next use.
+  `~/Library/Application Support` (19 GB, real app settings/login state)
+  and `~/.cursor/extensions` (3 GB, installed extensions, not a cache)
+  were deliberately left alone as not safely disposable. Freed ~6.5 GB
+  (9.6 GB -> 16 GB free). `make check` reran clean after (498 TS + 108
+  Python tests, `tsc`/`ruff`/`eslint`/`next build`), confirming the
+  cleanup didn't touch anything the project depends on. Disk pressure
+  wasn't found to be causing any specific test failure -- flagged
+  originally as a suspect, but no failing test or hang was traced to it
+  specifically; the RAM pressure remains the more likely explanation for
+  the Ollama slowness observed earlier this session.
