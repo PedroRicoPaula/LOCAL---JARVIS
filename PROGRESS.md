@@ -411,6 +411,16 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
   `core/gate/tests/gate.test.ts` unmodified. 4 files remain over the
   guideline: `core/main.ts`, `senses/eyes/gestures.py`, `senses/eyes/
   main.py`, and `ui/src/lib/use-jarvis.ts` (already partially split).
+- **`core/main.ts` split 2026-08-17**, same stretch: 448 -> 349 lines.
+  `relayVoiceStatus`/`relayCameraStatus` (both already self-contained,
+  taking their dependencies as explicit parameters rather than closing
+  over `main()`'s own scope) moved to new `core/senseRelays.ts`.
+  `relayCameraStatus` gained an explicit `sessionId` parameter (was
+  reading the module-level `SESSION_ID` constant directly, no longer
+  possible once it's a separate file) -- call site passes `SESSION_ID`
+  same as before, behavior unchanged. `make check` green after (498 TS
+  + 108 Python). 3 files remain over the guideline: `senses/eyes/
+  gestures.py`, `senses/eyes/main.py`, `ui/src/lib/use-jarvis.ts`.
 - **Resolved 2026-08-17, ADR-061:** the 5-skill routing benchmark
   coverage gap flagged earlier this session (`system_health`, `gmail`,
   `github`, `about`, `look` had zero cases in `bench_skill_routing.ts`)
