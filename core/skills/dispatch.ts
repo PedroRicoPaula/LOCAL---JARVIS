@@ -9,10 +9,17 @@ import type { SkillInput, SkillResult, SkillRoutingTrace } from "../../shared/ty
 import type { Embedder } from "../memory/embeddings.ts";
 import { classifyLane } from "../router/laneClassifier.ts";
 import type { Registry } from "../router/registry.ts";
-import { routeChat } from "../router/router.ts";
+import { routeChat, type TraceSink } from "../router/router.ts";
 import type { ExampleEmbedding, MatchCandidate } from "./embeddingMatch.ts";
 import { matchUtterance } from "./embeddingMatch.ts";
 import type { Skill, SkillContext } from "./types.ts";
+
+/** The `ModelProvider.id` of the true last resort (`providers/ollama.ts`)
+ * -- same constant `laneClassifier.ts` uses for the identical reason
+ * (ADR-040). Duplicated rather than imported: these two modules already
+ * don't share a dependency edge, and it's one string literal, not worth
+ * a coupling for. */
+const OLLAMA_FALLBACK_PROVIDER_ID = "ollama";
 
 /** Above this score, an intent is a real candidate at all. Below it,
  * nothing matched — general conversation, no skill. */
@@ -56,18 +63,43 @@ async function disambiguate(
   skillsById: ReadonlyMap<string, Skill>,
 ): Promise<{ skillId: string; intentId: string } | null> {
   let text = "";
-  for await (const chunk of routeChat(routerRegistry, {
-    lane: "converse",
-    system: DISAMBIGUATION_SYSTEM,
-    messages: [
-      { role: "user", content: `Said: "${utterance}"\n\nCandidates:\n${formatCandidates(shortlist, skillsById)}` },
-    ],
-    jsonSchema: { type: "object" },
-    maxTokens: 40,
-    temperature: 0,
-    timeoutMs: 3000,
-  })) {
+  let answeredBy = "";
+  const captureProvider: TraceSink = (trace) => {
+    if (trace.ok) answeredBy = trace.providerId;
+  };
+  for await (const chunk of routeChat(
+    routerRegistry,
+    {
+      lane: "converse",
+      system: DISAMBIGUATION_SYSTEM,
+      messages: [
+        { role: "user", content: `Said: "${utterance}"\n\nCandidates:\n${formatCandidates(shortlist, skillsById)}` },
+      ],
+      jsonSchema: { type: "object" },
+      maxTokens: 40,
+      temperature: 0,
+      timeoutMs: 3000,
+    },
+    captureProvider,
+  )) {
     text += chunk.delta;
+  }
+
+  // The "peanuts" bug (ADR-038): live-verified that the true last-resort
+  // provider answers disambiguation within budget but picks *wrong* on
+  // self-referential fact/preference statements ("I don't eat peanuts,
+  // I'm allergic" -> shopping_list.remove_item) -- 42.9% on a degraded-
+  // mode benchmark, every failure `disambiguated: true`, the model
+  // actively choosing wrong rather than a shortlist/embedding problem.
+  // Two prompt-wording fixes were tried and benchmark-rejected (one even
+  // regressed unrelated cases) -- the real fix isn't wording, it's not
+  // trusting this specific provider's judgment on this specific task,
+  // exactly the same call `laneClassifier.ts` already makes for the
+  // identical reason (ADR-040). "None" (falls through to converse's own
+  // general-conversation handling) is the safe default already used for
+  // unparseable/invalid JSON above -- reused here, not a new behavior.
+  if (answeredBy === OLLAMA_FALLBACK_PROVIDER_ID) {
+    return null;
   }
 
   try {

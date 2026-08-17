@@ -918,6 +918,14 @@ deliberately left to the owner.
     (fast but wrong), not a hang -- fixed for lane classification via a
     no-model heuristic, see the entry below and ADR-040. No timeout
     change was needed.
+  - **Resolved, 2026-08-13 (ADR-059): closed, not open anymore.** Turned
+    out to need exactly `classifyLane`'s own fix (ADR-040), not the
+    bespoke per-skill logic this entry spent a while assuming was
+    required -- `disambiguate()` now distrusts the `ollama` fallback's
+    choice the same way, returning "none" instead of trusting it.
+    Verified against the real degraded-mode benchmark this entry's own
+    investigation built: 42.9% -> 100%. No prompt touched, so neither of
+    the two rejected attempts' regression risk applies.
 - **2026-08-04 — `converse` hallucinated capabilities (fixed same day).**
   Real conversation: asked "can you create a skill?", JARVIS said yes and
   kept claiming to be building one, that it would show up on Skill
@@ -984,10 +992,10 @@ deliberately left to the owner.
   finding (wrong answers, not hangs). No timeout/latency fix was
   needed; the heuristic addresses the actual observed failure
   (confidently wrong, not slow). `disambiguate()`'s own equivalent gap
-  (the "peanuts" misroute, ADR-038) is a separate, still-open problem --
-  a heuristic disambiguator needs real per-skill logic, not a small
-  fixed rule set like lane classification's 5 categories, and wasn't
-  attempted. Related: the same tiny-model conditions also made
+  (the "peanuts" misroute, ADR-038) turned out **not** to need a
+  per-skill heuristic after all -- **resolved 2026-08-13, ADR-059**,
+  the same "don't trust this provider's judgment" fix as this entry's
+  own, once it was actually tried. Related: the same tiny-model conditions also made
   `core/factExtraction.ts` produce mostly garbage facts (5 of 6 in one
   live run) — safely caught by ADR-027's gate fix, not a new gap, but
   worth knowing the approval queue may see a burst of nonsense during

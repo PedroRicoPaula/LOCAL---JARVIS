@@ -122,12 +122,20 @@ export const manifest: SkillManifest = {
       description: "Turn on hand-driven cursor control -- the real mouse cursor follows the index finger. Requires hand tracking to already be running. Clicks never fire from voice or gesture alone; only a real, physical key press (Space by default) fires a click, on purpose (DECISIONS.md's ADR).",
       examples: [
         "point with my hand",
-        "control the cursor with my hand",
+        "control the mouse with my hand",
         "let my hand control the mouse",
         "turn on pointer control",
-        // PT-PT paraphrases (ADR-033)
-        "controla o cursor com a minha mão",
-        "liga o controlo do cursor",
+        // PT-PT paraphrases (ADR-033). Deliberately no bare "cursor" in
+        // any example here -- found live (bench_skill_routing.ts): it
+        // collided with launcher.open_app's own "abre o Cursor" example
+        // (the Cursor code editor), the exact same "a word becomes a
+        // magnet" failure mode skills/shopping_list/manifest.ts already
+        // documents avoiding for "coffee" (and launcher's own comment
+        // a few lines up documents for this *same* app name once
+        // before). "mouse"/"rato" carry the same meaning with no
+        // collision risk.
+        "controla o rato com a minha mão",
+        "liga o controlo do rato",
         "deixa a minha mão mover o rato",
       ],
       lanes: [...CAMERA_CONTROL_LANES],
@@ -136,11 +144,12 @@ export const manifest: SkillManifest = {
       id: "stop_pointer_control",
       description: "Turn off hand-driven cursor control, leaving hand tracking itself running.",
       examples: [
-        "stop controlling the cursor",
+        "stop controlling the mouse",
         "turn off pointer control",
         "let go of the mouse",
-        // PT-PT paraphrases (ADR-033)
-        "desliga o controlo do cursor",
+        // PT-PT paraphrases (ADR-033) -- same "no bare cursor" reasoning
+        // as start_pointer_control's own examples above.
+        "desliga o controlo do rato",
         "larga o rato",
       ],
       lanes: [...CAMERA_CONTROL_LANES],

@@ -359,8 +359,13 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
   `core/router/laneHeuristic.ts`: `classifyLane` now prefers a
   no-model, bilingual heuristic over trusting the `ollama` fallback's
   own JSON specifically -- live-verified against the real provider, the
-  exact documented misroute now resolves correctly. **Still open:**
-  `disambiguate()`'s equivalent gap (the "peanuts" misroute, ADR-038,
-  two prompt-wording attempts tried and benchmark-rejected) -- needs
-  real per-skill logic, a bigger ask than lane classification's fixed 5
-  categories, not attempted.
+  exact documented misroute now resolves correctly. **Resolved
+  2026-08-13, ADR-059:** `disambiguate()`'s equivalent gap (the
+  "peanuts" misroute, ADR-038) turned out to need the same fix as
+  `classifyLane`'s, not per-skill logic after all -- don't trust the
+  `ollama` fallback's disambiguation choice either. Verified against the
+  real `bench_disambiguation_fallback.ts`: 42.9% -> 100%. Also found and
+  fixed a real, unrelated regression from this session's own pointer-
+  control work while re-running the healthy-model benchmark as a check
+  (a "cursor"/"Cursor"-app-name example collision) -- `bench_skill_
+  routing.ts`: 88.6% -> 94.3%.

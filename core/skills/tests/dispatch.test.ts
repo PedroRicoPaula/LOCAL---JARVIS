@@ -12,14 +12,19 @@ import type { Skill, SkillContext } from "../types.ts";
  * whether "Candidates:" (the disambiguation prompt's own marker) is
  * present in the user message. */
 class ScriptedRouterProvider implements ModelProvider {
-  readonly id = "scripted";
+  readonly id: string;
   readonly lanes = ["converse"] as const;
   readonly costTier = "free-local" as const;
   disambiguationCalls = 0;
   private readonly disambiguationChoice: string;
 
-  constructor(disambiguationChoice: string) {
+  /** `id` defaults to a plain fixture id; pass `"ollama"` to simulate the
+   * true last-resort provider answering, for the "peanuts" fix's own
+   * test below (dispatch.ts checks this exact string, matching
+   * laneClassifier.ts's identical ADR-040 check). */
+  constructor(disambiguationChoice: string, id = "scripted") {
     this.disambiguationChoice = disambiguationChoice;
+    this.id = id;
   }
 
   async *chat(req: ChatRequest): AsyncIterable<ChatChunk> {
@@ -133,6 +138,49 @@ test("ambiguous scores trigger disambiguation, which picks from the shortlist", 
   assert.equal(provider.disambiguationCalls, 1);
   assert.equal(outcome.outcome, "dispatched");
   if (outcome.outcome === "dispatched") assert.equal(outcome.result.speech, "handled by b");
+});
+
+test("the 'peanuts' bug (ADR-038): the true last-resort provider's disambiguation choice is never trusted", async () => {
+  // Same shape as the "ambiguous scores" test above, except the
+  // provider that answers disambiguation is "ollama" (the true last
+  // resort) -- live-verified (ADR-038) to answer within budget but pick
+  // *wrong* on self-referential fact statements, 42.9% on a degraded-
+  // mode benchmark. Even though this fake scripts it to confidently
+  // choose "b.y", dispatch() must not trust that choice from this
+  // specific provider -- the fix is provider-aware, not prompt-aware.
+  const skillA = skillFixture("a", ["x"]);
+  const skillB = skillFixture("b", ["y"]);
+  const skillsById = new Map([
+    [skillA.manifest.id, skillA],
+    [skillB.manifest.id, skillB],
+  ]);
+  const v1 = [1, 0.3, 0];
+  const v2 = [1, 0.35, 0];
+  const embedder = new ScriptedEmbedder(
+    new Map([
+      ["a x example", v1],
+      ["b y example", v2],
+      ["ambiguous utterance", v1],
+    ]),
+  );
+  const exampleIndex = [
+    { skillId: "a", intentId: "x", example: "a x example", vector: v1 },
+    { skillId: "b", intentId: "y", example: "b y example", vector: v2 },
+  ];
+  const provider = new ScriptedRouterProvider("b.y", "ollama");
+  const routerRegistry = new Registry();
+  routerRegistry.register(provider, ["converse"]);
+
+  const { outcome, trace } = await dispatch(
+    { skillsById, exampleIndex, routerRegistry, buildContext: () => buildContext() },
+    embedder,
+    "ambiguous utterance",
+    "s1",
+  );
+
+  assert.equal(trace.disambiguated, true, "a disambiguation call did happen");
+  assert.equal(provider.disambiguationCalls, 1);
+  assert.equal(outcome.outcome, "no_skill_matched", "its answer must be ignored, not trusted");
 });
 
 test("nothing above the candidate floor: no skill matched, no disambiguation call", async () => {
