@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runRemindersAction } from "../reminders.ts";
+import { runRemindersAction, TIMEOUT_MS } from "../reminders.ts";
 
 function fakeExecFile(stdout: string, shouldFail: Error | null = null) {
   const calls: { file: string; args: readonly string[]; opts?: unknown }[] = [];
@@ -98,7 +98,7 @@ test("a timeout is set on every real call, so a stuck permission dialog can't ha
 
   await runRemindersAction({ action: "list" }, fn);
 
-  assert.equal((calls[0]?.opts as { timeout?: number } | undefined)?.timeout, 15_000);
+  assert.equal((calls[0]?.opts as { timeout?: number } | undefined)?.timeout, TIMEOUT_MS);
 });
 
 test("a malformed payload (missing text) is rejected before any real call", async () => {

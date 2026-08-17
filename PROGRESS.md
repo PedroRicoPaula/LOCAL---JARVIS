@@ -32,9 +32,13 @@ interactive use** (see that ADR's own "owner-required" section).
 **Owner-required, not yet done:**
 1. A real GitHub PAT in Keychain (README § 3d) to confirm the MCP
    pipeline against live third-party data (ADR-047).
-2. Try "what are my tasks" for real via `make dev` in an actual
-   interactive terminal -- if `list_tasks`/`complete_task` hang, watch
-   for a macOS Automation permission dialog and grant it (ADR-052).
+2. Try "what are my tasks" for real via `make dev`, more than once,
+   including right after adding or completing something -- re-
+   investigated live 2026-08-13 (ADR-060): likely iCloud sync latency
+   on freshly-touched items, not a stuck permission dialog as ADR-052
+   first suspected; timeout bumped 15s -> 30s with real headroom
+   measured, but whether that's enough under real everyday use is still
+   only observable from a real interactive session.
 
 **Also researched, not built:** a screen-guide overlay idea (`docs/
 BACKLOG.md`, inspired by farzaa/clicky) -- real platform work, not

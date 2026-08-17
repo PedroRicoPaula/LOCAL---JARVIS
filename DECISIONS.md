@@ -71,4 +71,5 @@ Format: Context → Decision → Consequences.
 | [ADR-057](docs/decisions/ADR-057.md) | Real performance fixes for gesture tracking, found by measuring, not guessing |
 | [ADR-058](docs/decisions/ADR-058.md) | Pointer control: 8 real findings from a dedicated security review, all fixed |
 | [ADR-059](docs/decisions/ADR-059.md) | The "peanuts" bug fixed: don't trust the degraded model's disambiguation choice |
+| [ADR-060](docs/decisions/ADR-060.md) | Reminders `list`/`complete` hang: re-investigated live, narrowed, partially fixed |
 
