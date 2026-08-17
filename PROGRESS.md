@@ -421,6 +421,16 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
   same as before, behavior unchanged. `make check` green after (498 TS
   + 108 Python). 3 files remain over the guideline: `senses/eyes/
   gestures.py`, `senses/eyes/main.py`, `ui/src/lib/use-jarvis.ts`.
+- **`senses/eyes/main.py` split 2026-08-17**, same stretch: 369 -> 302
+  lines. `GestureHolder`/`SessionHolder`/`ConnectionHolder` (three
+  "one lock, one current thing" state holders, no protocol/dispatch
+  logic of their own) moved to new `senses/eyes/state.py`. `handle_message`
+  (the real dispatch logic, ~175 lines) stays in `main.py` -- it's the
+  file's own actual subject, not something to relocate for a line-count
+  target. `ruff` clean, 108 Python tests unchanged (nothing imported
+  the three classes from anywhere but `main.py`'s own re-exported
+  names, still valid after the move). 2 files remain over the
+  guideline: `senses/eyes/gestures.py`, `ui/src/lib/use-jarvis.ts`.
 - **Resolved 2026-08-17, ADR-061:** the 5-skill routing benchmark
   coverage gap flagged earlier this session (`system_health`, `gmail`,
   `github`, `about`, `look` had zero cases in `bench_skill_routing.ts`)
