@@ -13,24 +13,31 @@
  * A green-tier `ProposedAction` skips this lifecycle entirely — it runs
  * unprompted, per CLAUDE.md § 5's table, but is still logged (SPEC.md § 8
  * / CLAUDE.md § 5: every tier is logged, only yellow/red block).
+ *
+ * Persistence (`approvals`/`audit_log` SQL) lives in `store.ts`, and the
+ * orphaned-observation-file cleanup lives in `observationCleanup.ts` —
+ * split out 2026-08-17 (CLAUDE.md § 3's ~300-line guideline). This file
+ * keeps just the state-machine logic.
  */
 
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { unlink } from "node:fs/promises";
 import { ulid } from "ulid";
-import type {
-  ApprovalOutcome,
-  ApprovalRequest,
-  ApprovalResponse,
-  ApprovalState,
-  Capability,
-  ProposedAction,
-} from "../../shared/types.ts";
+import type { ApprovalOutcome, ApprovalRequest, ApprovalResponse, ApprovalState, Capability, ProposedAction } from "../../shared/types.ts";
 import { GREEN_CAPABILITIES } from "../../shared/types.ts";
 import { ensureGateSchema } from "./db.ts";
 import { sign, timingSafeEqualStrings, verify } from "./hmac.ts";
+import { cleanupObservationFile } from "./observationCleanup.ts";
+import {
+  type ApprovalRow,
+  getApprovalRow,
+  insertApproval,
+  insertAuditLog,
+  listPendingApprovals,
+  rowToRequest,
+  setApprovalState,
+} from "./store.ts";
 
 export const DEFAULT_EXPIRY_MS = 5 * 60_000; // SPEC.md SS8: "expiresAt (default 5 min)"
 
@@ -52,38 +59,9 @@ export function capabilityTier(capability: Capability): CapabilityTier {
   return GREEN_CAPABILITIES.includes(capability) ? "green" : "yellow";
 }
 
-interface ApprovalRow {
-  id: string;
-  nonce: string;
-  created_at: number;
-  expires_at: number;
-  capability: string;
-  skill_id: string;
-  human_summary: string;
-  payload: string;
-  diff: string | null;
-  state: ApprovalState;
-}
-
 interface PendingEntry {
   resolve: (outcome: ApprovalOutcome) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
-}
-
-function rowToRequest(row: ApprovalRow): ApprovalRequest {
-  const request: ApprovalRequest = {
-    id: row.id,
-    nonce: row.nonce,
-    createdAt: row.created_at,
-    expiresAt: row.expires_at,
-    capability: row.capability as Capability,
-    skillId: row.skill_id,
-    humanSummary: row.human_summary,
-    payload: JSON.parse(row.payload),
-    state: row.state,
-  };
-  if (row.diff !== null) request.diff = row.diff;
-  return request;
 }
 
 /** Emits `"approval.new"` (full `ApprovalRequest`, wire-shaped) and
@@ -169,7 +147,7 @@ export class Gate extends EventEmitter {
         this.setState(id, "expired");
         this.logAudit(id, "expired", {});
         this.emit("approval.resolved", { requestId: id, state: "expired" });
-        this.cleanupObservationFile(row);
+        cleanupObservationFile(row);
         resolve({ ok: false, reason: "expired" });
       }, Math.max(0, expiresAt - createdAt));
       this.pending.set(id, { resolve, timeoutHandle });
@@ -201,13 +179,13 @@ export class Gate extends EventEmitter {
 
     if (now() > row.expires_at) {
       this.settlePending(row.id, "expired", { ok: false, reason: "expired" }, { channel: response.channel });
-      this.cleanupObservationFile(row);
+      cleanupObservationFile(row);
       return;
     }
 
     if (response.decision !== "approve") {
       this.settlePending(row.id, "rejected", { ok: false, reason: "rejected" }, { channel: response.channel });
-      this.cleanupObservationFile(row);
+      cleanupObservationFile(row);
       return;
     }
 
@@ -282,9 +260,7 @@ export class Gate extends EventEmitter {
   }
 
   listPending(): ApprovalRow[] {
-    return (
-      this.db.prepare("SELECT * FROM approvals WHERE state = 'pending' ORDER BY created_at").all() as unknown as ApprovalRow[]
-    );
+    return listPendingApprovals(this.db);
   }
 
   /** Wire-shaped, for a freshly opened dashboard tab to backfill —
@@ -317,66 +293,19 @@ export class Gate extends EventEmitter {
     entry?.resolve(outcome);
   }
 
-  /** Rejected/expired `MEMORY_WRITE` `kind: "observation"` proposals leave
-   * `skills/look`'s durable `data/observations/*.jpg` copy (ADR-045)
-   * unreferenced by any DB row forever -- confirmed live, 2026-08-07
-   * (PROGRESS.md's dated entry, `docs/BACKLOG.md`'s Annoyances section):
-   * a real photo's approval expired unactioned and the file just sat on
-   * disk. Only fires for a `kind: "observation"` payload (a `kind: "fact"`
-   * proposal has no file to clean up); best-effort and silent on a
-   * missing file (already gone is not an error worth logging). */
-  private cleanupObservationFile(row: ApprovalRow): void {
-    if (row.capability !== "MEMORY_WRITE") return;
-    let payload: unknown;
-    try {
-      payload = JSON.parse(row.payload);
-    } catch {
-      return;
-    }
-    if (typeof payload !== "object" || payload === null) return;
-    const p = payload as Record<string, unknown>;
-    if (p["kind"] !== "observation" || typeof p["imagePath"] !== "string" || !p["imagePath"]) return;
-    const imagePath = p["imagePath"];
-    unlink(imagePath).catch((err) => {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") {
-        console.error(`gate: failed to delete orphaned observation file ${imagePath}`, err);
-      }
-    });
-  }
-
   private insertApproval(row: ApprovalRow): void {
-    this.db
-      .prepare(
-        `INSERT INTO approvals (id, nonce, created_at, expires_at, capability, skill_id, human_summary, payload, diff, state)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        row.id,
-        row.nonce,
-        row.created_at,
-        row.expires_at,
-        row.capability,
-        row.skill_id,
-        row.human_summary,
-        row.payload,
-        row.diff,
-        row.state,
-      );
+    insertApproval(this.db, row);
   }
 
   private getApprovalRow(id: string): ApprovalRow | null {
-    const row = this.db.prepare("SELECT * FROM approvals WHERE id = ?").get(id) as unknown as ApprovalRow | undefined;
-    return row ?? null;
+    return getApprovalRow(this.db, id);
   }
 
   private setState(id: string, state: ApprovalState): void {
-    this.db.prepare("UPDATE approvals SET state = ? WHERE id = ?").run(state, id);
+    setApprovalState(this.db, id, state);
   }
 
   private logAudit(approvalId: string | null, event: string, detail: Record<string, unknown>): void {
-    this.db
-      .prepare("INSERT INTO audit_log (id, ts, approval_id, event, detail) VALUES (?, ?, ?, ?, ?)")
-      .run(ulid(), Date.now(), approvalId, event, JSON.stringify(detail));
+    insertAuditLog(this.db, approvalId, event, detail);
   }
 }

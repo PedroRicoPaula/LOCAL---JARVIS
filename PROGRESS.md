@@ -398,6 +398,19 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
   originally as a suspect, but no failing test or hang was traced to it
   specifically; the RAM pressure remains the more likely explanation for
   the Ollama slowness observed earlier this session.
+- **`core/gate/gate.ts` split 2026-08-17** (one of the 5 files flagged
+  earlier this session as over CLAUDE.md § 3's ~300-line guideline,
+  deliberately deferred then as needing a careful, dedicated pass):
+  382 -> 311 lines. Persistence (`approvals`/`audit_log` SQL) moved to
+  new `core/gate/store.ts`; the orphaned-observation-file cleanup moved
+  to new `core/gate/observationCleanup.ts`. `Gate`'s public surface is
+  unchanged -- every external import (`core/main.ts`, `core/http.ts`,
+  `core/ws.ts`, `core/factExtraction.ts`, `core/skills/context.ts`, and
+  their tests) still imports `Gate`/`Executor` from `gate.ts` itself,
+  untouched. `make check` green after (498 TS + 108 Python), including
+  `core/gate/tests/gate.test.ts` unmodified. 4 files remain over the
+  guideline: `core/main.ts`, `senses/eyes/gestures.py`, `senses/eyes/
+  main.py`, and `ui/src/lib/use-jarvis.ts` (already partially split).
 - **Resolved 2026-08-17, ADR-061:** the 5-skill routing benchmark
   coverage gap flagged earlier this session (`system_health`, `gmail`,
   `github`, `about`, `look` had zero cases in `bench_skill_routing.ts`)
