@@ -94,9 +94,20 @@ export const manifest: SkillManifest = {
         "turn on gesture mode",
         "let me control it with my hands",
         "show me the camera feed",
-        // PT-PT paraphrases (ADR-033)
+        // PT-PT paraphrases (ADR-033). "ativa o rastreio de mãos" added
+        // 2026-08-17 -- found live (bench_skill_routing.ts): with only
+        // "ativa o modo de gestos" as this intent's own "ativa" example,
+        // that exact natural phrasing (swap "liga"->"ativa", keep
+        // "rastreio de mãos") embedded *closer* to stop_gestures's
+        // "desliga o rastreio de mãos" (0.96) than to this intent's own
+        // "liga o rastreio de mãos" (0.83) -- reproduced deterministically,
+        // not LLM-call variance. Same fix class as the "cursor"/"Cursor"
+        // collision a few lines below: give the intent a real, direct
+        // example for the actual phrase instead of relying on a
+        // different noun phrase's "ativa" example to generalize.
         "liga o rastreio de mãos",
         "ativa o modo de gestos",
+        "ativa o rastreio de mãos",
         "segue as minhas mãos",
         "mostra-me a câmara",
       ],

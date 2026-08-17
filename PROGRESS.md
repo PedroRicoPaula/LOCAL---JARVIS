@@ -398,3 +398,11 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
   originally as a suspect, but no failing test or hang was traced to it
   specifically; the RAM pressure remains the more likely explanation for
   the Ollama slowness observed earlier this session.
+- **Resolved 2026-08-17, ADR-061:** the 5-skill routing benchmark
+  coverage gap flagged earlier this session (`system_health`, `gmail`,
+  `github`, `about`, `look` had zero cases in `bench_skill_routing.ts`)
+  is closed -- 15 new real paraphrase cases, all 13 skills now covered.
+  Found and fixed a real deterministic embedding collision along the
+  way (PT-PT "ativa o rastreio de mãos" vs. `look`'s own
+  `stop_gestures`), same failure class as ADR-059's "cursor"-app-name
+  collision. Baseline updated 88.6 -> 89.0 for the new, larger case set.

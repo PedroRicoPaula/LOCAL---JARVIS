@@ -92,6 +92,27 @@ const CASES: Case[] = [
   { utterance: "grab a screenshot of this for me", expected: { skillId: "clipboard", intentId: "capture_screenshot" } },
   { utterance: "turn on do not disturb for me", expected: { skillId: "media", intentId: "set_focus_mode" } },
   { utterance: "desliga o não incomodar", expected: { skillId: "media", intentId: "set_focus_mode" } },
+  // system_health / gmail / github / about / look -- added 2026-08-17,
+  // closing a real coverage gap: these 5 of 13 registered skills had zero
+  // cases here despite being live-integrated, found during a broad smoke
+  // test this session. Real paraphrases, not the manifest's own literal
+  // example strings, same standard as every other block above.
+  { utterance: "is my computer running okay", expected: { skillId: "system_health", intentId: "check_system" } },
+  { utterance: "how much cpu am I using right now", expected: { skillId: "system_health", intentId: "check_system" } },
+  { utterance: "quanto espaço livre é que tenho no disco", expected: { skillId: "system_health", intentId: "check_system" } },
+  { utterance: "anything new in my inbox", expected: { skillId: "gmail", intentId: "check_email" } },
+  { utterance: "check if Maria emailed me about the trip", expected: { skillId: "gmail", intentId: "check_email" } },
+  { utterance: "tenho algum email da faculdade", expected: { skillId: "gmail", intentId: "check_email" } },
+  { utterance: "what projects do I have on github", expected: { skillId: "github", intentId: "list_repos" } },
+  { utterance: "pull up my github repos", expected: { skillId: "github", intentId: "list_repos" } },
+  { utterance: "what are you able to do for me", expected: { skillId: "about", intentId: "list_capabilities" } },
+  { utterance: "walk me through your own features", expected: { skillId: "about", intentId: "list_capabilities" } },
+  { utterance: "o que sabes fazer por mim", expected: { skillId: "about", intentId: "list_capabilities" } },
+  { utterance: "can you turn the camera on for me", expected: { skillId: "look", intentId: "open_camera" } },
+  { utterance: "what am I looking at right now", expected: { skillId: "look", intentId: "describe" } },
+  { utterance: "start following my hands", expected: { skillId: "look", intentId: "start_gestures" } },
+  { utterance: "ativa o rastreio de mãos", expected: { skillId: "look", intentId: "start_gestures" } },
+  { utterance: "let my hand drive the mouse", expected: { skillId: "look", intentId: "start_pointer_control" } },
 ];
 
 async function main(): Promise<number> {

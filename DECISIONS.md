@@ -72,4 +72,5 @@ Format: Context → Decision → Consequences.
 | [ADR-058](docs/decisions/ADR-058.md) | Pointer control: 8 real findings from a dedicated security review, all fixed |
 | [ADR-059](docs/decisions/ADR-059.md) | The "peanuts" bug fixed: don't trust the degraded model's disambiguation choice |
 | [ADR-060](docs/decisions/ADR-060.md) | Reminders `list`/`complete` hang: re-investigated live, narrowed, partially fixed |
+| [ADR-061](docs/decisions/ADR-061.md) | Closed the 5-skill routing coverage gap, found a real deterministic collision |
 
