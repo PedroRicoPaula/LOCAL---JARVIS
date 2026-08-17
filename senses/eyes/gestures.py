@@ -20,6 +20,15 @@ this M1.
 at module import -- same reasoning as `senses/ears/wake_word.py`'s lazy
 `openwakeword` import: tests use `FakeHandTracker` and must never pay a
 ~1s native-library import cost (or require the dependency at all).
+
+Hand detection (`Hand`/`Landmark`/`HandTracker`/`RealHandTracker`), the
+pointing-pose check (`is_pointing`), and background obscuring
+(`BackgroundBlurrer`/`RealBackgroundBlurrer`) live in their own modules
+(`handTracker.py`, `pointingPose.py`, `blur.py`) as of 2026-08-17
+(CLAUDE.md § 3's ~300-line guideline) -- re-imported here so every
+existing caller of `gestures.Hand`/`gestures.is_pointing`/etc keeps
+working unchanged. This file keeps `GestureLoop` itself, the one thing
+that's actually this module's own subject.
 """
 
 from __future__ import annotations
@@ -28,12 +37,11 @@ import base64
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Protocol
-
-import numpy as np
+from typing import Any
 
 from senses.eyes import config
+from senses.eyes.blur import BackgroundBlurrer, RealBackgroundBlurrer
+from senses.eyes.handTracker import Hand, HandTracker, Landmark, RealHandTracker
 from senses.eyes.pointer import (
     ClickTrigger,
     PointerBackend,
@@ -41,68 +49,23 @@ from senses.eyes.pointer import (
     RealPointerBackend,
     map_to_screen,
 )
+from senses.eyes.pointingPose import is_pointing
 
-
-@dataclass(frozen=True)
-class Landmark:
-    x: float
-    y: float
-    z: float
-
-
-@dataclass(frozen=True)
-class Hand:
-    """One detected hand. `handedness` is MediaPipe's own "Left"/"Right"
-    label; note it describes the *real* hand as seen, while the preview
-    image is mirrored for the owner's own sanity (see `mirror_frame`)."""
-
-    handedness: str
-    landmarks: tuple[Landmark, ...]
-
-
-class HandTracker(Protocol):
-    def detect(self, frame: Any) -> tuple[Hand, ...]:
-        """One raw BGR frame in, detected hands out. Empty tuple means no
-        hand was visible -- a normal, frequent case, never an error."""
-        ...
-
-    def close(self) -> None: ...
-
-
-class RealHandTracker:
-    def __init__(self, model_path: str | None = None) -> None:
-        import cv2
-        import mediapipe as mp
-        from mediapipe.tasks import python as mp_python
-        from mediapipe.tasks.python import vision
-
-        self._cv2 = cv2
-        self._mp = mp
-        base_options = mp_python.BaseOptions(
-            model_asset_path=str(model_path or config.HAND_MODEL_PATH)
-        )
-        options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=2)
-        self._detector = vision.HandLandmarker.create_from_options(options)
-
-    def detect(self, frame: Any) -> tuple[Hand, ...]:
-        rgb = self._cv2.cvtColor(frame, self._cv2.COLOR_BGR2RGB)
-        image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
-        result = self._detector.detect(image)
-        hands: list[Hand] = []
-        for i, landmarks in enumerate(result.hand_landmarks):
-            handedness = "Unknown"
-            if i < len(result.handedness) and result.handedness[i]:
-                handedness = result.handedness[i][0].category_name
-            hands.append(
-                Hand(
-                    handedness=handedness,
-                    landmarks=tuple(Landmark(lm.x, lm.y, lm.z) for lm in landmarks),
-                )
-            )
-        return tuple(hands)
-
-    def close(self) -> None:
-        self._detector.close()
+__all__ = [
+    "BackgroundBlurrer",
+    "GestureLoop",
+    "Hand",
+    "HandTracker",
+    "Landmark",
+    "RealBackgroundBlurrer",
+    "RealHandTracker",
+    "encode_preview",
+    "hands_to_wire",
+    "is_pointing",
+    "mirror_frame",
+    "mirror_hands",
+    "resize_for_preview",
+]
 
 
 def mirror_frame(frame: Any) -> Any:
@@ -127,102 +90,6 @@ def mirror_hands(hands: tuple[Hand, ...]) -> tuple[Hand, ...]:
         )
         for h in hands
     )
-
-
-# MediaPipe's fixed 21-point topology (same indices `ui/src/lib/hand.ts`
-# uses browser-side for the pinch/open-palm demos).
-_WRIST = 0
-_INDEX_TIP, _INDEX_JOINT = 8, 6
-_MIDDLE_TIP, _MIDDLE_JOINT = 12, 10
-_RING_TIP, _RING_JOINT = 16, 14
-_PINKY_TIP, _PINKY_JOINT = 20, 18
-
-
-def _distance(a: Landmark, b: Landmark) -> float:
-    return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2) ** 0.5
-
-
-def is_pointing(hand: Hand) -> bool:
-    """Index finger extended, the other three curled -- the deliberate
-    "I am pointing at something" pose. Added 2026-08-13 after a security
-    review found that requiring *only* a physical keypress to fire a
-    click was not enough on its own: an incidental hand near the camera
-    (plausible on a laptop, whose built-in camera commonly sees hands
-    near the keyboard) could arm a click on a coincidental keypress
-    unrelated to pointing. This closes that gap independently of the
-    keypress fix -- a click now needs *both* a real key edge *and* a
-    real pointing hand at that instant, not either alone."""
-    lm = hand.landmarks
-    if len(lm) <= max(_PINKY_TIP, _PINKY_JOINT):
-        return False
-    wrist = lm[_WRIST]
-
-    def extended(tip: int, joint: int) -> bool:
-        return _distance(wrist, lm[tip]) > _distance(wrist, lm[joint])
-
-    return (
-        extended(_INDEX_TIP, _INDEX_JOINT)
-        and not extended(_MIDDLE_TIP, _MIDDLE_JOINT)
-        and not extended(_RING_TIP, _RING_JOINT)
-        and not extended(_PINKY_TIP, _PINKY_JOINT)
-    )
-
-
-class BackgroundBlurrer(Protocol):
-    def blur(self, frame: Any) -> Any:
-        """Person sharp, everything else blurred. Never called on the
-        frame handed to hand detection -- only on the preview copy."""
-        ...
-
-    def close(self) -> None: ...
-
-
-class RealBackgroundBlurrer:
-    """MediaPipe's selfie segmenter, same free/local/Apache-2.0 stack as
-    hand tracking. Verified real before adoption: 9ms steady-state
-    against a real image (250ms preview budget at 4fps), category 0 =
-    person / 255 = background confirmed against a real mask, not
-    assumed from the model card."""
-
-    def __init__(self, model_path: str | None = None) -> None:
-        import cv2
-        import mediapipe as mp
-        from mediapipe.tasks import python as mp_python
-        from mediapipe.tasks.python import vision
-
-        self._cv2 = cv2
-        self._mp = mp
-        base_options = mp_python.BaseOptions(
-            model_asset_path=str(model_path or config.SEGMENTER_MODEL_PATH)
-        )
-        options = vision.ImageSegmenterOptions(base_options=base_options, output_category_mask=True)
-        self._segmenter = vision.ImageSegmenter.create_from_options(options)
-
-    def blur(self, frame: Any) -> Any:
-        cv2 = self._cv2
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
-        # numpy_view() already comes back (H, W, 1) -- found live, not
-        # assumed: appending another axis for the broadcast gave
-        # (H, W, 1, 1) against the frame's (H, W, 3) and raised.
-        mask = self._segmenter.segment(image).category_mask.numpy_view()
-        is_person = mask.reshape(mask.shape[0], mask.shape[1], 1) == 0
-        # Blended toward the dashboard's own background colour, not a
-        # Gaussian blur -- owner request 2026-08-12: the background
-        # should read as *completely* obscured (nothing legible behind
-        # the person) so it never competes visually with the shapes/
-        # skeleton overlay drawn on top. A weighted blend is also
-        # cheaper than a 35px Gaussian convolution -- this happened to
-        # fix a real CPU cost, not just a look, once the frame was also
-        # downscaled before this runs (see resize_for_preview's own
-        # note for the measured before/after).
-        dark = np.full_like(frame, config.GESTURE_OBSCURE_BGR)
-        alpha = config.GESTURE_OBSCURE_ALPHA
-        obscured = cv2.addWeighted(frame, 1.0 - alpha, dark, alpha, 0)
-        return np.where(is_person, frame, obscured)
-
-    def close(self) -> None:
-        self._segmenter.close()
 
 
 def resize_for_preview(frame: Any, width: int) -> Any:

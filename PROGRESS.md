@@ -431,6 +431,24 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
   the three classes from anywhere but `main.py`'s own re-exported
   names, still valid after the move). 2 files remain over the
   guideline: `senses/eyes/gestures.py`, `ui/src/lib/use-jarvis.ts`.
+- **`senses/eyes/gestures.py` split 2026-08-17**, same stretch: 504 ->
+  371 lines. Three self-contained concerns moved to their own modules:
+  `Hand`/`Landmark`/`HandTracker`/`RealHandTracker` -> new
+  `senses/eyes/handTracker.py`; the pointing-pose safety check
+  (`is_pointing`, the security-review-driven click gate) -> new
+  `senses/eyes/pointingPose.py`; `BackgroundBlurrer`/
+  `RealBackgroundBlurrer` -> new `senses/eyes/blur.py`. `gestures.py`
+  re-imports all of them (plus an explicit `__all__`) so every existing
+  caller (`main.py`, `senses/eyes/tests/test_gestures.py`) keeps
+  importing from `gestures.gestures` unchanged. `GestureLoop` itself
+  (~230 lines) stays whole and untouched -- the most safety-critical
+  code in this project (pointer-control click firing), deliberately not
+  fragmented further for a line-count target. `ruff` clean (one
+  auto-fixed import order), 108 Python tests unchanged, `make check`
+  green (498 TS + 108 Python). This closes the file-splitting pass
+  started earlier this session: only `ui/src/lib/use-jarvis.ts` (332
+  lines, already partially split, re-exports its types cleanly) remains
+  over the guideline, judged not worth forcing further.
 - **Resolved 2026-08-17, ADR-061:** the 5-skill routing benchmark
   coverage gap flagged earlier this session (`system_health`, `gmail`,
   `github`, `about`, `look` had zero cases in `bench_skill_routing.ts`)
