@@ -80,3 +80,4 @@ Format: Context → Decision → Consequences.
 | [ADR-066](docs/decisions/ADR-066.md) | Two dashboard defects: a silently-swallowed write, and a signal built but never rendered |
 | [ADR-067](docs/decisions/ADR-067.md) | Two defects a code review caught in this session's own fixes |
 | [ADR-068](docs/decisions/ADR-068.md) | Proving the gate's security invariants, and one real gap found doing it |
+| [ADR-069](docs/decisions/ADR-069.md) | Three parallel deep reviews: one crash, one broken language, one broken recall |

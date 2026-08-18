@@ -77,5 +77,27 @@ def read_lines(conn: socket.socket) -> Iterator[dict[str, Any]]:
             return
         while b"\n" in buf:
             line, buf = buf.split(b"\n", 1)
-            if line.strip():
-                yield json.loads(line)
+            if not line.strip():
+                continue
+            # One malformed line must never take the daemon down. Found
+            # 2026-08-17 and reproduced against the real reader: this
+            # `json.loads` was unguarded, and the exception surfaced from
+            # the generator's own `next()` -- which happens *outside*
+            # every try/except in both callers (`senses/voice/main.py`'s
+            # `for message in ipc.read_lines(conn)`, and
+            # `senses/eyes/main.py`'s `run_forever`, whose except only
+            # wraps `handle_message`, not the `for` statement). So a
+            # single bad byte on the socket killed TTS or the whole
+            # camera/gesture/pointer subsystem until something restarted
+            # it, breaking SPEC.md § 2's "always on"/"idle" contract.
+            # The socket has no auth beyond file permissions, so any
+            # local process -- or a `core` bug -- could do it.
+            #
+            # Skip the line and keep serving: the next valid message on
+            # the same connection is still delivered, verified by test.
+            try:
+                message = json.loads(line)
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                print(f"ipc: dropping a malformed line ({exc!r})")
+                continue
+            yield message

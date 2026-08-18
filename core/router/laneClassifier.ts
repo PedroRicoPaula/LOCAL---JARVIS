@@ -144,6 +144,18 @@ export async function classifyLane(
     throw new LaneClassificationError(`classifier returned invalid JSON: ${text.slice(0, 200)}`, { cause });
   }
 
+  // `JSON.parse("null")` succeeds and returns `null`, and `null.lane`
+  // is a TypeError -- thrown *outside* the try above, so it escaped as
+  // an uncaught crash rather than the LaneClassificationError this
+  // function's whole contract is built on. Same for a bare number,
+  // string or array, all of which are valid JSON. Found 2026-08-17; a
+  // weak model in the fallback chain emitting `null` under load is a
+  // plausible trigger, and it would have taken down the turn instead of
+  // falling back.
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new LaneClassificationError(`classifier returned a non-object: ${JSON.stringify(parsed)}`);
+  }
+
   const record = parsed as { lane?: unknown; confidence?: unknown };
   const lane = String(record.lane ?? "").trim().toLowerCase();
   if (!VALID_LANES.includes(lane as Lane)) {

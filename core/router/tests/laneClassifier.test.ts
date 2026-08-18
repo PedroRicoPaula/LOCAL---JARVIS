@@ -80,3 +80,21 @@ test("ADR-040: a non-ollama provider's answer is trusted as before, heuristic ne
   assert.equal(result.lane, "converse");
   assert.equal(result.confidence, 0.8);
 });
+
+// --- valid JSON that is not an object (2026-08-17) -------------------
+// JSON.parse("null") succeeds and null.lane is a TypeError, thrown
+// outside the parse try/catch -- so a classifier emitting bare `null`
+// crashed the turn instead of falling back. Same for a number, string
+// or array: all valid JSON, none of them a record.
+
+test("a classifier returning bare null fails as a LaneClassificationError, not a TypeError", async () => {
+  for (const body of ["null", "123", '"converse"', "[]", '["converse"]', "true"]) {
+    const registry = new Registry();
+    registry.register(new FakeProvider({ id: "fake", lanes: ["converse"], text: body }));
+    await assert.rejects(
+      classifyLane(registry, "anything"),
+      (err: unknown) => err instanceof LaneClassificationError,
+      `expected LaneClassificationError for ${body}`,
+    );
+  }
+});
