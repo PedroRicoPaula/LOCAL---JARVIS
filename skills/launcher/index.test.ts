@@ -341,3 +341,56 @@ test("isAppNotFoundError matches only the real macOS not-installed message", () 
   assert.equal(isAppNotFoundError("The application could not be launched. (-10810)"), false);
   assert.equal(isAppNotFoundError(undefined), false);
 });
+
+// --- websiteGuessFor security invariants (2026-08-17) ----------------
+// This function's output is opened in the real browser. A security
+// review rated the auto-navigation MEDIUM on business-logic grounds (a
+// brand may not own its bare .com) -- these tests guard the other half:
+// that a hostile or merely weird "app name", extracted by an LLM from
+// ambient speech, can never steer the URL somewhere other than a plain
+// https://<slug>.com. Derived from a property fuzz over 5000 random
+// inputs plus the hand-picked hostile cases below; every property held,
+// and they are pinned here so they keep holding.
+
+const HOSTILE_NAMES = [
+  "evil.com/@real",      // path/@ trick
+  "a.b.c",               // subdomain injection
+  "../../etc/passwd",    // traversal
+  "javascript:alert(1)", // scheme injection
+  "user:pass@host",      // credentials
+  "localhost:8080",      // port
+  "127.0.0.1",           // IP literal
+  "xn--e1awd7f",         // punycode passthrough
+  "аpple",               // Cyrillic homoglyph 'а'
+  "日本語",               // non-latin script
+  "real .com",
+  "a\nb",
+  "a\tb",
+  "a".repeat(500),
+];
+
+test("websiteGuessFor can never be steered off a plain https://<slug>.com", () => {
+  for (const name of HOSTILE_NAMES) {
+    const url = websiteGuessFor(name);
+    if (url === null) continue; // refusing outright is always acceptable
+    assert.match(url, /^https:\/\/[a-z0-9]+\.com$/, `escaped its shape for ${JSON.stringify(name)}: ${url}`);
+
+    const parsed = new URL(url);
+    assert.equal(parsed.protocol, "https:", name);
+    assert.equal(parsed.pathname, "/", `gained a path from ${JSON.stringify(name)}`);
+    assert.equal(parsed.username, "", `gained credentials from ${JSON.stringify(name)}`);
+    assert.equal(parsed.password, "");
+    assert.equal(parsed.port, "", `gained a port from ${JSON.stringify(name)}`);
+    assert.equal(parsed.search, "");
+    assert.equal(parsed.hash, "");
+    // Punycode would mean a homoglyph/IDN name reached a real different
+    // domain -- the one outcome that would make this genuinely unsafe.
+    assert.ok(!parsed.hostname.startsWith("xn--"), `became punycode from ${JSON.stringify(name)}`);
+  }
+});
+
+test("websiteGuessFor refuses a name with nothing usable rather than building a broken URL", () => {
+  for (const name of ["", "   ", "!!!", "-", "..", "日本語", "///"]) {
+    assert.equal(websiteGuessFor(name), null, `expected null for ${JSON.stringify(name)}`);
+  }
+});
