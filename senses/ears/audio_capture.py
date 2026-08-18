@@ -20,6 +20,7 @@ never reached its target. See PROGRESS.md's Phase 2 log.
 
 from __future__ import annotations
 
+import os
 import queue
 import tempfile
 import threading
@@ -57,7 +58,16 @@ class AudioSource(Protocol):
 
 
 def _write_wav(audio: np.ndarray, sample_rate: int, channels: int) -> Path:
-    path = Path(tempfile.mkstemp(suffix=".wav", prefix="jarvis-utterance-")[1])
+    # `mkstemp` returns (fd, path) and opens the fd -- it must be closed,
+    # or every captured utterance leaks one for the life of the daemon.
+    # Measured 2026-08-17: 30 captures leaked 30 file descriptors, on a
+    # process SPEC.md § 2 keeps running permanently. Left alone, `ears`
+    # eventually hits the process fd limit and simply stops hearing.
+    # `wave.open` below opens the path separately, so nothing needs this
+    # descriptor.
+    fd, name = tempfile.mkstemp(suffix=".wav", prefix="jarvis-utterance-")
+    os.close(fd)
+    path = Path(name)
     with wave.open(str(path), "wb") as wav:
         wav.setnchannels(channels)
         wav.setsampwidth(2)  # int16

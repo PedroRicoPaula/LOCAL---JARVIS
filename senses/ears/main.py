@@ -11,6 +11,7 @@ docs/ARCHITECTURE.md § 7.
 
 from __future__ import annotations
 
+import contextlib
 import signal
 import socket
 import threading
@@ -66,7 +67,19 @@ def capture_and_transcribe(
     end_of_speech_ts = time.time()  # DoD's "time to first audible syllable"
     wav_path = disarm()
 
-    text = transcriber.transcribe(wav_path)
+    try:
+        text = transcriber.transcribe(wav_path)
+    finally:
+        # The captured audio is a scratch file, not a record -- nothing
+        # reads it after transcription, and SPEC.md § 2 keeps this daemon
+        # running permanently, so "one small WAV per utterance, forever"
+        # is a real disk leak (found 2026-08-17). Deleted in a `finally`
+        # so a transcription failure doesn't leave one behind either.
+        # `missing_ok`: a fake/in-memory source may never have written a
+        # real file, and that is not an error worth raising here.
+        with contextlib.suppress(OSError):
+            wav_path.unlink(missing_ok=True)
+
     if text:
         emit({"type": "utterance", "text": text, "ts": end_of_speech_ts})
     else:

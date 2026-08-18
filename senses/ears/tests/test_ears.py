@@ -3,10 +3,12 @@ network. CLAUDE.md § 3."""
 
 from __future__ import annotations
 
+import os
 import threading
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from senses.ears.fakes import (
     FakeAck,
@@ -17,6 +19,7 @@ from senses.ears.fakes import (
 )
 from senses.ears.main import (
     ConnectionHolder,
+    capture_and_transcribe,
     handle_hotkey_utterance,
     handle_wakeword_utterance,
     make_wake_handler,
@@ -229,3 +232,81 @@ def test_wake_word_watch_fires_via_safety_cap_if_score_never_falls() -> None:
         on_frame(np.zeros(1280, dtype="int16"))
 
     assert fired == [0.9]  # fired once, at frame 20, not zero times
+
+
+# --- temp-file / fd leaks (2026-08-17) -------------------------------
+# `ears` runs permanently (SPEC.md § 2), so anything leaked per utterance
+# is leaked forever. Both of these were measured before being fixed:
+# 30 captures leaked 30 file descriptors AND left 30 WAVs on disk.
+
+
+def test_writing_a_capture_wav_leaks_no_file_descriptor():
+    import os
+
+    import numpy as np
+
+    from senses.ears.audio_capture import _write_wav
+
+    audio = np.zeros(160, dtype=np.int16)
+    before = len(os.listdir("/dev/fd"))
+    paths = [_write_wav(audio, 16000, 1) for _ in range(20)]
+    after = len(os.listdir("/dev/fd"))
+    try:
+        # mkstemp opens a descriptor; taking only its path used to drop
+        # it on the floor, and the daemon eventually hit the fd limit and
+        # went deaf.
+        assert after == before, f"leaked {after - before} descriptors over 20 captures"
+    finally:
+        for p in paths:
+            p.unlink(missing_ok=True)
+
+
+def test_the_capture_wav_is_deleted_after_transcription():
+    import tempfile
+    import wave
+    from pathlib import Path
+
+    fd, name = tempfile.mkstemp(suffix=".wav", prefix="jarvis-test-")
+    os.close(fd)
+    wav_path = Path(name)
+    with wave.open(str(wav_path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\x00\x00")
+
+    emitted: list[dict] = []
+    text = capture_and_transcribe(
+        arm=lambda: None,
+        wait_for_end=lambda: None,
+        disarm=lambda: wav_path,
+        transcriber=FakeTranscriber("hello"),
+        emit=emitted.append,
+    )
+
+    assert text == "hello"
+    assert not wav_path.exists(), "the scratch WAV must not survive the turn"
+
+
+def test_the_capture_wav_is_deleted_even_when_transcription_fails():
+    import tempfile
+    from pathlib import Path
+
+    class ExplodingTranscriber:
+        def transcribe(self, wav_path: Path) -> str:
+            raise RuntimeError("whisper died")
+
+    fd, name = tempfile.mkstemp(suffix=".wav", prefix="jarvis-test-")
+    os.close(fd)
+    wav_path = Path(name)
+
+    with pytest.raises(RuntimeError):
+        capture_and_transcribe(
+            arm=lambda: None,
+            wait_for_end=lambda: None,
+            disarm=lambda: wav_path,
+            transcriber=ExplodingTranscriber(),
+            emit=lambda _e: None,
+        )
+
+    assert not wav_path.exists(), "a failed transcription must not leave the WAV behind"
