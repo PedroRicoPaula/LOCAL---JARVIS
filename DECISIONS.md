@@ -75,3 +75,4 @@ Format: Context → Decision → Consequences.
 | [ADR-061](docs/decisions/ADR-061.md) | Closed the 5-skill routing coverage gap, found a real deterministic collision |
 | [ADR-062](docs/decisions/ADR-062.md) | Three real bugs found by driving the live system end to end |
 | [ADR-063](docs/decisions/ADR-063.md) | Dashboard bugs only a *populated* live dashboard could show |
+| [ADR-064](docs/decisions/ADR-064.md) | The `converse` lane was fully synchronous; CLAUDE.md § 7's budget finally measured |

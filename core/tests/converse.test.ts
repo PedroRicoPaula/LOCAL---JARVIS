@@ -78,3 +78,86 @@ test("the persona's rule against claiming an unactioned change actually reaches 
   assert.match(provider.receivedRequests[0]!.system, /it never mutated anything itself/);
   memory.close();
 });
+
+// --- streaming (CLAUDE.md § 7, 2026-08-17) ---------------------------
+// This path used to await the entire model response before speaking a
+// word. Measured cost before the change (bench/bench_latency.ts, real
+// providers): first chunk p50 424ms vs full response p50 2343ms, i.e.
+// ~1.9s per turn of avoidable silence on the most common path.
+
+test("each sentence is spoken as it completes, not after the whole reply", async () => {
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
+  const registry = new Registry();
+  registry.register(
+    new FakeProvider({ id: "fake", lanes: ["converse"], text: "First part. Second part. Third part." }),
+  );
+
+  const spoken: string[] = [];
+  const reply = await generalConversationReply(registry, memory, "tell me something", "s1", [], (s) => spoken.push(s));
+
+  assert.equal(reply, "First part. Second part. Third part.");
+  assert.deepEqual(spoken, ["First part.", "Second part.", "Third part."]);
+  memory.close();
+});
+
+test("the spoken sentences reassemble to exactly the returned text -- nothing lost, nothing duplicated", async () => {
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
+  const registry = new Registry();
+  const text = "Estou bem, obrigado. Precisas de mais alguma coisa? Diz-me";
+  registry.register(new FakeProvider({ id: "fake", lanes: ["converse"], text }));
+
+  const spoken: string[] = [];
+  const reply = await generalConversationReply(registry, memory, "como estás", "s1", [], (s) => spoken.push(s));
+
+  assert.equal(spoken.join(" "), reply);
+  memory.close();
+});
+
+test("a single-sentence reply with no trailing space is still spoken exactly once", async () => {
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
+  const registry = new Registry();
+  registry.register(new FakeProvider({ id: "fake", lanes: ["converse"], text: "Just one sentence." }));
+
+  const spoken: string[] = [];
+  await generalConversationReply(registry, memory, "hi there friend", "s1", [], (s) => spoken.push(s));
+
+  assert.deepEqual(spoken, ["Just one sentence."], "must not speak it twice, and must not stay silent");
+  memory.close();
+});
+
+test("a reply with no sentence punctuation at all is still spoken, not swallowed", async () => {
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
+  const registry = new Registry();
+  registry.register(new FakeProvider({ id: "fake", lanes: ["converse"], text: "no punctuation here" }));
+
+  const spoken: string[] = [];
+  const reply = await generalConversationReply(registry, memory, "say something", "s1", [], (s) => spoken.push(s));
+
+  assert.deepEqual(spoken, ["no punctuation here"]);
+  assert.equal(reply, "no punctuation here");
+  memory.close();
+});
+
+test("the empty-reply fallback is spoken too -- an empty stream must not leave the owner in silence", async () => {
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
+  const registry = new Registry();
+  registry.register(new FakeProvider({ id: "fake", lanes: ["converse"], text: "   " }));
+
+  const spoken: string[] = [];
+  const reply = await generalConversationReply(registry, memory, "hello there", "s1", [], (s) => spoken.push(s));
+
+  assert.equal(reply, "I'm not sure how to help with that.");
+  assert.deepEqual(spoken, ["I'm not sure how to help with that."]);
+  memory.close();
+});
+
+test("omitting onSentence keeps the old non-speaking shape exactly", async () => {
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
+  const registry = new Registry();
+  registry.register(new FakeProvider({ id: "fake", lanes: ["converse"], text: "One. Two." }));
+
+  const reply = await generalConversationReply(registry, memory, "anything", "s1", []);
+
+  assert.equal(reply, "One. Two.");
+  memory.close();
+});

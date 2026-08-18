@@ -286,14 +286,18 @@ async function main(): Promise<void> {
         // The skill already called ctx.say() itself -- don't speak again.
         speech = outcome.result.speech;
       } else {
+        // Each sentence is spoken the moment it completes, not after the
+        // whole reply is assembled -- CLAUDE.md § 7's own rule, measured
+        // as ~1.9s per turn of avoidable waiting before this changed
+        // (see `converse.ts`'s docstring and `bench/bench_latency.ts`).
         speech = await generalConversationReply(
           routerRegistry,
           memory,
           text,
           SESSION_ID,
           skillRegistry.list().map((s) => s.manifest.id),
+          (sentence) => conversation.say(sentence),
         );
-        conversation.say(speech);
       }
       console.log(`core: said ${JSON.stringify(speech)}`);
       const responseEvent = memory.appendEvent({ kind: "response", actor: "jarvis", content: speech, sessionId: SESSION_ID });

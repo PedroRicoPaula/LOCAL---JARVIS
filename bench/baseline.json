@@ -1,5 +1,6 @@
 {
   "bench_router_lane": 97.8,
   "bench_router_lane_pt": 95.6,
-  "bench_skill_routing": 89
+  "bench_skill_routing": 89,
+  "bench_latency_within_budget_pct": 80
 }
