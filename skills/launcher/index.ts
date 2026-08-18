@@ -20,6 +20,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ApprovalOutcome } from "../../shared/types.ts";
 import type { Skill, SkillContext } from "../../core/skills/types.ts";
+import { readAffirmative } from "../_shared/affirmative.ts";
 import { extractOrNull } from "../_shared/extract.ts";
 import { manifest } from "./manifest.ts";
 
@@ -137,13 +138,33 @@ async function proposeOpen(ctx: SkillContext, app: string, path: string | undefi
   if (!outcome.ok && path === undefined && isAppNotFoundError(outcome.detail)) {
     const url = websiteGuessFor(app);
     if (url) {
+      // Read back and confirm before navigating -- docs/SKILLS.md § 5b's
+      // own default skill shape ("propose -> read back -> confirm"), and
+      // the fix for a real MEDIUM finding from this change's own security
+      // review (2026-08-17). The reasoning: an explicit `open_url` request
+      // carries the owner's own words for the destination, but this is a
+      // *guess* the system made, and plenty of real brands don't own the
+      // bare `.com` of their name -- it may be parked, squatted, or
+      // serving something unrelated. With an always-listening mic, a brand
+      // name picked up from ambient speech should not silently navigate a
+      // browser somewhere unverified. One extra turn, only on this rare
+      // fallback path, buys that back.
+      const answer = await ctx.ask(`There's no app called ${app}. Open ${friendlyUrlName(url)}'s website instead?`);
+      if (readAffirmative(answer) !== "yes") {
+        // "unclear" is treated as "no", deliberately: this is a
+        // confirmation, and proceeding on an answer we couldn't read
+        // would defeat the point of asking.
+        const speech = `Okay, I didn't open anything.`;
+        ctx.say(speech);
+        return { speech };
+      }
       const urlOutcome = await ctx.propose({
         capability: "APP_CONTROL",
-        humanSummary: `Open ${url} (no app named "${app}" is installed)`,
+        humanSummary: `Open ${url} (no app named "${app}" is installed, owner confirmed)`,
         payload: { action: "open_url" as const, url },
       });
       if (urlOutcome.ok) {
-        const speech = `There's no app called ${app} on this Mac, so I opened ${friendlyUrlName(url)}'s website instead.`;
+        const speech = `Opened ${friendlyUrlName(url)}'s website.`;
         ctx.say(speech);
         return { speech };
       }

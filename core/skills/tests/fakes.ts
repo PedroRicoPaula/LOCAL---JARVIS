@@ -38,15 +38,23 @@ export function fakeRouter(script: FakeRouterScript = {}): Router & { calls: { s
   };
 }
 
-export function fakeConversation(answers: readonly string[] = []): Conversation & { said: string[] } {
+/** `asked` records the questions, not just the answers -- a read-back-
+ * and-confirm step (docs/SKILLS.md § 5b's default skill shape) is only
+ * really tested if the test can assert *what* was read back, not merely
+ * that something was. Added 2026-08-17 for `skills/launcher`'s
+ * confirm-before-navigating step. */
+export function fakeConversation(answers: readonly string[] = []): Conversation & { said: string[]; asked: string[] } {
   const said: string[] = [];
+  const asked: string[] = [];
   const queue = [...answers];
   return {
     said,
+    asked,
     say(text: string): void {
       said.push(text);
     },
-    async ask(): Promise<string> {
+    async ask(question: string): Promise<string> {
+      asked.push(question);
       const next = queue.shift();
       if (next === undefined) throw new Error("fakeConversation: ran out of scripted answers");
       return next;

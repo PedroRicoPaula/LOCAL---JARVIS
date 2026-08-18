@@ -221,9 +221,11 @@ test("open_url with nothing extracted falls back to asking which website", async
 
 const APP_NOT_FOUND = "Command failed: open -a Instagram\nUnable to find application named 'Instagram'\n";
 
-test("open_app: a name macOS says isn't an installed app falls back to that name's website", async () => {
+function fallbackSetup(answer: string) {
   const proposals: ProposedAction[] = [];
+  const conversation = fakeConversation([answer]);
   const ctx = fakeSkillContext({
+    conversation,
     router: fakeRouter({ completeReturns: "Instagram" }),
     propose: async (action) => {
       proposals.push(action);
@@ -232,15 +234,45 @@ test("open_app: a name macOS says isn't an installed app falls back to that name
       return { ok: true, result: { url: "https://instagram.com" } };
     },
   });
+  return { ctx, proposals, conversation };
+}
+
+test("open_app: a name macOS says isn't an installed app offers that name's website, and opens it once confirmed", async () => {
+  const { ctx, proposals, conversation } = fallbackSetup("yes");
   const skill = createLauncherSkill({ listProjectDirs: () => [] });
 
-  const result = await skill.handle({ utterance: "in a new tab, open Instagram.", intent: "open_app", sessionId: "s1" }, ctx);
+  const result = await skill.handle(
+    { utterance: "in a new tab, open Instagram.", intent: "open_app", sessionId: "s1" },
+    ctx,
+  );
 
+  // It asked before navigating -- the security review's own requirement.
+  assert.equal(conversation.asked.length, 1);
+  assert.match(conversation.asked[0] ?? "", /no app called Instagram/i);
   assert.equal(proposals.length, 2);
   assert.deepEqual(proposals[1]?.payload, { action: "open_url", url: "https://instagram.com" });
-  // The spoken line must say what was substituted -- never claim the app opened.
-  assert.match(result.speech, /no app called Instagram/i);
-  assert.match(result.speech, /website/i);
+  assert.match(result.speech, /Opened Instagram's website/i);
+});
+
+test("open_app: the website fallback is NOT opened when the owner says no", async () => {
+  const { ctx, proposals, conversation } = fallbackSetup("no");
+  const skill = createLauncherSkill({ listProjectDirs: () => [] });
+
+  const result = await skill.handle({ utterance: "open Instagram", intent: "open_app", sessionId: "s1" }, ctx);
+
+  assert.equal(conversation.asked.length, 1);
+  assert.equal(proposals.length, 1, "must not propose the URL after a refusal");
+  assert.match(result.speech, /didn't open anything/i);
+});
+
+test("open_app: an answer that can't be read is treated as no, never as consent", async () => {
+  const { ctx, proposals } = fallbackSetup("hmm what");
+  const skill = createLauncherSkill({ listProjectDirs: () => [] });
+
+  const result = await skill.handle({ utterance: "open Instagram", intent: "open_app", sessionId: "s1" }, ctx);
+
+  assert.equal(proposals.length, 1, "an unreadable answer must not navigate anywhere");
+  assert.match(result.speech, /didn't open anything/i);
 });
 
 test("open_app: any OTHER failure is still reported honestly, never silently turned into a website", async () => {
@@ -279,6 +311,7 @@ test("open_project: a missing editor stays an honest error and never becomes a t
 
 test("open_app: the website fallback failing too is reported as the original app failure, not a second error", async () => {
   const ctx = fakeSkillContext({
+    conversation: fakeConversation(["yes"]),
     router: fakeRouter({ completeReturns: "Instagram" }),
     propose: async (action) => {
       const payload = action.payload as { action: string };
