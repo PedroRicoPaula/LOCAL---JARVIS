@@ -489,6 +489,48 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
     previously recorded as merely "not configured". Re-running
     `bench/gmail_authorize.ts` needs the owner's own browser.
   Test count 498 -> 520 TS, 108 Python, `make check` green throughout.
+- **Second autonomous pass, 2026-08-17 (ADR-064 through ADR-066),
+  using parallel subagents for the read-only analysis while live
+  measurement ran here.** Findings, in order of how much they mattered:
+  - **`converse` was fully synchronous, violating CLAUDE.md § 7** --
+    which had never been measured because no latency benchmark existed.
+    New `bench/bench_latency.ts`: first chunk p50 **424ms**, full
+    response p50 **2343ms**, so JARVIS sat silent ~1.9s per turn and
+    overshot its own 1500ms budget by ~800ms on the fallback path for
+    every unclaimed utterance. Now streams sentence by sentence
+    (`core/sentenceStream.ts`); confirmed live as 6 separate `speak`
+    messages where there was previously one.
+  - **Saying "stop" while a skill was asking a question became the
+    answer** -- and `skills/tasks` created a real Reminders item titled
+    "stop" (green tier, no approval to catch it). Fixed in the
+    conversation layer (ADR-065). This is docs/SKILLS.md § 7's case 5,
+    which six skills that genuinely call `ctx.ask` each declared "N/A,
+    single-turn" in their own test files.
+  - **Dashboard writes claimed success and swallowed failures** (no
+    `res.ok` check, and a 4xx/5xx doesn't reject a `fetch`) -- the same
+    lie `core/persona.md` gained a rule against after a real SOAK
+    incident, in a different channel. Now verifies, rolls back, and
+    surfaces the failure.
+  - **`sense.connection` was broadcast, declared in the UI types, and
+    dropped on the floor** -- the signal built so a dropped sense
+    wouldn't be invisible was itself invisible. Now rendered; verifying
+    it live surfaced a second gap (it only fires on *change*, so a fresh
+    dashboard saw nothing), fixed with a connect-time backfill.
+  - A security review of the previous pass's website fallback rated the
+    automatic navigation MEDIUM: slugification is genuinely safe, but a
+    *guessed* domain reached from ambient speech shouldn't open
+    unconfirmed. Now reads back and asks, via a new bilingual
+    `skills/_shared/affirmative.ts` (three-valued -- an unreadable answer
+    is treated as "no").
+  - `wardrobe` was the only registered skill with **no test file at
+    all**, and answered "wardrobe is not implemented yet" in English.
+    Now bilingual, human, and tested.
+  Test count 520 -> 551 TS, 108 Python, `make check` green throughout.
+  **Open, owner's call:** whether to unregister `wardrobe` entirely --
+  it's unscheduled backlog per ROADMAP.md and does occupy routing space
+  (measured competing at 0.76 on unrelated utterances), but removing it
+  changes what a real "what should I wear" does, so it wasn't taken
+  unilaterally.
 - **Ran the remaining self-run benchmarks as a health check, 2026-08-17:**
   `bench_router_lane.ts` (EN, 45 cases) 97.8%, matches baseline, no
   action. `bench_recall_p95.ts` (local, no network) p95 13.42ms/23.27ms,
