@@ -4,7 +4,7 @@
  * shared/types.ts, 2026-08-12.
  */
 
-import type { Lane, RouterTrace } from "./router.ts";
+import type { Lane } from "./router.ts";
 import type { ApprovalRequest, ApprovalResponse, ApprovalState } from "./capability.ts";
 import type { HandLandmarks } from "./camera.ts";
 
@@ -24,7 +24,6 @@ export type FeedbackRating = "up" | "down";
 
 export type ServerEvent =
   | { type: "thought"; text: string; lane: Lane; ts: number }
-  | { type: "trace"; trace: RouterTrace }
   | { type: "approval.new"; request: ApprovalRequest }
   | { type: "approval.resolved"; requestId: string; state: ApprovalState }
   /** `eventId` is absent for the owner's own line (nothing to rate) and
@@ -61,7 +60,6 @@ export type ServerEvent =
    * Throttled to ~10/s at the source -- decorative, and nobody perceives
    * a level meter faster than that. */
   | { type: "audio.level"; level: number }
-  | { type: "health"; providers: Record<string, boolean> }
   /** `ears`/`voice`/`eyes` connection state, per sense -- distinct from
    * `health` (LLM router providers, above). Found live, 2026-08-07: a
    * dropped sense connection had no dashboard-visible signal at all,
@@ -80,7 +78,6 @@ export type ServerEvent =
 
 export type ClientEvent =
   | { type: "approval.decide"; response: ApprovalResponse }
-  | { type: "mute"; category: string; muted: boolean }
   /** Dashboard "test console" (SOAK 1): feeds a typed line into the exact
    * same handling path a real transcribed utterance goes through --
    * `core` cannot tell the difference, which is the point: real usage

@@ -110,14 +110,12 @@ export type ServerEvent =
   | { type: "hand.preview"; image: string }
   | { type: "pointer.control"; enabled: boolean }
   | { type: "audio.level"; level: number }
-  | { type: "health"; providers: Record<string, boolean> }
   | { type: "sense.connection"; sense: "ears" | "voice" | "eyes"; connected: boolean }
   | { type: "error"; message: string; detail?: string; ts: number }
   | { type: "feedback"; eventId: string; rating: FeedbackRating };
 
 export type ClientEvent =
   | { type: "approval.decide"; response: ApprovalResponse }
-  | { type: "mute"; category: string; muted: boolean }
   | { type: "utterance.inject"; text: string }
   | { type: "feedback"; eventId: string; rating: FeedbackRating }
   | { type: "gesture.blur"; enabled: boolean };

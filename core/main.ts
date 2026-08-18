@@ -228,8 +228,19 @@ async function main(): Promise<void> {
   // That's deliberate: it's what makes the dashboard console a source of
   // real usage data, not a separate toy path.
   handleUtterance = async (text: string): Promise<void> => {
-    // An answer to a skill's ctx.ask(), not a new top-level utterance.
-    if (conversation.offerUtterance(text)) return;
+    // An answer to a skill's ctx.ask(), not a new top-level utterance --
+    // so it must not be dispatched again. It IS still something the owner
+    // said, though: recorded and shown before returning, because until
+    // 2026-08-17 it was neither. The dashboard showed JARVIS asking
+    // "Which app?" and then nothing, and `events` had no trace of the
+    // answer at all, so a later recall or a re-read of the transcript saw
+    // a question that was never answered. Kind `utterance`, actor
+    // `owner`, same as any other thing the owner said -- it is one.
+    if (conversation.offerUtterance(text)) {
+      const answerEvent = memory.appendEvent({ kind: "utterance", actor: "owner", content: text, sessionId: SESSION_ID });
+      wsHub.broadcast({ type: "transcript", text, final: true, speaker: "owner", eventId: answerEvent.id });
+      return;
+    }
 
     console.log(`core: heard ${JSON.stringify(text)}`);
     const utteranceEvent = memory.appendEvent({ kind: "utterance", actor: "owner", content: text, sessionId: SESSION_ID });

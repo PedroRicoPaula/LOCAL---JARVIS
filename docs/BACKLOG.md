@@ -37,8 +37,12 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   matching what `tasks` actually needed; Calendar stays a separate,
   unscoped idea if ever wanted.
 - ~~Music control (play/pause/skip/what's playing)~~ — **built
-  2026-08-04**, `skills/media`. Spotify not covered, Music.app only
-  (see ADR-025).
+  2026-08-04**, `skills/media`. ~~Spotify not covered, Music.app only
+  (see ADR-025).~~ **Correction, verified 2026-08-17:** that has been
+  false since 2026-08-06. `resolveTargetApp` (`skills/media/index.ts`)
+  returns **Spotify by default** and only switches to Music.app when the
+  utterance names it explicitly -- the owner doesn't use Music.app at
+  all. The note was never updated when that changed.
 - ~~Open a URL in the browser~~ — **built 2026-08-04**, folded into
   `skills/launcher`'s `open_url`.
 - ~~System controls: volume, brightness~~ — **built 2026-08-04**,
@@ -183,6 +187,14 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
   `data/observations/`, or having the `MEMORY_WRITE` executor's
   rejection/expiry path delete the file it was never approved to keep --
   neither built, out of this phase's scope.
+  **Built, 2026-08-08 -- this entry is closed (verified 2026-08-17).**
+  `cleanupObservationFile` lives in `core/gate/observationCleanup.ts`
+  and is called from all three terminal paths that can end a
+  `kind: "observation"` `MEMORY_WRITE` proposal without approval: the
+  expiry timer in `propose()`, `decide()`'s own expiry recheck, and an
+  explicit reject. Real-tempfile tests in `core/gate/tests/gate.test.ts`.
+  `PROGRESS.md` recorded the work at the time; only this entry was never
+  struck through.
 - **The dashboard test console's fire-and-forget utterance handling can
   cross-wire a camera-touching skill's in-flight `eyes` request if two
   utterances are injected faster than a skill turn completes.**

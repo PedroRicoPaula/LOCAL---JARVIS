@@ -92,7 +92,3 @@ export function applySkillSchema(db: DatabaseSync, skillId: string, schemaSql: s
   assertNamespaced(trimmed, skillId);
   db.exec(trimmed);
 }
-
-export function skillTablePrefix(skillId: string): string {
-  return tableName(skillId);
-}

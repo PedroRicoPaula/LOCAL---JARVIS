@@ -41,6 +41,9 @@ export interface Measurement {
 
 export type Quantity = Estimate | Measurement;
 
-export function isMeasured(q: Quantity): q is Measurement {
-  return "value" in q;
-}
+// The `Quantity`/`Estimate`/`Measurement` types above are a deliberate
+// forward contract (SPEC.md § 7, ADR-011: "vision identifies, the owner
+// quantifies") and stay even with no nutrition skill built yet. An
+// `isMeasured` type guard used to sit here; it had zero callers anywhere
+// in the repo and was removed 2026-08-17. A contract is worth keeping
+// unused; a helper nobody calls is just code to maintain.
