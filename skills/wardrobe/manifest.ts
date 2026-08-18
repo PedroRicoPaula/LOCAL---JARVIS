@@ -31,6 +31,21 @@ export const manifest: SkillManifest = {
       // name ADR-059, "rastreio de mãos" ADR-061, and this). Fix is
       // always the same: anchor the example on the noun that actually
       // makes it this intent.
+      //
+      // **Known, accepted cost.** Dropping the bare "o que é que eu
+      // visto" means the natural PT-PT phrasing without a clothing noun
+      // ("o que visto hoje") no longer reaches this skill -- measured:
+      // it lands on `look.describe` instead, since "visto" is both
+      // *vestir* (to wear) and a form the classifier reads as *ver* (to
+      // see). Adding it back was tried and measured: it fixes that case
+      // (rank 1, 1.0000) but re-pollutes -- "o que é que eu tenho para
+      // fazer" goes from rank 11 (0.7360) back to rank 4 (0.8174), and
+      // two other unrelated utterances similarly. Since this skill is a
+      // deliberate placeholder that only ever answers "not built yet"
+      // (ROADMAP.md's unscheduled backlog), clean routing for every real
+      // skill is worth more than reaching this one. **Revisit when
+      // wardrobe is actually built** -- the trade-off flips the moment
+      // it does something useful.
       examples: [
         "what should I wear",
         "check my outfit",
