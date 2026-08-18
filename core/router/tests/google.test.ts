@@ -42,14 +42,16 @@ test("parses incremental text chunks across multiple SSE events", async () => {
   assert.equal(await drain(provider.chat(REQ)), "Hello");
 });
 
-test("sends systemInstruction separately from contents, and the key as a query param", async () => {
+test("sends systemInstruction separately from contents, and the key as a header not a query param", async () => {
   let seenUrl = "";
+  let seenInit: RequestInit | undefined;
   let seenBody: Record<string, unknown> = {};
   const provider = new GoogleProvider({
     apiKey: "the-key",
     models: { converse: "gemini-flash-latest" },
     fetchFn: async (url, init) => {
       seenUrl = String(url);
+      seenInit = init;
       seenBody = JSON.parse(String(init?.body));
       return sseResponse('data: {"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}]}\n\n');
     },
@@ -57,7 +59,12 @@ test("sends systemInstruction separately from contents, and the key as a query p
 
   await drain(provider.chat(REQ));
 
-  assert.match(seenUrl, /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-flash-latest:streamGenerateContent\?alt=sse&key=the-key$/);
+  // The key is a header now, not a query param -- see google.ts's own
+  // comment. Asserting both halves: the URL must NOT carry it, and the
+  // header must.
+  assert.match(seenUrl, /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-flash-latest:streamGenerateContent\?alt=sse$/);
+  assert.doesNotMatch(seenUrl, /the-key/, "the API key must never appear in the URL");
+  assert.equal((seenInit?.headers as Record<string, string>)["x-goog-api-key"], "the-key");
   assert.deepEqual(seenBody["systemInstruction"], { parts: [{ text: "You are terse." }] });
   assert.deepEqual(seenBody["contents"], [{ role: "user", parts: [{ text: "hi" }] }]);
 });

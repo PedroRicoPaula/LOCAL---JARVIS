@@ -224,3 +224,39 @@ test("vision() non-2xx HTTP status maps to ProviderUnavailableError", async () =
     await assert.rejects(() => provider.vision!(req), ProviderUnavailableError);
   });
 });
+
+// --- rate-limit token accounting (2026-08-17) ------------------------
+// The token was taken BEFORE the concurrency check and never refunded,
+// so a burst spent real rpm budget on requests that never left the
+// process -- exactly the "several skills firing at once" case
+// concurrencyLimiter.ts exists for. Repeated bursts eroded the budget
+// and caused earlier fallbacks than the real account limit required.
+
+test("a request refused on concurrency does NOT spend a rate-limit token", async () => {
+  let started = 0;
+  const provider = new NimProvider({
+    apiKey: "k",
+    models: { converse: "m" },
+    maxConcurrent: 1,
+    rpm: 5,
+    fetchFn: async () => {
+      started++;
+      // Hold the one concurrency slot open while the second call lands.
+      await new Promise((r) => setTimeout(r, 30));
+      return sseResponse('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n');
+    },
+  });
+
+  const first = drain(provider.chat(REQ));
+  // Second call: the slot is taken, so it must be refused -- without
+  // costing a token.
+  await assert.rejects(drain(provider.chat(REQ)), /too many requests in flight/);
+  await first;
+
+  // 5 rpm, one real request made, one refused on concurrency. If the
+  // refusal had spent a token only 3 would remain; four more must fit.
+  for (let i = 0; i < 4; i++) {
+    await drain(provider.chat(REQ));
+  }
+  assert.equal(started, 5, "the concurrency refusal must not have consumed rpm budget");
+});

@@ -83,11 +83,22 @@ export class NimProvider implements ModelProvider {
     if (!model) {
       throw new ProviderUnavailableError(this.id, `no model configured for lane "${req.lane}"`);
     }
-    if (!this.bucket.tryTake()) {
-      throw new ProviderUnavailableError(this.id, "client-side rate limit reached (30 rpm)");
-    }
+    // Concurrency first, then the rate-limit token -- and the slot is
+    // released if the token isn't available. The other order (found
+    // 2026-08-17) burned a real rpm token on requests that never left
+    // the process: with nim's defaults (30 rpm, 8 concurrent), a burst
+    // of 10 near-simultaneous calls -- exactly the "several skills
+    // firing at once" case concurrencyLimiter.ts exists for -- spent two
+    // tokens on requests rejected purely on the concurrency check.
+    // Repeated bursts silently eroded the per-minute budget and caused
+    // earlier fallbacks to a slower provider than the real account limit
+    // required.
     if (!this.concurrency.tryAcquire()) {
       throw new ProviderUnavailableError(this.id, "too many requests in flight");
+    }
+    if (!this.bucket.tryTake()) {
+      this.concurrency.release();
+      throw new ProviderUnavailableError(this.id, "client-side rate limit reached (30 rpm)");
     }
 
     const controller = new AbortController();
@@ -157,11 +168,22 @@ export class NimProvider implements ModelProvider {
     if (!this.visionModel) {
       throw new ProviderUnavailableError(this.id, "no vision model configured");
     }
-    if (!this.bucket.tryTake()) {
-      throw new ProviderUnavailableError(this.id, "client-side rate limit reached (30 rpm)");
-    }
+    // Concurrency first, then the rate-limit token -- and the slot is
+    // released if the token isn't available. The other order (found
+    // 2026-08-17) burned a real rpm token on requests that never left
+    // the process: with nim's defaults (30 rpm, 8 concurrent), a burst
+    // of 10 near-simultaneous calls -- exactly the "several skills
+    // firing at once" case concurrencyLimiter.ts exists for -- spent two
+    // tokens on requests rejected purely on the concurrency check.
+    // Repeated bursts silently eroded the per-minute budget and caused
+    // earlier fallbacks to a slower provider than the real account limit
+    // required.
     if (!this.concurrency.tryAcquire()) {
       throw new ProviderUnavailableError(this.id, "too many requests in flight");
+    }
+    if (!this.bucket.tryTake()) {
+      this.concurrency.release();
+      throw new ProviderUnavailableError(this.id, "client-side rate limit reached (30 rpm)");
     }
 
     const controller = new AbortController();

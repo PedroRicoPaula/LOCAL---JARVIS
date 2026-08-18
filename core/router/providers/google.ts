@@ -74,23 +74,42 @@ export class GoogleProvider implements ModelProvider {
     if (!model) {
       throw new ProviderUnavailableError(this.id, `no model configured for lane "${req.lane}"`);
     }
-    if (!this.bucket.tryTake()) {
-      throw new ProviderUnavailableError(this.id, "client-side rate limit reached");
-    }
+    // Concurrency first, then the rate-limit token -- and the slot is
+    // released if the token isn't available. The other order (found
+    // 2026-08-17) burned a real rpm token on requests that never left
+    // the process: with nim's defaults (30 rpm, 8 concurrent), a burst
+    // of 10 near-simultaneous calls -- exactly the "several skills
+    // firing at once" case concurrencyLimiter.ts exists for -- spent two
+    // tokens on requests rejected purely on the concurrency check.
+    // Repeated bursts silently eroded the per-minute budget and caused
+    // earlier fallbacks to a slower provider than the real account limit
+    // required.
     if (!this.concurrency.tryAcquire()) {
       throw new ProviderUnavailableError(this.id, "too many requests in flight");
+    }
+    if (!this.bucket.tryTake()) {
+      this.concurrency.release();
+      throw new ProviderUnavailableError(this.id, "client-side rate limit reached");
     }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), req.timeoutMs);
 
-    const url = `${this.baseUrl}/models/${model}:streamGenerateContent?alt=sse&key=${this.apiKey}`;
+    // The key rides in the `x-goog-api-key` header, not the URL query
+    // string. Gemini supports both; every other provider in this
+    // directory uses a header, and a secret in a URL is inherently more
+    // exposure-prone -- any future request logging, HTTP tracing, or a
+    // proxy access log captures a URL where it would not capture a
+    // header. Changed 2026-08-17 after a review flagged the
+    // inconsistency; no live leak was found in Node's own fetch errors,
+    // this closes the class rather than a known instance.
+    const url = `${this.baseUrl}/models/${model}:streamGenerateContent?alt=sse`;
     let response: Response;
     try {
       response = await this.fetchFn(url, {
         method: "POST",
         signal: controller.signal,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": this.apiKey },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: req.system }] },
           contents: req.messages.map((m) => ({
@@ -144,7 +163,8 @@ export class GoogleProvider implements ModelProvider {
 
   async health(): Promise<ProviderHealth> {
     try {
-      const response = await this.fetchFn(`${this.baseUrl}/models?key=${this.apiKey}`, {
+      const response = await this.fetchFn(`${this.baseUrl}/models`, {
+        headers: { "x-goog-api-key": this.apiKey },
         signal: AbortSignal.timeout(3000),
       });
       return { ok: response.ok };
