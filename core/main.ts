@@ -44,6 +44,7 @@ import { Memory } from "./memory/memory.ts";
 import { OllamaProvider } from "./router/providers/ollama.ts";
 import { buildRegistry } from "./router/wiring.ts";
 import { buildSkillContext } from "./skills/context.ts";
+import { AskCancelledError } from "./skills/conversation/cancel.ts";
 import { createIpcConversation } from "./skills/conversation/ipc.ts";
 import { SkillRegistry } from "./skills/registry.ts";
 import { createSkillStore } from "./skills/store.ts";
@@ -304,6 +305,19 @@ async function main(): Promise<void> {
       memory.indexEvent(responseEvent).catch((err) => console.error("core: failed to index response for recall, continuing", err));
       wsHub.broadcast({ type: "transcript", text: speech, final: true, speaker: "jarvis", eventId: responseEvent.id });
     } catch (err) {
+      // A cancellation is not a failure. The owner said "stop" while a
+      // skill was waiting on ctx.ask(); reporting that as "something
+      // went wrong" would be its own small dishonesty (CLAUDE.md § 6),
+      // and it must not land in the error log either. Speak a short
+      // acknowledgement, record it as a normal response, and move on.
+      if (err instanceof AskCancelledError) {
+        console.log("core: owner cancelled a pending question");
+        const cancelled = "Cancelled.";
+        conversation.say(cancelled);
+        const cancelEvent = memory.appendEvent({ kind: "response", actor: "jarvis", content: cancelled, sessionId: SESSION_ID });
+        wsHub.broadcast({ type: "transcript", text: cancelled, final: true, speaker: "jarvis", eventId: cancelEvent.id });
+        return;
+      }
       // One bad utterance (a skill bug, a model failure) must not take
       // the whole process down -- same "supervisor boundary" reasoning
       // as senses/ears/main.py's safe_run(). But CLAUDE.md § 6's honesty

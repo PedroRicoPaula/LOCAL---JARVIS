@@ -17,17 +17,28 @@
  */
 
 import type { Conversation } from "../types.ts";
+import { AskCancelledError, isCancelUtterance } from "./cancel.ts";
 
 export interface IpcConversation extends Conversation {
   /** Called by `core/main.ts` for every utterance `ears` sends. Returns
    * true if it was consumed as the answer to a pending `ask()` (the
    * caller should NOT also treat it as a fresh dispatch trigger), false
-   * if nothing was waiting (a genuinely new utterance). */
+   * if nothing was waiting (a genuinely new utterance).
+   *
+   * A cancellation ("stop", "esquece") is *also* consumed -- it returns
+   * true -- but it rejects the pending `ask()` with `AskCancelledError`
+   * instead of resolving it. See `cancel.ts` for why: this used to
+   * resolve with the cancellation text itself, so saying "stop" while a
+   * skill was asking created a real Reminders item named "stop". */
   offerUtterance(text: string): boolean;
 }
 
 export function createIpcConversation(sendToVoice: (text: string) => void): IpcConversation {
-  let pending: { resolve: (text: string) => void; timeoutHandle: ReturnType<typeof setTimeout> } | null = null;
+  let pending: {
+    resolve: (text: string) => void;
+    reject: (err: Error) => void;
+    timeoutHandle: ReturnType<typeof setTimeout>;
+  } | null = null;
 
   return {
     say(text: string): void {
@@ -49,16 +60,20 @@ export function createIpcConversation(sendToVoice: (text: string) => void): IpcC
           pending = null;
           reject(new Error("ask() timed out waiting for a spoken answer"));
         }, timeoutMs);
-        pending = { resolve, timeoutHandle };
+        pending = { resolve, reject, timeoutHandle };
       });
     },
 
     offerUtterance(text: string): boolean {
       if (!pending) return false;
       clearTimeout(pending.timeoutHandle);
-      const { resolve } = pending;
+      const { resolve, reject } = pending;
       pending = null;
-      resolve(text);
+      // Consumed either way (the caller must not also dispatch it), but a
+      // cancellation is not an answer -- see this interface's own comment
+      // and `cancel.ts` for the real bug this prevents.
+      if (isCancelUtterance(text)) reject(new AskCancelledError());
+      else resolve(text);
       return true;
     },
   };
