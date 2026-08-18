@@ -38,7 +38,7 @@ export function AudioWaveform({ levels }: { levels: number[] }) {
           />
         ))}
       </div>
-      <div className="mt-2 flex justify-between text-[9px] tracking-wider text-jarvis-dim">
+      <div className="mt-2 flex justify-between text-[11px] tracking-wider text-jarvis-dim">
         <span>{peak > 0.05 ? "SIGNAL" : "QUIET"}</span>
         <span className="text-jarvis-cyan">{Math.round(peak * 100)}%</span>
       </div>

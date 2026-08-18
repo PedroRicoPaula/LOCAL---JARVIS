@@ -8,7 +8,7 @@ export function MetricsWidget({ metrics }: { metrics: DashboardMetrics | null })
   if (metrics === null) {
     return (
       <Panel title="Metrics" className="shrink-0">
-        <div className="text-[10px] text-jarvis-dim">Waiting for core…</div>
+        <div className="text-[12px] text-jarvis-dim">Waiting for core…</div>
       </Panel>
     );
   }
@@ -21,20 +21,20 @@ export function MetricsWidget({ metrics }: { metrics: DashboardMetrics | null })
     <Panel title="Metrics (30d)" className="shrink-0">
       <div className="grid grid-cols-2 gap-2 mb-2">
         <div>
-          <div className="text-[9px] text-jarvis-dim uppercase">Today</div>
+          <div className="text-[11px] text-jarvis-dim uppercase">Today</div>
           <div className="text-[14px] text-jarvis-cyan font-mono">{metrics.utterancesToday}</div>
         </div>
         <div>
-          <div className="text-[9px] text-jarvis-dim uppercase">This week</div>
+          <div className="text-[11px] text-jarvis-dim uppercase">This week</div>
           <div className="text-[14px] text-jarvis-cyan font-mono">{metrics.utterancesThisWeek}</div>
         </div>
       </div>
 
       {lanes.length > 0 ? (
         <div className="space-y-1 mb-2">
-          <div className="text-[9px] text-jarvis-dim uppercase">Lane distribution</div>
+          <div className="text-[11px] text-jarvis-dim uppercase">Lane distribution</div>
           {lanes.map(([lane, count]) => (
-            <div key={lane} className="flex justify-between text-[9px]">
+            <div key={lane} className="flex justify-between text-[11px]">
               <span className="text-jarvis-text">{lane}</span>
               <span className="text-jarvis-dim font-mono">{count}</span>
             </div>
@@ -44,9 +44,9 @@ export function MetricsWidget({ metrics }: { metrics: DashboardMetrics | null })
 
       {topSkills.length > 0 ? (
         <div className="space-y-1 mb-2">
-          <div className="text-[9px] text-jarvis-dim uppercase">Top skills</div>
+          <div className="text-[11px] text-jarvis-dim uppercase">Top skills</div>
           {topSkills.map((s) => (
-            <div key={`${s.skillId}.${s.intentId}`} className="flex justify-between text-[9px]">
+            <div key={`${s.skillId}.${s.intentId}`} className="flex justify-between text-[11px]">
               <span className="text-jarvis-text truncate">
                 {s.skillId}.{s.intentId}
               </span>
@@ -56,7 +56,7 @@ export function MetricsWidget({ metrics }: { metrics: DashboardMetrics | null })
         </div>
       ) : null}
 
-      <div className="flex justify-between text-[9px] pt-1 border-t border-white/10">
+      <div className="flex justify-between text-[11px] pt-1 border-t border-white/10">
         <span className="text-jarvis-dim uppercase">No-skill-matched</span>
         <span className={missRatePct > 20 ? "text-jarvis-amber font-mono" : "text-jarvis-dim font-mono"}>
           {metrics.noSkillMatchedCount} ({missRatePct}%)

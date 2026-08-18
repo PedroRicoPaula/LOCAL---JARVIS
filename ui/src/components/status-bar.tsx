@@ -52,7 +52,7 @@ export function StatusBar({
       className="flex items-center justify-between px-4 shrink-0"
       style={{ height: 36, borderTop: "1px solid rgba(0,212,255,0.18)", background: "rgba(5,8,15,0.9)" }}
     >
-      <div className="flex items-center gap-4 text-[9px] font-mono tracking-widest">
+      <div className="flex items-center gap-4 text-[11px] font-mono tracking-widest">
         <span className="flex items-center gap-1">
           <span className="inline-block rounded-full status-dot-active" style={{ width: 4, height: 4, background: color, boxShadow: `0 0 4px ${color}` }} />
           <span style={{ color }}>CORE: {text}</span>
@@ -66,7 +66,7 @@ export function StatusBar({
           SESSION <span className="text-jarvis-text">{sessionUptime(connectedSince, now)}</span>
         </span>
       </div>
-      <div className="flex items-center gap-4 text-[9px] font-mono text-jarvis-dim tracking-widest">
+      <div className="flex items-center gap-4 text-[11px] font-mono text-jarvis-dim tracking-widest">
         <span>JARVIS DASHBOARD</span>
       </div>
     </div>

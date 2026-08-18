@@ -24,7 +24,7 @@ export function Clock() {
   return (
     <Panel className="shrink-0">
       <div className="text-[28px] font-mono font-light tracking-[0.1em] leading-none text-jarvis-text">{timeStr}</div>
-      <div className="text-[9px] tracking-[0.2em] text-jarvis-dim mt-1">{dateStr}</div>
+      <div className="text-[11px] tracking-[0.2em] text-jarvis-dim mt-1">{dateStr}</div>
     </Panel>
   );
 }

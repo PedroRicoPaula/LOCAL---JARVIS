@@ -53,13 +53,23 @@ export function Panel({
     setTilt({ x: -py * MAX_TILT_DEG * 2, y: px * MAX_TILT_DEG * 2 });
   }
 
+  // `overflow-hidden` + `flex flex-col` on the body, added 2026-08-17 after
+  // a real, visible bug: with 5 pending approvals on a live core, the
+  // Approval Queue's content rendered straight *through* the panel border
+  // and painted on top of Hand Tracking, Live Data and the Conversation Log
+  // below it -- three panels at once, unreadable. The body had no overflow
+  // control at all, and `transform` (the tilt) creates a stacking context,
+  // so escaping content paints over its siblings rather than behind them. A
+  // bordered panel whose content escapes its own border is always a bug;
+  // clipping here is the structural fix, and any panel with genuinely long
+  // content is expected to scroll *inside* itself.
   return (
     <div style={{ perspective: 900 }} className={className}>
       <div
         ref={ref}
         onMouseMove={handleMove}
         onMouseLeave={() => setTilt({ x: 0, y: 0 })}
-        className="panel-3d relative h-full border border-jarvis-cyan/20 bg-black/40 backdrop-blur-[2px] px-4 py-3"
+        className="panel-3d relative h-full overflow-hidden flex flex-col border border-jarvis-cyan/20 bg-black/40 backdrop-blur-[2px] px-4 py-3"
         style={{
           transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
           // Glow follows the tilt so the panel reads as catching light
@@ -74,8 +84,13 @@ export function Panel({
         <CornerBracket position="tr" />
         <CornerBracket position="bl" />
         <CornerBracket position="br" />
-        {title ? <div className="text-[10px] tracking-[0.2em] text-jarvis-dim uppercase mb-3">{title}</div> : null}
-        {children}
+        {title ? (
+          <div className="text-[11px] tracking-[0.18em] text-jarvis-dim uppercase mb-3 shrink-0">{title}</div>
+        ) : null}
+        {/* `flex-1 min-h-0` so a child that sets its own `overflow-y-auto`
+            actually gets a bounded height to scroll within, instead of
+            growing past the clip above and simply disappearing. */}
+        <div className="flex-1 min-h-0">{children}</div>
       </div>
     </div>
   );

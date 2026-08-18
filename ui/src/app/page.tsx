@@ -66,11 +66,11 @@ export default function Home() {
         <div className="absolute inset-0 bg-grid pointer-events-none" />
         <div className="absolute left-0 right-0 h-px pointer-events-none scan-line" style={{ zIndex: 10 }} />
 
-        <div className="absolute top-3 left-3 text-[9px] text-jarvis-dim tracking-wider opacity-60">
+        <div className="absolute top-3 left-3 text-[11px] text-jarvis-dim tracking-wider opacity-60">
           <div>JARVIS</div>
-          <div>PHASE 7 · DASHBOARD</div>
+          <div>DASHBOARD</div>
         </div>
-        <div className="absolute top-3 right-3 text-[9px] text-jarvis-dim tracking-wider opacity-60 text-right">
+        <div className="absolute top-3 right-3 text-[11px] text-jarvis-dim tracking-wider opacity-60 text-right">
           <div>{process.env["NEXT_PUBLIC_JARVIS_CORE_URL"] ?? "http://localhost:8787"}</div>
         </div>
 
@@ -82,13 +82,11 @@ export default function Home() {
               top of the existing four panels, and the column's natural
               height can now exceed the viewport -- found live, this scrolls
               instead of silently clipping whatever's last (was Timeline). */}
-          <div className="flex flex-col gap-3 min-w-0 min-h-0 lg:overflow-y-auto w-full lg:w-[22%]">
+          <div className="flex flex-col gap-3 min-w-0 min-h-0 shrink-0 lg:shrink lg:overflow-y-auto w-full lg:w-[26%]">
             <Clock />
             <AudioWaveform levels={audioLevels} />
             <SystemStatus system={system} />
-            <div className="shrink-0">
-              <SkillHealthPanel skills={skills} />
-            </div>
+            <SkillHealthPanel skills={skills} />
             <MetricsWidget metrics={metrics} />
             <Timeline events={events} />
           </div>
@@ -112,7 +110,7 @@ export default function Home() {
           {/* RIGHT — approvals + live data + conversation. Same
               `overflow-y-auto` safety net as LEFT, now that `StorePanel`
               sits between the two existing panels. */}
-          <div className="flex flex-col gap-3 min-w-0 min-h-0 lg:overflow-y-auto w-full lg:w-[26%]">
+          <div className="flex flex-col gap-3 min-w-0 min-h-0 shrink-0 lg:shrink lg:overflow-y-auto w-full lg:w-[30%]">
             <div className="flex flex-col min-h-0 shrink-0 lg:max-h-[32%]">
               <ApprovalQueue approvals={approvals} onDecide={decide} />
             </div>

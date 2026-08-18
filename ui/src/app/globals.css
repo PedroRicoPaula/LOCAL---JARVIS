@@ -149,15 +149,31 @@ body {
   background-attachment: fixed;
 }
 
+/* Widened from 2px/0.3 alpha to 6px/0.55 on 2026-08-17. Several panels
+   (Skill Health with all 13 real skills, the Approval Queue with a real
+   backlog, the Conversation Log) genuinely scroll, and the scrollbar is
+   the *only* affordance saying so -- at 2px and 30% opacity it was
+   invisible on this background, so a clipped list read as broken rather
+   than scrollable. Still thin and on-theme, not a chrome-heavy bar. */
 ::-webkit-scrollbar {
-  width: 2px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 212, 255, 0.3);
-  border-radius: 1px;
+  background: rgba(0, 212, 255, 0.55);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.8);
+}
+/* Firefox, which ignores the -webkit- rules entirely. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 212, 255, 0.55) rgba(255, 255, 255, 0.04);
 }
 
 @keyframes status-pulse {

@@ -22,14 +22,14 @@ function FeedbackButtons({
     <span className="inline-flex gap-1 ml-2 align-middle">
       <button
         onClick={() => onFeedback(eventId, "up")}
-        className={`text-[10px] leading-none ${rating === "up" ? "opacity-100" : "opacity-30 hover:opacity-70"}`}
+        className={`text-[12px] leading-none ${rating === "up" ? "opacity-100" : "opacity-30 hover:opacity-70"}`}
         title="Good response"
       >
         👍
       </button>
       <button
         onClick={() => onFeedback(eventId, "down")}
-        className={`text-[10px] leading-none ${rating === "down" ? "opacity-100" : "opacity-30 hover:opacity-70"}`}
+        className={`text-[12px] leading-none ${rating === "down" ? "opacity-100" : "opacity-30 hover:opacity-70"}`}
         title="Bad response"
       >
         👎
@@ -61,7 +61,7 @@ export function Transcript({
         ) : (
           lines.map((line, i) => (
             <div key={i} className="fade-in-up">
-              <div className="text-[9px] text-jarvis-dim mb-[2px]">
+              <div className="text-[11px] text-jarvis-dim mb-[2px]">
                 {new Date(line.ts).toLocaleTimeString("en-US", { hour12: false })}
               </div>
               <div

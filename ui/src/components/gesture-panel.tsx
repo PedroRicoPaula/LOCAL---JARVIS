@@ -138,7 +138,7 @@ export function GesturePanel({
   if (!gestures.active) {
     return (
       <Panel title="Hand tracking" className="shrink-0" flat>
-        <div className="text-[10px] text-jarvis-dim leading-relaxed">
+        <div className="text-[12px] text-jarvis-dim leading-relaxed">
           Say <span className="text-jarvis-cyan">&quot;turn on hand tracking&quot;</span> to see the camera here.
           {gestures.lastStoppedCause === "idle" ? (
             <div className="mt-1 text-jarvis-amber">Stopped: no hand seen for a while.</div>
@@ -168,13 +168,13 @@ export function GesturePanel({
           // runs (senses/eyes/gestures.py) -- using the real cursor
           // means looking at the real screen, not this panel, so
           // skipping the encode is a real CPU saving, not a bug.
-          <div className="absolute inset-0 grid place-items-center text-[9px] text-jarvis-dim text-center px-4">
+          <div className="absolute inset-0 grid place-items-center text-[11px] text-jarvis-dim text-center px-4">
             Preview off to save CPU while pointer control is active.
             <br />
             The skeleton below still tracks live.
           </div>
         ) : (
-          <div className="absolute inset-0 grid place-items-center text-[9px] text-jarvis-dim">waiting for camera…</div>
+          <div className="absolute inset-0 grid place-items-center text-[11px] text-jarvis-dim">waiting for camera…</div>
         )}
 
         <svg className="absolute inset-0 w-full h-full" style={{ overflow: "visible" }}>
@@ -206,11 +206,11 @@ export function GesturePanel({
           ))}
         </svg>
 
-        <div className="absolute bottom-1 left-2 text-[8px] tracking-widest text-jarvis-dim">
+        <div className="absolute bottom-1 left-2 text-[10px] tracking-widest text-jarvis-dim">
           {gestures.hands.length === 0 ? "NO HAND" : pinching ? "PINCH" : openPalm ? "OPEN PALM" : "TRACKING"}
         </div>
         {gestures.pointerControlActive ? (
-          <div className="absolute top-1 right-2 flex items-center gap-1 text-[8px] tracking-widest text-jarvis-green">
+          <div className="absolute top-1 right-2 flex items-center gap-1 text-[10px] tracking-widest text-jarvis-green">
             <span className="rounded-full status-dot-active" style={{ width: 5, height: 5, background: "#00FF9F" }} />
             POINTER ON · HOLD SPACE TO CLICK
           </div>
@@ -221,13 +221,13 @@ export function GesturePanel({
           anywhere on the real screen, so turning it on is deliberately
           the same "say it" weight as arming hand tracking itself, not a
           casual toggle next to blur/theremin. */}
-      <div className="mt-2 text-[9px] text-jarvis-dim">
+      <div className="mt-2 text-[11px] text-jarvis-dim">
         {gestures.pointerControlActive
           ? "Cursor follows your index finger. Press Space to click -- never a gesture or voice alone."
           : <>Say <span className="text-jarvis-cyan">&quot;point with my hand&quot;</span> to control the real cursor.</>}
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-[9px]">
+      <div className="mt-2 flex items-center justify-between text-[11px]">
         <span className="text-jarvis-dim">Pinch to drag a shape</span>
         <div className="flex gap-1.5">
           <button
@@ -237,7 +237,7 @@ export function GesturePanel({
               setBlurOn(next);
               onSetBlur?.(next);
             }}
-            className={`px-2 py-1 border text-[9px] tracking-wider transition-colors ${
+            className={`px-2 py-1 border text-[11px] tracking-wider transition-colors ${
               blurOn ? "border-jarvis-green text-jarvis-green" : "border-jarvis-cyan/30 text-jarvis-dim hover:text-jarvis-cyan"
             }`}
           >
@@ -246,7 +246,7 @@ export function GesturePanel({
           <button
             type="button"
             onClick={() => setThereminOn((v) => !v)}
-            className={`px-2 py-1 border text-[9px] tracking-wider transition-colors ${
+            className={`px-2 py-1 border text-[11px] tracking-wider transition-colors ${
               thereminOn ? "border-jarvis-green text-jarvis-green" : "border-jarvis-cyan/30 text-jarvis-dim hover:text-jarvis-cyan"
             }`}
           >
@@ -255,7 +255,7 @@ export function GesturePanel({
         </div>
       </div>
       {thereminOn ? (
-        <div className="mt-1 text-[9px] text-jarvis-dim">Open palm, move up/down to play.</div>
+        <div className="mt-1 text-[11px] text-jarvis-dim">Open palm, move up/down to play.</div>
       ) : null}
     </Panel>
   );

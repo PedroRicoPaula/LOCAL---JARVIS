@@ -74,3 +74,4 @@ Format: Context → Decision → Consequences.
 | [ADR-060](docs/decisions/ADR-060.md) | Reminders `list`/`complete` hang: re-investigated live, narrowed, partially fixed |
 | [ADR-061](docs/decisions/ADR-061.md) | Closed the 5-skill routing coverage gap, found a real deterministic collision |
 | [ADR-062](docs/decisions/ADR-062.md) | Three real bugs found by driving the live system end to end |
+| [ADR-063](docs/decisions/ADR-063.md) | Dashboard bugs only a *populated* live dashboard could show |

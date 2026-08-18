@@ -20,7 +20,7 @@ export function TestConsole({ onSubmit }: { onSubmit: (text: string) => void }) 
 
   return (
     <div className="shrink-0 border-t border-jarvis-cyan/20 bg-black/40 px-4 py-2 flex items-center gap-2">
-      <span className="text-[9px] tracking-widest text-jarvis-dim uppercase shrink-0">Test console</span>
+      <span className="text-[11px] tracking-widest text-jarvis-dim uppercase shrink-0">Test console</span>
       <input
         value={value}
         onChange={(e) => setValue(e.target.value)}

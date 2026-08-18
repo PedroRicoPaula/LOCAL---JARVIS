@@ -31,13 +31,13 @@ export function StorePanel({
       <div className="flex gap-3 mb-2 -mt-1">
         <button
           onClick={() => setTab("tasks")}
-          className={`text-[9px] tracking-widest uppercase pb-1 border-b ${tab === "tasks" ? "text-jarvis-cyan border-jarvis-cyan" : "text-jarvis-dim border-transparent"}`}
+          className={`text-[11px] tracking-widest uppercase pb-1 border-b ${tab === "tasks" ? "text-jarvis-cyan border-jarvis-cyan" : "text-jarvis-dim border-transparent"}`}
         >
           Tasks ({openTasks.length})
         </button>
         <button
           onClick={() => setTab("shopping")}
-          className={`text-[9px] tracking-widest uppercase pb-1 border-b ${tab === "shopping" ? "text-jarvis-cyan border-jarvis-cyan" : "text-jarvis-dim border-transparent"}`}
+          className={`text-[11px] tracking-widest uppercase pb-1 border-b ${tab === "shopping" ? "text-jarvis-cyan border-jarvis-cyan" : "text-jarvis-dim border-transparent"}`}
         >
           Shopping ({shoppingItems.length})
         </button>
@@ -46,25 +46,25 @@ export function StorePanel({
       <div className="max-h-40 overflow-y-auto space-y-1">
         {tab === "tasks" ? (
           tasks.length === 0 ? (
-            <div className="text-[10px] text-jarvis-dim">No tasks yet.</div>
+            <div className="text-[12px] text-jarvis-dim">No tasks yet.</div>
           ) : (
             [...openTasks, ...doneTasks].map((t) => (
-              <div key={t.id} className="flex items-center gap-2 text-[10px] group">
+              <div key={t.id} className="flex items-center gap-2 text-[12px] group">
                 <input type="checkbox" checked={t.done} onChange={() => onToggleTask(t.id)} className="accent-jarvis-cyan" />
                 <span className={`flex-1 truncate ${t.done ? "line-through text-jarvis-dim" : "text-jarvis-text"}`}>{t.text}</span>
-                <Button size="xs" variant="ghost" className="text-[9px] text-jarvis-dim px-1 h-auto opacity-0 group-hover:opacity-100" onClick={() => onDeleteTask(t.id)}>
+                <Button size="xs" variant="ghost" className="text-[11px] text-jarvis-dim px-1 h-auto opacity-0 group-hover:opacity-100" onClick={() => onDeleteTask(t.id)}>
                   ×
                 </Button>
               </div>
             ))
           )
         ) : shoppingItems.length === 0 ? (
-          <div className="text-[10px] text-jarvis-dim">List is empty.</div>
+          <div className="text-[12px] text-jarvis-dim">List is empty.</div>
         ) : (
           shoppingItems.map((i) => (
-            <div key={i.id} className="flex items-center gap-2 text-[10px] group">
+            <div key={i.id} className="flex items-center gap-2 text-[12px] group">
               <span className="flex-1 truncate text-jarvis-text">{i.text}</span>
-              <Button size="xs" variant="ghost" className="text-[9px] text-jarvis-dim px-1 h-auto opacity-0 group-hover:opacity-100" onClick={() => onDeleteItem(i.id)}>
+              <Button size="xs" variant="ghost" className="text-[11px] text-jarvis-dim px-1 h-auto opacity-0 group-hover:opacity-100" onClick={() => onDeleteItem(i.id)}>
                 ×
               </Button>
             </div>

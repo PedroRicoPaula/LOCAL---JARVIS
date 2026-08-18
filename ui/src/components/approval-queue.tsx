@@ -30,21 +30,21 @@ export function ApprovalQueue({
   return (
     <Panel title={`Approval Queue${approvals.length ? ` (${approvals.length})` : ""}`} className="lg:flex-1 lg:min-h-0 flex flex-col shrink-0">
       {approvals.length === 0 ? (
-        <div className="text-[10px] text-jarvis-dim">Nothing pending.</div>
+        <div className="text-[12px] text-jarvis-dim">Nothing pending.</div>
       ) : (
-        <div className="flex-1 overflow-y-auto space-y-2 min-h-0 max-h-48 lg:max-h-none">
+        <div className="h-full overflow-y-auto space-y-2 min-h-0 pr-1">
           {approvals.map((request) => (
             <div key={request.id} className="fade-in-up border border-jarvis-amber/30 bg-jarvis-amber/5 px-3 py-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[9px] tracking-wider text-jarvis-amber uppercase">{request.capability}</span>
-                <span className="text-[8px] text-jarvis-dim">{timeLeft(request.expiresAt)}</span>
+                <span className="text-[11px] tracking-wider text-jarvis-amber uppercase">{request.capability}</span>
+                <span className="text-[10px] text-jarvis-dim">{timeLeft(request.expiresAt)}</span>
               </div>
-              <div className="text-[10px] text-jarvis-text leading-snug mt-1">{request.humanSummary}</div>
+              <div className="text-[12px] text-jarvis-text leading-snug mt-1">{request.humanSummary}</div>
               <div className="flex items-center justify-between mt-2 gap-2">
                 <Dialog>
                   <DialogTrigger
                     render={
-                      <Button size="xs" variant="ghost" className="text-[9px] text-jarvis-dim px-0 h-auto">
+                      <Button size="xs" variant="ghost" className="text-[11px] text-jarvis-dim px-0 h-auto">
                         expand
                       </Button>
                     }
@@ -54,11 +54,11 @@ export function ApprovalQueue({
                       <DialogTitle>{request.capability}</DialogTitle>
                       <DialogDescription>{request.humanSummary}</DialogDescription>
                     </DialogHeader>
-                    <pre className="text-[10px] whitespace-pre-wrap break-all bg-black/30 p-2 rounded max-h-64 overflow-y-auto">
+                    <pre className="text-[12px] whitespace-pre-wrap break-all bg-black/30 p-2 rounded max-h-64 overflow-y-auto">
                       {JSON.stringify(request.payload, null, 2)}
                     </pre>
                     {request.diff ? (
-                      <pre className="text-[10px] whitespace-pre-wrap break-all bg-black/30 p-2 rounded max-h-64 overflow-y-auto">
+                      <pre className="text-[12px] whitespace-pre-wrap break-all bg-black/30 p-2 rounded max-h-64 overflow-y-auto">
                         {request.diff}
                       </pre>
                     ) : null}
