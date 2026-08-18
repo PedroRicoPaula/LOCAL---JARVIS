@@ -457,6 +457,38 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
   way (PT-PT "ativa o rastreio de mãos" vs. `look`'s own
   `stop_gestures`), same failure class as ADR-059's "cursor"-app-name
   collision. Baseline updated 88.6 -> 89.0 for the new, larger case set.
+- **Drove the whole system end to end for the first time with real
+  data, 2026-08-17 (ADR-062, ADR-063).** The real `core` was booted
+  against fake `ears`/`voice`/`eyes` sockets on an isolated port and a
+  copy of the real DB, then driven through its own dashboard WebSocket;
+  `/api/routing-misses` was read for the owner's own failed utterances
+  and those were replayed live. Six real bugs, none of which any unit
+  test or empty-dashboard check could have surfaced:
+  - "how are you" / "how's it going" **auto-dispatched a full morning
+    briefing** (0.8303 / 0.8542 against `brief.morning_brief`, clear of
+    both thresholds). "obrigado" scored 0.7487 against `look.describe`.
+    Fixed with `core/skills/socialUtterance.ts`, which also skips lane
+    classification, embedding and disambiguation entirely for those --
+    a real latency win on this machine.
+  - "open Instagram" dead-ended on `open -a INSTAGRAM`. `launcher` now
+    falls back to the website when macOS confirms no such app exists.
+  - Portuguese replies were **Brazilian**, not European (five BR forms in
+    one reply). `core/persona.md` now spells the distinction out
+    concretely; `skills/about` went bilingual via a new
+    `skills/_shared/language.ts`.
+  - The dashboard, once populated, **rendered panels on top of each
+    other** (5 approvals painting over three panels below), lost Metrics
+    and Timeline behind a 13-skill Skill Health list, collapsed both side
+    columns to zero height below 1024px, showed a raw
+    `49.10000000000002 GB` float, and had **483 text elements below
+    10px**. All fixed and re-measured at 1512/1280/900px.
+  - `about` claimed "check your Gmail" while the Gmail MCP server was
+    unregistered; it now checks `ctx.mcp.hasServer()` first.
+  - **Owner-required, newly precise:** the Gmail OAuth refresh token is
+    expired/revoked (`invalid_grant` from Google's own endpoint) -- it was
+    previously recorded as merely "not configured". Re-running
+    `bench/gmail_authorize.ts` needs the owner's own browser.
+  Test count 498 -> 520 TS, 108 Python, `make check` green throughout.
 - **Ran the remaining self-run benchmarks as a health check, 2026-08-17:**
   `bench_router_lane.ts` (EN, 45 cases) 97.8%, matches baseline, no
   action. `bench_recall_p95.ts` (local, no network) p95 13.42ms/23.27ms,
