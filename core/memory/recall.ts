@@ -133,13 +133,25 @@ export async function assembleContext(
   // the owner keyword recall too.
   const keywordMatches = keywordSearch(db, opts.queryText, semanticTopK);
 
+  // Drop anything already in `recentTurns` BEFORE capping, not after.
+  // Found live 2026-08-17: the cap used to run first, and since events
+  // from the current session are the most textually similar thing in the
+  // database, the top fused candidates are routinely recent turns -- so
+  // the cap was spent on rows that the dedup filter then threw away,
+  // leaving fewer real matches than the already-computed ranking could
+  // have supplied, sometimes none at all. Concretely, with
+  // semanticTopK=1 and a ranking of [a recent turn, a genuinely relevant
+  // older memory], the owner got zero recall matches for a question
+  // memory could actually answer. Both halves already return up to
+  // `semanticTopK` each, so there is a real pool to backfill from.
   const fusedIds = reciprocalRankFusion([
     semanticMatches.map((m) => m.refId),
     keywordMatches.map((m) => m.refId),
-  ]).slice(0, semanticTopK);
+  ]);
   const recallMatches = fusedIds
     .map((id) => getEvent(db, id))
-    .filter((e): e is MemoryEvent => e !== null && !recentIds.has(e.id));
+    .filter((e): e is MemoryEvent => e !== null && !recentIds.has(e.id))
+    .slice(0, semanticTopK);
 
   const facts = factsAboveConfidence(db, factConfidenceFloor);
 
