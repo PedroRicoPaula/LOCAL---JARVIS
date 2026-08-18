@@ -94,7 +94,7 @@ test("dispatch() delegates to the real dispatch pipeline built from loadAll()'s 
   // FakeEmbedder is a real (if simple) bag-of-words embedder, so this
   // scores a near-perfect match against itself, well clear of
   // DISPATCH_SCORE with no other candidate to disambiguate against.
-  const { outcome } = await registry.dispatch(embedder, routerRegistry, "hello", "s1", () => fakeSkillContext());
+  const { outcome } = await registry.dispatch(embedder, routerRegistry, "polish the widget", "s1", () => fakeSkillContext());
 
   assert.equal(outcome.outcome, "dispatched");
   if (outcome.outcome === "dispatched") assert.equal(outcome.result.speech, "ok");

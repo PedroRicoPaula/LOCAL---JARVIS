@@ -12,6 +12,7 @@ import type { Registry } from "../router/registry.ts";
 import { routeChat, type TraceSink } from "../router/router.ts";
 import type { ExampleEmbedding, MatchCandidate } from "./embeddingMatch.ts";
 import { matchUtterance } from "./embeddingMatch.ts";
+import { isSocialUtterance } from "./socialUtterance.ts";
 import type { Skill, SkillContext } from "./types.ts";
 
 /** The `ModelProvider.id` of the true last resort (`providers/ollama.ts`)
@@ -125,6 +126,24 @@ export async function dispatch(
   utterance: string,
   sessionId: string,
 ): Promise<DispatchResult> {
+  // Before any model call at all: a pure social pleasantry has no skill
+  // to dispatch to, and measured live (2026-08-17) several of them
+  // auto-dispatched to a real skill anyway -- "how are you" scored
+  // 0.8303 against `brief.morning_brief`, clear of both thresholds, so
+  // asking JARVIS how it was doing returned a full morning briefing.
+  // See `socialUtterance.ts` for the measurements and for why this is a
+  // deterministic guard rather than another attempt at rewording
+  // `DISAMBIGUATION_SYSTEM` (ADR-038 records two rejected attempts).
+  // Short-circuiting here also skips the lane-classification, embedding
+  // and disambiguation calls entirely for the most common throwaway
+  // phrases -- a real latency win on this machine (CLAUDE.md § 7).
+  if (isSocialUtterance(utterance)) {
+    return {
+      outcome: { outcome: "no_skill_matched" },
+      trace: { utterance, lane: "converse", candidates: [], disambiguated: false },
+    };
+  }
+
   const { lane } = await classifyLane(deps.routerRegistry, utterance);
 
   const candidates = await matchUtterance(embedder, utterance, deps.exampleIndex);

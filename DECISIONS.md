@@ -73,4 +73,4 @@ Format: Context → Decision → Consequences.
 | [ADR-059](docs/decisions/ADR-059.md) | The "peanuts" bug fixed: don't trust the degraded model's disambiguation choice |
 | [ADR-060](docs/decisions/ADR-060.md) | Reminders `list`/`complete` hang: re-investigated live, narrowed, partially fixed |
 | [ADR-061](docs/decisions/ADR-061.md) | Closed the 5-skill routing coverage gap, found a real deterministic collision |
-
+| [ADR-062](docs/decisions/ADR-062.md) | Three real bugs found by driving the live system end to end |

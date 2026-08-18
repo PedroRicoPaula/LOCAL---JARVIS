@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fakeConversation, fakeRouter, fakeSkillContext } from "../../core/skills/tests/fakes.ts";
 import type { ProposedAction } from "../../shared/types.ts";
-import { createLauncherSkill, friendlyUrlName } from "./index.ts";
+import { createLauncherSkill, friendlyUrlName, isAppNotFoundError, websiteGuessFor } from "./index.ts";
 
 test("happy path: open_app proposes APP_CONTROL with the exact app named, speaks success", async () => {
   const proposals: ProposedAction[] = [];
@@ -212,4 +212,99 @@ test("open_url with nothing extracted falls back to asking which website", async
   const result = await skill.handle({ utterance: "open a website", intent: "open_url", sessionId: "s1" }, ctx);
 
   assert.equal(result.speech, "Opened Example.");
+});
+
+// --- app-not-found -> website fallback (2026-08-17) -----------------
+// Reproduces a real miss from the owner's own production history:
+// "in a new tab, open Instagram." routed to open_app, and
+// `open -a INSTAGRAM` dead-ended instead of opening Instagram.
+
+const APP_NOT_FOUND = "Command failed: open -a Instagram\nUnable to find application named 'Instagram'\n";
+
+test("open_app: a name macOS says isn't an installed app falls back to that name's website", async () => {
+  const proposals: ProposedAction[] = [];
+  const ctx = fakeSkillContext({
+    router: fakeRouter({ completeReturns: "Instagram" }),
+    propose: async (action) => {
+      proposals.push(action);
+      const payload = action.payload as { action: string };
+      if (payload.action === "open_app") return { ok: false, reason: "error", detail: APP_NOT_FOUND };
+      return { ok: true, result: { url: "https://instagram.com" } };
+    },
+  });
+  const skill = createLauncherSkill({ listProjectDirs: () => [] });
+
+  const result = await skill.handle({ utterance: "in a new tab, open Instagram.", intent: "open_app", sessionId: "s1" }, ctx);
+
+  assert.equal(proposals.length, 2);
+  assert.deepEqual(proposals[1]?.payload, { action: "open_url", url: "https://instagram.com" });
+  // The spoken line must say what was substituted -- never claim the app opened.
+  assert.match(result.speech, /no app called Instagram/i);
+  assert.match(result.speech, /website/i);
+});
+
+test("open_app: any OTHER failure is still reported honestly, never silently turned into a website", async () => {
+  const proposals: ProposedAction[] = [];
+  const ctx = fakeSkillContext({
+    router: fakeRouter({ completeReturns: "Photoshop" }),
+    propose: async (action) => {
+      proposals.push(action);
+      return { ok: false, reason: "error", detail: "The application could not be launched. (-10810)" };
+    },
+  });
+  const skill = createLauncherSkill({ listProjectDirs: () => [] });
+
+  const result = await skill.handle({ utterance: "open Photoshop", intent: "open_app", sessionId: "s1" }, ctx);
+
+  assert.equal(proposals.length, 1, "must not attempt a website fallback for an unrelated failure");
+  assert.match(result.speech, /couldn't open Photoshop/i);
+});
+
+test("open_project: a missing editor stays an honest error and never becomes a trip to a website", async () => {
+  const proposals: ProposedAction[] = [];
+  const ctx = fakeSkillContext({
+    router: fakeRouter({ completeReturns: "Jarvis" }),
+    propose: async (action) => {
+      proposals.push(action);
+      return { ok: false, reason: "error", detail: "Unable to find application named 'Cursor'" };
+    },
+  });
+  const skill = createLauncherSkill({ listProjectDirs: () => ["Jarvis"] });
+
+  const result = await skill.handle({ utterance: "open my Jarvis project", intent: "open_project", sessionId: "s1" }, ctx);
+
+  assert.equal(proposals.length, 1, "a path-carrying open must never fall back to a website");
+  assert.match(result.speech, /couldn't open Cursor/i);
+});
+
+test("open_app: the website fallback failing too is reported as the original app failure, not a second error", async () => {
+  const ctx = fakeSkillContext({
+    router: fakeRouter({ completeReturns: "Instagram" }),
+    propose: async (action) => {
+      const payload = action.payload as { action: string };
+      if (payload.action === "open_app") return { ok: false, reason: "error", detail: APP_NOT_FOUND };
+      return { ok: false, reason: "error", detail: "no browser" };
+    },
+  });
+  const skill = createLauncherSkill({ listProjectDirs: () => [] });
+
+  const result = await skill.handle({ utterance: "open Instagram", intent: "open_app", sessionId: "s1" }, ctx);
+
+  assert.match(result.speech, /couldn't open Instagram/i);
+});
+
+test("websiteGuessFor slugifies a real spoken app name, and refuses one with nothing usable in it", () => {
+  assert.equal(websiteGuessFor("Instagram"), "https://instagram.com");
+  assert.equal(websiteGuessFor("INSTAGRAM"), "https://instagram.com");
+  assert.equal(websiteGuessFor("  You Tube "), "https://youtube.com");
+  assert.equal(websiteGuessFor("Notícias"), "https://noticias.com");
+  assert.equal(websiteGuessFor("!!!"), null);
+  assert.equal(websiteGuessFor(""), null);
+});
+
+test("isAppNotFoundError matches only the real macOS not-installed message", () => {
+  assert.equal(isAppNotFoundError(APP_NOT_FOUND), true);
+  assert.equal(isAppNotFoundError("Unable to find application named 'X'"), true);
+  assert.equal(isAppNotFoundError("The application could not be launched. (-10810)"), false);
+  assert.equal(isAppNotFoundError(undefined), false);
 });

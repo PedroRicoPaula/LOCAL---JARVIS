@@ -78,9 +78,78 @@ function speechForOutcome(app: string, outcome: ApprovalOutcome, verb: "open" | 
   return `I couldn't ${verb} ${app} -- ${outcome.detail ?? "something went wrong"}.`;
 }
 
+/** True when an `open_app` failure was specifically "no such application
+ * is installed", as opposed to any other failure (a real app that
+ * refused to launch, a bad path, a permissions problem).
+ *
+ * Matched here rather than in the executor because a skill can't import
+ * `core/executors/**` (CLAUDE.md § 5b, ESLint-enforced) -- and because
+ * deciding *what to do about* a failed outcome is exactly the skill's
+ * own job, the same way `speechForOutcome` already interprets one.
+ *
+ * Verified on this machine, not assumed: `open`'s own message is not
+ * localized (a pt-PT system with `AppleLocale = pt_PT` still prints
+ * "Unable to find application named 'X'"), unlike `osascript`, whose
+ * errors on the same machine *are* translated. If that ever changes,
+ * this returns false and the failure is simply reported honestly --
+ * the degraded behaviour is the old behaviour, never a wrong action. */
+export function isAppNotFoundError(detail: string | undefined): boolean {
+  return detail !== undefined && /unable to find application/i.test(detail);
+}
+
+/** "Instagram" -> "https://instagram.com". Only ever used as a fallback
+ * for a name macOS confirmed is not an installed app -- see
+ * `proposeOpen`'s own comment for why guessing `.com` is acceptable
+ * there specifically and not a general URL-resolution strategy. */
+export function websiteGuessFor(name: string): string | null {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+  if (!slug) return null;
+  return `https://${slug}.com`;
+}
+
 async function proposeOpen(ctx: SkillContext, app: string, path: string | undefined, humanSummary: string): Promise<{ speech: string }> {
   const payload = path ? { action: "open_app" as const, app, path } : { action: "open_app" as const, app };
   const outcome = await ctx.propose({ capability: "APP_CONTROL", humanSummary, payload });
+
+  // A name that isn't an installed app is very often a website asked for
+  // by brand -- found live 2026-08-17 reproducing a real miss from the
+  // owner's own history: "in a new tab, open Instagram." routed to
+  // `open_app`, and `open -a INSTAGRAM` dead-ended on "Unable to find
+  // application named 'INSTAGRAM'" instead of opening Instagram.
+  //
+  // Guessing `<name>.com` is acceptable *here specifically* because the
+  // guess is already narrowed to a name macOS just confirmed is not an
+  // app, the result is a visible browser tab the owner can close (the
+  // exact "immediately visible, trivially reversible" property that put
+  // APP_CONTROL in the green tier at all, CLAUDE.md § 5), and the spoken
+  // line says plainly what was substituted rather than pretending the
+  // app opened. It is never a general URL-resolution strategy -- a real
+  // `open_url` request goes through `EXTRACT_URL_SYSTEM` as before.
+  //
+  // Skipped entirely when a `path` is involved: that's `open_project`
+  // opening a real editor, where "Cursor isn't installed" must stay an
+  // honest error and must never become a trip to cursor.com.
+  if (!outcome.ok && path === undefined && isAppNotFoundError(outcome.detail)) {
+    const url = websiteGuessFor(app);
+    if (url) {
+      const urlOutcome = await ctx.propose({
+        capability: "APP_CONTROL",
+        humanSummary: `Open ${url} (no app named "${app}" is installed)`,
+        payload: { action: "open_url" as const, url },
+      });
+      if (urlOutcome.ok) {
+        const speech = `There's no app called ${app} on this Mac, so I opened ${friendlyUrlName(url)}'s website instead.`;
+        ctx.say(speech);
+        return { speech };
+      }
+    }
+  }
+
   const speech = speechForOutcome(app, outcome, "open");
   ctx.say(speech);
   return { speech };
