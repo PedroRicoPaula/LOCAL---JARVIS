@@ -74,12 +74,63 @@ test("both language templates describe the same capability set", async () => {
   const topics: [RegExp, RegExp][] = [
     [/weather/i, /tempo/i],
     [/shopping list/i, /lista de compras/i],
-    [/Gmail/i, /Gmail/i],
     [/camera/i, /câmara/i],
     [/CPU/i, /CPU/i],
   ];
   for (const [enPattern, ptPattern] of topics) {
     assert.match(en.speech, enPattern);
     assert.match(pt.speech, ptPattern);
+  }
+});
+
+// --- honest capability claims (2026-08-17) ---------------------------
+// Found live: the Gmail OAuth refresh token had expired, core booted with
+// the server unregistered, and this skill kept telling the owner it could
+// "check your Gmail". CLAUDE.md § 6 -- a capability claim is exactly as
+// serious as a factual claim.
+
+function ctxWithServers(servers: string[]) {
+  return fakeSkillContext({
+    conversation: fakeConversation(),
+    mcp: { hasServer: (id: string) => servers.includes(id), listTools: () => [] },
+  });
+}
+
+test("an MCP capability is only claimed when its server is actually registered", async () => {
+  const result = await skill.handle(
+    { utterance: "what can you do", intent: "list_capabilities", sessionId: "s1" },
+    ctxWithServers([]),
+  );
+
+  assert.doesNotMatch(result.speech, /Gmail/i, "must not claim Gmail with no server registered");
+  assert.doesNotMatch(result.speech, /GitHub/i);
+  // The always-real capabilities are still there.
+  assert.match(result.speech, /weather/i);
+  assert.match(result.speech, /clipboard/i);
+});
+
+test("a registered MCP server IS claimed, in the language asked", async () => {
+  const en = await skill.handle(
+    { utterance: "what can you do", intent: "list_capabilities", sessionId: "s1" },
+    ctxWithServers(["gmail"]),
+  );
+  assert.match(en.speech, /check your Gmail/i);
+  assert.doesNotMatch(en.speech, /GitHub/i);
+
+  const pt = await skill.handle(
+    { utterance: "o que consegues fazer", intent: "list_capabilities", sessionId: "s1" },
+    ctxWithServers(["gmail", "github"]),
+  );
+  assert.match(pt.speech, /ver o teu Gmail/i);
+  assert.match(pt.speech, /repositórios do GitHub/i);
+});
+
+test("the sentence stays grammatical whether zero, one or two servers are up", async () => {
+  for (const servers of [[], ["gmail"], ["gmail", "github"]]) {
+    for (const utterance of ["what can you do", "o que consegues fazer"]) {
+      const r = await skill.handle({ utterance, intent: "list_capabilities", sessionId: "s1" }, ctxWithServers(servers));
+      assert.match(r.speech, /\.$/, `should end in a period: ${r.speech}`);
+      assert.doesNotMatch(r.speech, /,\s*,|\band and\b|\be e\b/, `malformed list: ${r.speech}`);
+    }
   }
 });
