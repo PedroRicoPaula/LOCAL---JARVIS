@@ -53,21 +53,38 @@ export async function getSigningKey(account = process.env["USER"] ?? ""): Promis
   return generated;
 }
 
-function canonicalPayload(id: string, nonce: string, payload: unknown): string {
-  // The object literal's own key order, not the caller's payload shape --
-  // deterministic regardless of how the caller built `payload`, which is
-  // what verify() needs to reproduce the exact same string.
-  return JSON.stringify({ id, nonce, payload });
+/** Covers every field an executor is expected to trust.
+ *
+ * `issuedAt` was **not** covered until 2026-08-17 -- found while writing
+ * adversarial tests for this module: a signed execution's timestamp could
+ * be changed freely and still verify. That was harmless in-process
+ * (freshness is enforced by the gate's own `expires_at` check against the
+ * DB row, never by the signature), but this signature exists precisely so
+ * a *future out-of-process* executor can trust what it receives (SPEC.md
+ * § 8's webhook case, ROADMAP Phase 13) -- and such an executor has no DB
+ * row to check against, so an unsigned timestamp would be a replay
+ * window handed to it. Signing it costs nothing and closes that before
+ * anyone builds against it.
+ *
+ * The key order here is this literal's, not the caller's payload shape,
+ * so `verify()` reproduces the exact same string. Note the payload's own
+ * internal key order still comes from however it was built/parsed --
+ * fine today (sign and verify see the same object, and a JSON round-trip
+ * preserves order), but a future executor that re-serializes a payload
+ * through something that reorders keys would break verification. Worth
+ * knowing before building that. */
+function canonicalPayload(id: string, nonce: string, payload: unknown, issuedAt: number): string {
+  return JSON.stringify({ id, nonce, payload, issuedAt });
 }
 
 export function sign(key: string, id: string, nonce: string, payload: unknown, issuedAt: number): SignedExecution {
-  const signature = createHmac("sha256", key).update(canonicalPayload(id, nonce, payload)).digest("hex");
+  const signature = createHmac("sha256", key).update(canonicalPayload(id, nonce, payload, issuedAt)).digest("hex");
   return { requestId: id, nonce, payload, issuedAt, signature };
 }
 
 export function verify(key: string, execution: SignedExecution): boolean {
   const expected = createHmac("sha256", key)
-    .update(canonicalPayload(execution.requestId, execution.nonce, execution.payload))
+    .update(canonicalPayload(execution.requestId, execution.nonce, execution.payload, execution.issuedAt))
     .digest("hex");
   return timingSafeEqualStrings(expected, execution.signature);
 }

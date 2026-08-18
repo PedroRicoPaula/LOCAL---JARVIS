@@ -79,3 +79,4 @@ Format: Context → Decision → Consequences.
 | [ADR-065](docs/decisions/ADR-065.md) | "Stop" mid-question became the answer, and fired a real green-tier action |
 | [ADR-066](docs/decisions/ADR-066.md) | Two dashboard defects: a silently-swallowed write, and a signal built but never rendered |
 | [ADR-067](docs/decisions/ADR-067.md) | Two defects a code review caught in this session's own fixes |
+| [ADR-068](docs/decisions/ADR-068.md) | Proving the gate's security invariants, and one real gap found doing it |

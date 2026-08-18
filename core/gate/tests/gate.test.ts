@@ -507,3 +507,128 @@ test("a natural timeout expiry (no decide() call at all) has no channel -- nothi
   const expired = audit.find((a) => a.event === "expired");
   assert.equal((expired?.detail as { channel?: string })?.channel, undefined);
 });
+
+// --- adversarial: the security properties the whole gate rests on ----
+// Added 2026-08-17. These invariants were load-bearing but untested: the
+// existing suite proves the state machine's happy and sad paths, not
+// that the boundary holds against a caller actively trying to get two
+// executions, a forged signature, or an action out of a spent request.
+
+test("two concurrent approvals of the same request execute the action exactly ONCE", async () => {
+  let runs = 0;
+  const gate = freshGateWithExecutor(async () => {
+    runs++;
+    // Yield, so a second decide() would have every chance to interleave
+    // if the guard were weaker than it is.
+    await new Promise((r) => setTimeout(r, 20));
+    return { ok: true, result: runs };
+  });
+  const action: ProposedAction = { capability: "SHELL_EXEC", humanSummary: "run it", payload: { cmd: "x" } };
+  const pending = gate.propose(action, "s");
+  const row = gate.listPending()[0]!;
+
+  // Fired without awaiting between them -- the real double-click shape.
+  await Promise.all([
+    gate.decide({ requestId: row.id, nonce: row.nonce, decision: "approve", decidedAt: Date.now(), channel: "dashboard" }),
+    gate.decide({ requestId: row.id, nonce: row.nonce, decision: "approve", decidedAt: Date.now(), channel: "dashboard" }),
+  ]);
+  await pending;
+
+  assert.equal(runs, 1, "an approved action must never run twice");
+  // The loser is logged as a replay, not silently dropped.
+  assert.ok(auditRows(gate).some((r) => r.event === "rejected" && (r.detail as { reason?: string }).reason === "replay"));
+});
+
+test("approve and reject racing on the same request settle exactly one way, and the action runs at most once", async () => {
+  let runs = 0;
+  const gate = freshGateWithExecutor(async () => {
+    runs++;
+    return { ok: true, result: null };
+  });
+  const pending = gate.propose({ capability: "SHELL_EXEC", humanSummary: "run it", payload: {} }, "s");
+  const row = gate.listPending()[0]!;
+
+  await Promise.all([
+    gate.decide({ requestId: row.id, nonce: row.nonce, decision: "approve", decidedAt: Date.now(), channel: "dashboard" }),
+    gate.decide({ requestId: row.id, nonce: row.nonce, decision: "reject", decidedAt: Date.now(), channel: "cli" }),
+  ]);
+  const outcome = await pending;
+
+  assert.ok(runs <= 1, "the action must not run twice under a race");
+  // Whichever won, the request is settled and no longer pending.
+  assert.equal(gate.listPending().length, 0);
+  assert.ok(outcome.ok === true || outcome.reason === "rejected");
+});
+
+test("a tampered payload fails signature verification -- the executor is never called", async () => {
+  const { sign, verify } = await import("../hmac.ts");
+  const signed = sign(KEY, "req-1", "nonce-1", { cmd: "ls" }, 1000);
+
+  assert.equal(verify(KEY, signed), true, "the untampered signature must verify");
+
+  // Every field the signature covers, mutated one at a time.
+  assert.equal(verify(KEY, { ...signed, payload: { cmd: "rm -rf /" } }), false, "payload swap must fail");
+  assert.equal(verify(KEY, { ...signed, requestId: "req-2" }), false, "id swap must fail");
+  assert.equal(verify(KEY, { ...signed, nonce: "nonce-2" }), false, "nonce swap must fail");
+  assert.equal(verify(KEY, { ...signed, signature: signed.signature.replace(/.$/, "0") }), false, "signature edit must fail");
+  // A different key must not verify -- otherwise the key isn't doing anything.
+  assert.equal(verify("another-key", signed), false);
+});
+
+test("a signature from a DIFFERENT request cannot be pasted onto this one", async () => {
+  const { sign, verify } = await import("../hmac.ts");
+  const a = sign(KEY, "req-a", "nonce-a", { cmd: "safe" }, 1000);
+  const b = sign(KEY, "req-b", "nonce-b", { cmd: "dangerous" }, 1000);
+
+  // Cross-pasting either half must fail: this is what binds a signature
+  // to one specific approval rather than to a payload shape.
+  assert.equal(verify(KEY, { ...a, signature: b.signature }), false);
+  assert.equal(verify(KEY, { ...b, signature: a.signature }), false);
+});
+
+test("issuedAt IS covered by the signature -- a future out-of-process executor can trust it", async () => {
+  const { sign, verify } = await import("../hmac.ts");
+  const signed = sign(KEY, "req-1", "nonce-1", { cmd: "ls" }, 1000);
+
+  // Until 2026-08-17 this returned true: the timestamp could be changed
+  // freely and still verify. Harmless in-process (freshness comes from
+  // the gate's own expires_at check against the DB row), but a webhook
+  // executor has no DB row to check -- an unsigned timestamp would hand
+  // it a replay window. See hmac.ts's canonicalPayload comment.
+  assert.equal(verify(KEY, { ...signed, issuedAt: 999999 }), false);
+  assert.equal(verify(KEY, signed), true);
+});
+
+test("a spent request cannot be revived: decide() after it settled is always a replay", async () => {
+  const gate = freshGate();
+  const pending = gate.propose({ capability: "SHELL_EXEC", humanSummary: "x", payload: {} }, "s");
+  const row = gate.listPending()[0]!;
+
+  await gate.decide({ requestId: row.id, nonce: row.nonce, decision: "reject", decidedAt: Date.now(), channel: "cli" });
+  await pending;
+
+  // Same id, same nonce, now approving -- must not resurrect it.
+  await gate.decide({ requestId: row.id, nonce: row.nonce, decision: "approve", decidedAt: Date.now(), channel: "dashboard" });
+
+  assert.equal(gate.getApproval(row.id)?.state, "rejected", "state must not move after settling");
+  const replays = auditRows(gate).filter((r) => r.event === "rejected" && (r.detail as { reason?: string }).reason === "replay");
+  assert.equal(replays.length, 1);
+});
+
+test("a decision for an id that never existed is a logged replay, not a crash", async () => {
+  const gate = freshGate();
+  await gate.decide({ requestId: "no-such-id", nonce: "whatever", decision: "approve", decidedAt: Date.now(), channel: "dashboard" });
+  assert.ok(auditRows(gate).some((r) => r.event === "rejected" && (r.detail as { reason?: string }).reason === "replay"));
+});
+
+test("timingSafeEqualStrings is correct on every shape it actually sees", async () => {
+  const { timingSafeEqualStrings: eq } = await import("../hmac.ts");
+  assert.equal(eq("", ""), true);
+  assert.equal(eq("abc", "abc"), true);
+  assert.equal(eq("abc", "abd"), false);
+  assert.equal(eq("abc", "ab"), false, "a prefix must not compare equal");
+  assert.equal(eq("ab", "abc"), false);
+  // Non-ASCII: the loop compares char codes, so this must still hold.
+  assert.equal(eq("ção", "ção"), true);
+  assert.equal(eq("ção", "cao"), false);
+});
