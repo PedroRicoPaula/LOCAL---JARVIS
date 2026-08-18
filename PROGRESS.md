@@ -531,6 +531,38 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
   (measured competing at 0.76 on unrelated utterances), but removing it
   changes what a real "what should I wear" does, so it wasn't taken
   unilaterally.
+- **Third pass, 2026-08-17 (ADR-067), driven by a code review of this
+  session's own fixes.** Worth stating plainly: the live-testing pass
+  found real bugs, and the review pass then found real bugs *in those
+  fixes*. Neither substitutes for the other.
+  - **HIGH, self-inflicted:** ADR-066's optimistic-write rollback
+    restored a stale array snapshot. Delete B (slow), delete A (fast,
+    succeeds), B fails -> B's rollback resurrects A, which really was
+    deleted. Nothing self-heals it (no `task.*` server event, lists only
+    fetched at load). Replaced with targeted functional updates.
+  - **MEDIUM, self-inflicted:** ADR-064's streaming made a mid-stream
+    provider failure a new case -- the owner could hear half a real
+    answer and then an apology, with only the apology recorded. Now the
+    partial is kept and recorded, with an honest "I lost the rest of
+    that".
+  - `wardrobe`'s examples were matching by *sentence shape* rather than
+    meaning ("o que é que eu visto" scored 0.8583 against a tasks
+    utterance). Fixed by anchoring on clothing nouns -- fourth instance
+    of the "a word becomes a magnet" failure this project has hit
+    (coffee, the Cursor app name, "rastreio de mãos", this). Real
+    wardrobe phrases improved too (0.79 -> 0.93). The measured
+    trade-off is written into the manifest: one natural PT phrasing no
+    longer reaches the skill, accepted because it's a placeholder, with
+    an explicit note to revisit when it's built.
+  - Answers to a skill's `ctx.ask()` are finally recorded and shown --
+    the dashboard used to show the question and then nothing, and
+    `events` had no trace of the answer at all.
+  - Deleted genuinely dead code (`isMeasured`, `skillTablePrefix`, and
+    the `trace`/`health`/`mute` wire variants -- each verified to have
+    exactly one reference and no SPEC.md backing). Kept the
+    `Quantity`/`Measurement` types: those are a real forward contract.
+  - Two stale `docs/BACKLOG.md` entries corrected against the code.
+  Test count 551 -> 553 TS, 108 Python, `make check` green throughout.
 - **Ran the remaining self-run benchmarks as a health check, 2026-08-17:**
   `bench_router_lane.ts` (EN, 45 cases) 97.8%, matches baseline, no
   action. `bench_recall_p95.ts` (local, no network) p95 13.42ms/23.27ms,
