@@ -48,6 +48,7 @@ export default function Home() {
     metrics,
     feedback,
     camera,
+    senses,
     gestures,
     audioLevels,
     decide,
@@ -128,7 +129,7 @@ export default function Home() {
       </div>
 
       <TestConsole onSubmit={injectUtterance} />
-      <StatusBar connection={connection} connectedSince={connectedSince} camera={camera} />
+      <StatusBar connection={connection} connectedSince={connectedSince} camera={camera} senses={senses} />
     </div>
   );
 }

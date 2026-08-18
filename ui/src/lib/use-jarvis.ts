@@ -48,10 +48,13 @@ import {
   type JarvisError,
   type Thought,
   type TranscriptLine,
+  INITIAL_SENSES,
+  type SenseConnections,
 } from "./use-jarvis-types";
 
 export type {
   CameraDashboardState,
+  SenseConnections,
   ConnectionState,
   GestureDashboardState,
   JarvisDashboardState,
@@ -94,6 +97,7 @@ export function useJarvis(): JarvisDashboardState {
   const [events, setEvents] = useState<MemoryEvent[]>([]);
   const [skills, setSkills] = useState<SkillHealth[]>([]);
   const [errors, setErrors] = useState<JarvisError[]>([]);
+  const [senses, setSenses] = useState<SenseConnections>(INITIAL_SENSES);
   const [system, setSystem] = useState<SystemMetrics | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
@@ -239,6 +243,9 @@ export function useJarvis(): JarvisDashboardState {
           case "feedback":
             setFeedback((prev) => ({ ...prev, [event.eventId]: event.rating }));
             break;
+          case "sense.connection":
+            setSenses((prev) => ({ ...prev, [event.sense]: event.connected }));
+            break;
           default:
             break;
         }
@@ -287,19 +294,53 @@ export function useJarvis(): JarvisDashboardState {
     send({ type: "gesture.blur", enabled });
   }
 
+  /** Runs an optimistic write, and puts the old state back if it didn't
+   * actually land.
+   *
+   * These three used to fire `fetch(...).catch(() => undefined)` with no
+   * `res.ok` check at all -- and a 4xx/5xx response doesn't reject, so
+   * the `.catch` never even ran. The item vanished from the dashboard
+   * while still sitting in the database: the UI claiming a change
+   * happened when it didn't. That is exactly the failure
+   * `core/persona.md` gained an explicit rule against after a real live
+   * incident (docs/BACKLOG.md's SOAK entry: JARVIS said it had deleted a
+   * shopping-list item that was never touched), and the rule applies to
+   * the dashboard for the same reason it applies to the voice.
+   *
+   * Note the contrast with `fetchJson` above, the read path, which has
+   * checked `res.ok` since it was written. */
+  async function optimisticWrite(path: string, method: "POST" | "DELETE", rollback: () => void): Promise<void> {
+    try {
+      const res = await fetch(`${CORE_URL}${path}`, { method });
+      if (!res.ok) throw new Error(`${path}: ${res.status}`);
+    } catch (err) {
+      rollback();
+      // Same shape and cap the WS `error` handler already uses above --
+      // this lands in the dashboard's own Error Log panel, so a failed
+      // write is visible rather than silently reverted.
+      setErrors((prev) => [
+        ...prev.slice(-19),
+        { message: "That change didn't go through.", detail: err instanceof Error ? err.message : String(err), ts: Date.now() },
+      ]);
+    }
+  }
+
   async function toggleTask(id: string): Promise<void> {
+    const before = tasks;
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))); // optimistic
-    await fetch(`${CORE_URL}/api/tasks/${id}/toggle`, { method: "POST" }).catch(() => undefined);
+    await optimisticWrite(`/api/tasks/${id}/toggle`, "POST", () => setTasks(before));
   }
 
   async function deleteTask(id: string): Promise<void> {
+    const before = tasks;
     setTasks((prev) => prev.filter((t) => t.id !== id)); // optimistic
-    await fetch(`${CORE_URL}/api/tasks/${id}`, { method: "DELETE" }).catch(() => undefined);
+    await optimisticWrite(`/api/tasks/${id}`, "DELETE", () => setTasks(before));
   }
 
   async function deleteShoppingItem(id: string): Promise<void> {
+    const before = shoppingItems;
     setShoppingItems((prev) => prev.filter((i) => i.id !== id)); // optimistic
-    await fetch(`${CORE_URL}/api/shopping-list/${id}`, { method: "DELETE" }).catch(() => undefined);
+    await optimisticWrite(`/api/shopping-list/${id}`, "DELETE", () => setShoppingItems(before));
   }
 
   return {
@@ -312,6 +353,7 @@ export function useJarvis(): JarvisDashboardState {
     events,
     skills,
     errors,
+    senses,
     system,
     tasks,
     shoppingItems,

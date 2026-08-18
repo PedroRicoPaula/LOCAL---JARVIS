@@ -75,6 +75,10 @@ async function main(): Promise<void> {
   // reference, assigned later, only ever called after" shape
   // `handleUtterance` below already uses.
   let broadcastSenseState: (sense: "ears" | "voice" | "eyes", connected: boolean) => void = () => {};
+  // The current truth about each sense, kept so a dashboard tab opened
+  // at any moment can be told the state it missed -- `sense.connection`
+  // itself only fires on a *change*.
+  const senseState: Record<"ears" | "voice" | "eyes", boolean> = { ears: false, voice: false, eyes: false };
 
   console.log(`core: connecting to ears (${EARS_SOCKET})`);
   const earsConn = wrapSenseConnection("ears", EARS_SOCKET, await connectWithRetry(EARS_SOCKET), (c) => broadcastSenseState("ears", c));
@@ -160,6 +164,7 @@ async function main(): Promise<void> {
     (enabled) => {
       eyesConn?.send({ type: "gesture.blur", enabled });
     },
+    () => (["ears", "voice", "eyes"] as const).map((sense) => ({ type: "sense.connection" as const, sense, connected: senseState[sense] })),
   );
   // "127.0.0.1", not omitted -- found live in a security review (2026-08-06):
   // omitting the host makes Node bind every interface, not loopback only,
@@ -173,7 +178,15 @@ async function main(): Promise<void> {
   // top of this function -- every reconnect/disconnect from here on is
   // dashboard-visible, not just a console log (found live, 2026-08-07:
   // it previously wasn't, at all -- see `senseConnection.ts`'s docstring).
-  broadcastSenseState = (sense, connected) => wsHub.broadcast({ type: "sense.connection", sense, connected });
+  broadcastSenseState = (sense, connected) => {
+    senseState[sense] = connected;
+    wsHub.broadcast({ type: "sense.connection", sense, connected });
+  };
+  // Seed the real state now that the hub exists: ears/voice are connected
+  // by this point (boot blocks on them), eyes only if it answered.
+  senseState.ears = true;
+  senseState.voice = true;
+  senseState.eyes = eyesConn !== undefined;
 
   // Concurrent with the ears loop below, not before/after it -- until
   // Phase 7's dashboard exists, typing into this same terminal is the

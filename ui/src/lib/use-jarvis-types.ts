@@ -93,6 +93,20 @@ export const INITIAL_GESTURE_STATE: GestureDashboardState = {
   pointerControlActive: false,
 };
 
+/** Which of the three sense daemons `core` currently has a live socket
+ * to. `core` has broadcast `sense.connection` since ADR-051's reconnect
+ * work, precisely so "a dropped sense had no dashboard-visible signal at
+ * all" would stop being true -- but the dashboard dropped the event on
+ * the floor until 2026-08-17, so it stayed true anyway. `null` means
+ * nothing has been heard about that sense yet this session. */
+export interface SenseConnections {
+  ears: boolean | null;
+  voice: boolean | null;
+  eyes: boolean | null;
+}
+
+export const INITIAL_SENSES: SenseConnections = { ears: null, voice: null, eyes: null };
+
 export interface JarvisDashboardState {
   connection: ConnectionState;
   connectedSince: number | null;
@@ -103,6 +117,7 @@ export interface JarvisDashboardState {
   events: MemoryEvent[];
   skills: SkillHealth[];
   errors: JarvisError[];
+  senses: SenseConnections;
   system: SystemMetrics | null;
   tasks: TaskItem[];
   shoppingItems: ShoppingItem[];

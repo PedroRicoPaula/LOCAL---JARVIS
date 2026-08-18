@@ -77,3 +77,4 @@ Format: Context → Decision → Consequences.
 | [ADR-063](docs/decisions/ADR-063.md) | Dashboard bugs only a *populated* live dashboard could show |
 | [ADR-064](docs/decisions/ADR-064.md) | The `converse` lane was fully synchronous; CLAUDE.md § 7's budget finally measured |
 | [ADR-065](docs/decisions/ADR-065.md) | "Stop" mid-question became the answer, and fired a real green-tier action |
+| [ADR-066](docs/decisions/ADR-066.md) | Two dashboard defects: a silently-swallowed write, and a signal built but never rendered |

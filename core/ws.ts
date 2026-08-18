@@ -37,6 +37,14 @@ export function createWsHub(
   memory: Memory,
   onUtterance: (text: string) => void,
   onGestureBlur?: (enabled: boolean) => void,
+  /** Events sent to each newly-connected client, so a tab opened
+   * mid-session isn't blind to state it missed. Same reasoning as
+   * `/api/approvals`' backfill (SPEC.md § 8: "close the browser
+   * mid-approval, request survives") applied to live status: without
+   * this, `sense.connection` only ever fires on a *change*, so a fresh
+   * dashboard showed all three senses as "no report yet" indefinitely
+   * even with all of them connected. */
+  backfillForNewClient?: () => readonly ServerEvent[],
 ): WsHub {
   // Found live in a security review (2026-08-06): without this, `ws`
   // accepts a connection from *any* origin, and the message handler below
@@ -62,6 +70,11 @@ export function createWsHub(
   }
 
   wss.on("connection", (socket) => {
+    if (backfillForNewClient) {
+      for (const event of backfillForNewClient()) {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(event));
+      }
+    }
     socket.on("message", (raw) => {
       let event: ClientEvent;
       try {
