@@ -69,19 +69,51 @@ export async function generalConversationReply(
   let full = "";
   let spokeAnything = false;
 
-  for await (const chunk of routeChat(routerRegistry, {
-    lane: "converse",
-    system,
-    messages: [{ role: "user", content: utterance }],
-    temperature: 0,
-    timeoutMs: 3000,
-  })) {
-    full += chunk.delta;
-    if (!onSentence) continue;
-    for (const sentence of accumulator.push(chunk.delta)) {
-      spokeAnything = true;
-      onSentence(sentence);
+  try {
+    for await (const chunk of routeChat(routerRegistry, {
+      lane: "converse",
+      system,
+      messages: [{ role: "user", content: utterance }],
+      temperature: 0,
+      timeoutMs: 3000,
+    })) {
+      full += chunk.delta;
+      if (!onSentence) continue;
+      for (const sentence of accumulator.push(chunk.delta)) {
+        spokeAnything = true;
+        onSentence(sentence);
+      }
     }
+  } catch (err) {
+    // Streaming makes a mid-stream failure a genuinely new case, caught
+    // in review 2026-08-17. `routeChat` deliberately rethrows rather
+    // than failing over to another provider once it has already yielded
+    // output, so this is a real, expected path -- and by the time it
+    // fires, the owner may already have *heard* part of a real answer.
+    //
+    // Letting it propagate would make `core/main.ts` speak "Something
+    // went wrong handling that. I've logged the error." on top of that
+    // partial answer, and record only the apology -- so the transcript,
+    // the dashboard and `events` would all show a turn in which JARVIS
+    // apparently said nothing but an error, when in fact it said half an
+    // answer out loud. That is an audit gap, not just an awkward reply
+    // (CLAUDE.md § 6).
+    //
+    // `flush()` empties the buffer, so it is called exactly once here and
+    // the result reused -- calling it twice would silently drop the tail.
+    const tail = accumulator.flush();
+
+    // Nothing spoken and nothing buffered: nothing to preserve, so let
+    // the caller's existing honest-failure path handle it unchanged.
+    if (!spokeAnything && !tail) throw err;
+
+    // Something *was* said: finish the thought honestly, and return it
+    // so the real spoken text is what gets recorded.
+    const partial = full.trim();
+    if (onSentence && tail) onSentence(tail);
+    const admission = "Sorry, I lost the rest of that.";
+    onSentence?.(admission);
+    return `${partial} ${admission}`.trim();
   }
 
   const reply = full.trim();

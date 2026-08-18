@@ -161,3 +161,65 @@ test("omitting onSentence keeps the old non-speaking shape exactly", async () =>
   assert.equal(reply, "One. Two.");
   memory.close();
 });
+
+// --- mid-stream failure (review finding, 2026-08-17) -----------------
+// routeChat deliberately rethrows rather than failing over once it has
+// already yielded output, so a provider dying mid-reply is a real path --
+// and by then the owner may already have HEARD part of a real answer.
+
+class MidStreamFailProvider {
+  readonly id = "failing";
+  readonly lanes = ["converse"] as const;
+  supports(lane: string): boolean {
+    return lane === "converse";
+  }
+  async *chat(): AsyncGenerator<{ delta: string }> {
+    yield { delta: "Here is the first part. " };
+    yield { delta: "And the second part. " };
+    throw new Error("provider died mid-stream");
+  }
+}
+
+test("a mid-stream failure keeps what was actually spoken, and says so", async () => {
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
+  const registry = new Registry();
+  registry.register(new MidStreamFailProvider() as never);
+
+  const spoken: string[] = [];
+  const reply = await generalConversationReply(registry, memory, "tell me something", "s1", [], (s) => spoken.push(s));
+
+  // The owner heard real content -- it must be in the returned text too,
+  // or the transcript and events would show only an error for a turn in
+  // which JARVIS genuinely said something.
+  assert.match(reply, /Here is the first part/);
+  assert.match(reply, /lost the rest/i);
+  assert.ok(spoken.some((s) => /Here is the first part/.test(s)));
+  assert.ok(spoken.some((s) => /lost the rest/i.test(s)));
+  // Everything spoken is accounted for in what gets recorded.
+  assert.equal(spoken.join(" ").replace(/\s+/g, " "), reply.replace(/\s+/g, " "));
+  memory.close();
+});
+
+class ImmediateFailProvider {
+  readonly id = "failing-now";
+  readonly lanes = ["converse"] as const;
+  supports(lane: string): boolean {
+    return lane === "converse";
+  }
+  async *chat(): AsyncGenerator<{ delta: string }> {
+    throw new Error("provider died before any output");
+  }
+}
+
+test("a failure BEFORE anything is spoken still propagates -- the honest error path is unchanged", async () => {
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
+  const registry = new Registry();
+  registry.register(new ImmediateFailProvider() as never);
+
+  const spoken: string[] = [];
+  await assert.rejects(
+    generalConversationReply(registry, memory, "tell me something", "s1", [], (s) => spoken.push(s)),
+  );
+  assert.deepEqual(spoken, [], "must not speak an apology for something it never started saying");
+  memory.close();
+});

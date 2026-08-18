@@ -294,8 +294,8 @@ export function useJarvis(): JarvisDashboardState {
     send({ type: "gesture.blur", enabled });
   }
 
-  /** Runs an optimistic write, and puts the old state back if it didn't
-   * actually land.
+  /** Runs an optimistic write and undoes exactly what it did if the
+   * write didn't actually land.
    *
    * These three used to fire `fetch(...).catch(() => undefined)` with no
    * `res.ok` check at all -- and a 4xx/5xx response doesn't reject, so
@@ -306,6 +306,17 @@ export function useJarvis(): JarvisDashboardState {
    * incident (docs/BACKLOG.md's SOAK entry: JARVIS said it had deleted a
    * shopping-list item that was never touched), and the rule applies to
    * the dashboard for the same reason it applies to the voice.
+   *
+   * **The rollback is a targeted functional update, never a snapshot
+   * restore** -- caught in review, 2026-08-17. Capturing `const before =
+   * tasks` and calling `setTasks(before)` on failure looks right but
+   * restores a *stale* array: with two writes in flight, the slower
+   * one's rollback overwrites everything the faster one did. Concretely,
+   * deleting B (slow) then A (fast, succeeds) and then B failing would
+   * resurrect A in the UI, even though A really was deleted server-side.
+   * Nothing self-heals that -- there is no `task.*` server event and the
+   * lists are only fetched on load -- so it would sit there wrong until
+   * a reload. Each rollback below therefore undoes only its own item.
    *
    * Note the contrast with `fetchJson` above, the read path, which has
    * checked `res.ok` since it was written. */
@@ -326,21 +337,33 @@ export function useJarvis(): JarvisDashboardState {
   }
 
   async function toggleTask(id: string): Promise<void> {
-    const before = tasks;
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))); // optimistic
-    await optimisticWrite(`/api/tasks/${id}/toggle`, "POST", () => setTasks(before));
+    // Toggle is self-inverse, so the rollback is the same operation
+    // again -- applied functionally, to this id only.
+    const flip = () => setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+    flip();
+    await optimisticWrite(`/api/tasks/${id}/toggle`, "POST", flip);
   }
 
   async function deleteTask(id: string): Promise<void> {
-    const before = tasks;
-    setTasks((prev) => prev.filter((t) => t.id !== id)); // optimistic
-    await optimisticWrite(`/api/tasks/${id}`, "DELETE", () => setTasks(before));
+    let removed: TaskItem | undefined;
+    setTasks((prev) => {
+      removed = prev.find((t) => t.id === id);
+      return prev.filter((t) => t.id !== id);
+    });
+    await optimisticWrite(`/api/tasks/${id}`, "DELETE", () =>
+      setTasks((prev) => (removed && !prev.some((t) => t.id === id) ? [...prev, removed] : prev)),
+    );
   }
 
   async function deleteShoppingItem(id: string): Promise<void> {
-    const before = shoppingItems;
-    setShoppingItems((prev) => prev.filter((i) => i.id !== id)); // optimistic
-    await optimisticWrite(`/api/shopping-list/${id}`, "DELETE", () => setShoppingItems(before));
+    let removed: ShoppingItem | undefined;
+    setShoppingItems((prev) => {
+      removed = prev.find((i) => i.id === id);
+      return prev.filter((i) => i.id !== id);
+    });
+    await optimisticWrite(`/api/shopping-list/${id}`, "DELETE", () =>
+      setShoppingItems((prev) => (removed && !prev.some((i) => i.id === id) ? [...prev, removed] : prev)),
+    );
   }
 
   return {
