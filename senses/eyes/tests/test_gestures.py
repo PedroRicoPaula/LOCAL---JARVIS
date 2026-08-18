@@ -3,6 +3,8 @@ CLAUDE.md § 3."""
 
 from __future__ import annotations
 
+import threading
+import time
 from typing import Any
 
 import numpy as np
@@ -651,3 +653,67 @@ def test_hands_to_wire_rounds_coordinates_and_keeps_handedness() -> None:
     wire = hands_to_wire(hands)
 
     assert wire == [{"handedness": "Left", "landmarks": [{"x": 0.1235, "y": 0.9, "z": -0.05}]}]
+
+
+# --- stop() must actually wait (2026-08-17) --------------------------
+# `stop()` only set an Event, so main.py released the camera device
+# while this loop could still be inside `cap.read()` on its own thread.
+# Releasing a cv2.VideoCapture on one thread while another reads it is
+# undefined behaviour in native code -- a crash Python cannot catch.
+# The pre-existing close test passes `spawn=lambda fn: None`, so no real
+# thread ever runs and it could only prove the *signal* was sent.
+#
+# These build a GestureLoop directly rather than via `_loop`, because
+# the point is a REAL thread blocked in a slow read -- the helper
+# supplies its own instant `read_raw_frame`.
+
+
+def _slow_reading_loop(reading: threading.Event) -> GestureLoop:
+    def slow_read() -> Any:
+        reading.set()
+        time.sleep(0.05)  # stands in for being blocked inside cap.read()
+        return np.zeros((4, 4, 3), dtype=np.uint8)
+
+    return GestureLoop(
+        slow_read,
+        FakeHandTracker([()] * 1000),
+        lambda _e: None,
+        mirror=lambda f: f,
+        resize=lambda f, _w: f,
+        encode=lambda _f: "",
+        blurrer_factory=FakeBackgroundBlurrer,
+        pointer_backend_factory=FakePointerBackend,
+        click_trigger_factory=FakeClickTrigger,
+    )
+
+
+def test_stop_with_a_timeout_waits_for_a_real_running_loop_to_exit() -> None:
+    reading = threading.Event()
+    loop = _slow_reading_loop(reading)
+
+    thread = threading.Thread(target=loop.run, daemon=True)
+    thread.start()
+    assert reading.wait(2.0), "the loop never started reading"
+
+    loop.stop(timeout=2.0)
+
+    # The whole point: once stop(timeout=...) returns, the loop is really
+    # done, so it is safe to release the device it was reading from.
+    assert not thread.is_alive(), "stop(timeout=...) returned while the loop was still running"
+
+
+def test_stop_on_a_loop_that_never_ran_returns_immediately() -> None:
+    # A loop created but never spawned has nothing to wait for -- it must
+    # not block for the full timeout.
+    loop = _loop(FakeHandTracker([()]), [])
+    started = time.monotonic()
+    loop.stop(timeout=5.0)
+    assert time.monotonic() - started < 1.0
+
+
+def test_stop_without_a_timeout_still_just_signals() -> None:
+    # The old, non-waiting behaviour is preserved for callers that don't
+    # hold the device -- nothing should regress on them.
+    loop = _loop(FakeHandTracker([()]), [])
+    loop.stop()
+    assert loop.stopped

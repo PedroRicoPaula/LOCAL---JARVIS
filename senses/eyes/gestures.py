@@ -190,9 +190,38 @@ class GestureLoop:
         self._blurrer: BackgroundBlurrer | None = None
         self._blur_enabled = threading.Event()
         self._stop = threading.Event()
+        # Lifecycle, so a caller can wait for the loop to genuinely exit
+        # before touching the camera device it reads from -- see stop().
+        self._started = threading.Event()
+        self._finished = threading.Event()
 
-    def stop(self) -> None:
+    def stop(self, timeout: float | None = None) -> None:
+        """Signals the loop to stop. With `timeout`, also *waits* for it
+        to actually exit.
+
+        Waiting matters for real: `stop()` only sets an Event, so before
+        2026-08-17 `main.py` closed the camera session -- calling
+        `cv2.VideoCapture.release()` -- immediately afterwards, while
+        this loop could still be blocked inside `cap.read()` on its own
+        thread. Releasing a capture device on one thread while another
+        reads from it is undefined behaviour down in OpenCV/AVFoundation:
+        a native crash Python cannot catch, not an exception. The trigger
+        is ordinary -- saying "close the camera" (or an idle timeout
+        firing) while a hand is being tracked.
+
+        Returns as soon as the loop is done, or after `timeout` seconds.
+        A loop that was never started has nothing to wait for and returns
+        immediately rather than blocking for the full timeout.
+        """
         self._stop.set()
+        if timeout is None or not self._started.is_set():
+            return
+        if not self._finished.wait(timeout):
+            # Honest log rather than silence: the caller is about to
+            # release the device anyway (leaking it would be worse), but
+            # this is exactly the window the wait exists to close, so it
+            # should never be invisible.
+            print(f"eyes: gesture loop did not exit within {timeout}s; closing the camera anyway")
 
     @property
     def stopped(self) -> bool:
@@ -248,9 +277,11 @@ class GestureLoop:
     def run(self) -> None:
         """Blocks until stopped or idle-timed-out. `main.py` runs this on
         its own thread."""
+        self._started.set()
         try:
             self._run()
         finally:
+            self._finished.set()
             if self._blurrer is not None:
                 self._blurrer.close()
                 self._blurrer = None

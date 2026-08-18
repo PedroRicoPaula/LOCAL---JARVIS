@@ -40,6 +40,12 @@ TrackerFactory = Callable[[], HandTracker]
 PointerBackendFactory = Callable[[], PointerBackend]
 ClickTriggerFactory = Callable[[], ClickTrigger]
 
+# How long to wait for the gesture loop to exit before releasing the
+# camera. Generous next to one frame's real work (~120ms: ~41ms
+# detection plus the frame budget), bounded so a genuinely wedged
+# `cap.read()` can't hang the daemon's own shutdown.
+GESTURE_STOP_TIMEOUT_S = 2.0
+
 
 def handle_message(
     message: dict[str, Any],
@@ -131,7 +137,11 @@ def handle_message(
         if gestures is not None:
             running = gestures.get()
             if running is not None:
-                running.stop()
+                # Wait for the loop to actually exit before `session.close()`
+                # releases the camera device it reads from -- see
+                # GestureLoop.stop()'s own docstring for the native race
+                # this prevents.
+                running.stop(timeout=GESTURE_STOP_TIMEOUT_S)
                 gestures.set(None)
         cause = message.get("cause", "owner")
         keep_frame_ids = frozenset(message.get("keepFrameIds", []))
@@ -239,7 +249,8 @@ def check_timeouts_forever(
             if gestures is not None:
                 running = gestures.get()
                 if running is not None:
-                    running.stop()
+                    # Same race as the explicit close path above.
+                    running.stop(timeout=GESTURE_STOP_TIMEOUT_S)
                     gestures.set(None)
             session.close(cause)
             emit({"type": "camera.closed", "sessionId": session.id, "cause": cause})
@@ -292,7 +303,7 @@ def main() -> None:
     finally:
         running = gestures.get()
         if running is not None:
-            running.stop()
+            running.stop(timeout=GESTURE_STOP_TIMEOUT_S)
         session = holder.get()
         if session is not None and not session.closed:
             session.close("error")
