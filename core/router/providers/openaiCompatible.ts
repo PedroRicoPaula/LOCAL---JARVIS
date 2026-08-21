@@ -181,7 +181,17 @@ async function* readSseEvents(body: ReadableStream<Uint8Array>): AsyncIterable<s
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        // Flush a final event the server left without its trailing
+        // blank line. Real SSE servers terminate with "\n\n" after
+        // [DONE], so this is belt-and-braces -- but `ollama.ts`'s NDJSON
+        // reader has always flushed its trailing partial line, and a
+        // silent truncation of the last token is not a difference worth
+        // having between two parsers in the same directory (2026-08-17).
+        const rest = buffer.trim();
+        if (rest) yield rest;
+        break;
+      }
       buffer += decoder.decode(value, { stream: true });
       let newlineIndex: number;
       while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
