@@ -563,6 +563,50 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
     `Quantity`/`Measurement` types: those are a real forward contract.
   - Two stale `docs/BACKLOG.md` entries corrected against the code.
   Test count 551 -> 553 TS, 108 Python, `make check` green throughout.
+- **Deep-review pass, 2026-08-17 (ADR-068, ADR-069).** Three
+  `code-reviewer` agents over three disjoint subsystems (`core/memory`,
+  `core/router`, `senses/`), all returning REQUEST CHANGES, plus my own
+  adversarial work on the gate. Every finding re-verified here against
+  running code before being fixed:
+  - **`senses/ipc.py` could be killed by one malformed line.**
+    `json.loads` was unguarded and the exception surfaced from the
+    generator's own `next()`, outside every try/except in both callers.
+    Reproduced: one bad line killed the reader and the next valid
+    message never arrived -- so a single bad byte took down TTS or the
+    whole camera subsystem.
+  - **Portuguese was broken in two subsystems, the same way.** Keyword
+    search shredded accented words (JS `\w` is ASCII-only, so
+    "resistência" returned zero and "não" false-positived onto an
+    unrelated event), and every PT reflex utterance was answered in
+    English. While fixing the second, `\b` turned out to have the same
+    ASCII limitation -- `/\bé tudo\b/` does not match its own literal
+    text. Any regex over user text in this project should be assumed
+    wrong until checked against accented input.
+  - **The reflex lane was unreachable entirely.** `generalConversationReply`
+    hardcodes `converse`, so "para"/"que horas são" were classified
+    reflex correctly and then answered by a *remote model*. Now answered
+    locally and instantly when a rule fires.
+  - **`ears` leaked a file descriptor AND a WAV per utterance** --
+    measured 30/30 over 30 captures. The fd leak was the worse half and
+    was not in the review: `mkstemp` returns `(fd, path)` and the code
+    took only the path. On an always-on daemon that ends in `ears` going
+    deaf.
+  - **Closing the camera raced the gesture thread's `cap.read()`** -- a
+    native crash Python cannot catch. `stop()` now waits.
+  - Four memory-recall defects (ordering, RRF cap, tokenizer, malformed
+    vectors), a `classifyLane` crash on bare `null`, rpm tokens spent on
+    requests refused by the concurrency limiter, and the Gemini key
+    moved out of the URL.
+  - The gate's own security invariants are now *proved* rather than
+    accidentally true (exactly-once execution under a real concurrent
+    double-approve, signature tampering field by field, no cross-request
+    paste). One real gap found doing it: `issuedAt` was unsigned.
+  Test count 563 -> 576 TS, 108 -> 118 Python, `make check` green
+  throughout.
+  **Known, not fixed:** a bare "stop" can still disambiguate to
+  `media.previous_track` -- the documented disambiguation wobble
+  (ADR-038/059), not a new bug. Fixing it risks breaking "stop the
+  music", so it was left rather than guessed at.
 - **Ran the remaining self-run benchmarks as a health check, 2026-08-17:**
   `bench_router_lane.ts` (EN, 45 cases) 97.8%, matches baseline, no
   action. `bench_recall_p95.ts` (local, no network) p95 13.42ms/23.27ms,
