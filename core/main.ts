@@ -42,6 +42,7 @@ import { setupMcpRegistry } from "./mcp/setup.ts";
 import { openDb } from "./memory/db.ts";
 import { Memory } from "./memory/memory.ts";
 import { OllamaProvider } from "./router/providers/ollama.ts";
+import { matchReflex } from "./router/providers/rules.ts";
 import { buildRegistry } from "./router/wiring.ts";
 import { buildSkillContext } from "./skills/context.ts";
 import { AskCancelledError } from "./skills/conversation/cancel.ts";
@@ -307,7 +308,20 @@ async function main(): Promise<void> {
       history.recordThought(thoughtEvent);
 
       let speech: string;
-      if (outcome.outcome === "dispatched") {
+      // A reflex utterance no skill claimed: answer it locally if a real
+      // rule fires. Zero network, zero model, instant -- what SPEC.md
+      // § 3's reflex lane is for. Until 2026-08-17 nothing reached this
+      // lane on the fallback path at all (`generalConversationReply`
+      // hardcodes `converse`), so "para" and "what time is it" took a
+      // full remote round trip. `matchReflex` returns null when no rule
+      // fires, and that falls through to real conversation below --
+      // answering "Got it." to a question the classifier merely guessed
+      // was reflex would be worse than the round trip.
+      const reflexReply = trace.lane === "reflex" && outcome.outcome !== "dispatched" ? matchReflex(text) : null;
+      if (reflexReply !== null) {
+        speech = reflexReply;
+        conversation.say(speech);
+      } else if (outcome.outcome === "dispatched") {
         // The skill already called ctx.say() itself -- don't speak again.
         speech = outcome.result.speech;
       } else {

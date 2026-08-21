@@ -106,6 +106,25 @@ function isPortuguese(utterance: string): boolean {
   return /[ãõçáéíóúâêôàü]/i.test(utterance) || PT_MARKERS.test(normalize(utterance));
 }
 
+/** Exported so `core/main.ts` can answer a reflex-classified utterance
+ * directly, with no model call and no network at all -- which is the
+ * entire point of this lane (SPEC.md § 3) and was not happening.
+ *
+ * Found live 2026-08-17: `generalConversationReply` hardcodes
+ * `lane: "converse"`, and no skill routes an unmatched utterance
+ * anywhere else, so this provider was unreachable on the fallback path.
+ * "para" classified as `reflex` correctly and was then answered by a
+ * remote model over the network -- the opposite of what the lane
+ * exists for, and needless latency on an 8GB machine.
+ *
+ * Returns `null` when no rule fires, deliberately: the caller must then
+ * fall through to real conversation. Answering "Got it." to a genuine
+ * question the classifier merely *guessed* was reflex would be worse
+ * than the extra round trip. */
+export function matchReflex(utterance: string): string | null {
+  return match(utterance);
+}
+
 function match(utterance: string): string | null {
   const normalized = normalize(utterance);
   const pt = isPortuguese(utterance);
