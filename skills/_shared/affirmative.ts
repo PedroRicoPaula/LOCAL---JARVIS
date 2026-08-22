@@ -16,6 +16,8 @@
  * confirmation.
  */
 
+import { normalizeUtterance } from "../../shared/text.ts";
+
 const YES = new Set([
   // English
   "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "please", "do", "go",
@@ -34,19 +36,6 @@ const NO = new Set([
   "negativo", "nem", "nunca",
 ]);
 
-function normalize(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      // Apostrophes are removed, not spaced -- they sit inside a word, so
-      // spacing them turns "don't" into "don t" and it matches nothing.
-      // (The same slip was caught by tests in `socialUtterance.ts`.)
-      .replace(/['`´‘’]/g, "")
-      .replace(/[.,!?;:"]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-  );
-}
 
 /**
  * Returns `"yes"`, `"no"`, or `"unclear"` for a spoken answer.
@@ -58,7 +47,7 @@ function normalize(text: string): string {
  * expensive direction of this mistake.
  */
 export function readAffirmative(answer: string): "yes" | "no" | "unclear" {
-  const words = normalize(answer).split(" ").filter(Boolean);
+  const words = normalizeUtterance(answer).split(" ").filter(Boolean);
   if (words.length === 0) return "unclear";
 
   let sawYes = false;

@@ -16,6 +16,7 @@
  * knows what to do with them.
  */
 
+import { normalizeUtterance } from "../../../shared/text.ts";
 import type { ChatChunk, ChatRequest } from "../../../shared/types.ts";
 import type { ModelProvider, ProviderHealth } from "../provider.ts";
 
@@ -38,21 +39,6 @@ interface Rule {
  * and fell through to a generic English "Got it." Every Portuguese
  * reflex utterance got a wrong-language answer, contradicting ADR-039's
  * bilingual work everywhere else in the stack. */
-/** Accents are stripped before matching, and every pattern below is
- * written unaccented. Two reasons, one of them a bug found while writing
- * these tests: JavaScript's `\b` is defined in terms of `\w`, which is
- * ASCII-only -- so `/\bé tudo\b/` and `/\bestás aí\b/` simply do not
- * match their own literal text, and both silently fell through to the
- * generic fallback. (Exactly the same ASCII-`\w` trap that had broken
- * Portuguese keyword search in `core/memory/keywordSearch.ts`.) It also
- * means real STT output matches whether or not it carried the accents,
- * which it does not always do. */
-function normalize(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
 
 const RULES: Rule[] = [
   {
@@ -103,7 +89,7 @@ const PT_MARKERS =
 /** Checked on the ORIGINAL text for diacritics (a real signal Portuguese
  * was spoken) and on the normalized text for the word list. */
 function isPortuguese(utterance: string): boolean {
-  return /[ãõçáéíóúâêôàü]/i.test(utterance) || PT_MARKERS.test(normalize(utterance));
+  return /[ãõçáéíóúâêôàü]/i.test(utterance) || PT_MARKERS.test(normalizeUtterance(utterance));
 }
 
 /** Exported so `core/main.ts` can answer a reflex-classified utterance
@@ -126,7 +112,7 @@ export function matchReflex(utterance: string): string | null {
 }
 
 function match(utterance: string): string | null {
-  const normalized = normalize(utterance);
+  const normalized = normalizeUtterance(utterance);
   const pt = isPortuguese(utterance);
   for (const rule of RULES) {
     if (rule.pattern.test(normalized)) return pt ? rule.pt(utterance) : rule.en(utterance);

@@ -23,16 +23,8 @@
  * answers and must not. Bilingual per ADR-033.
  */
 
-function normalize(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/['`´‘’]/g, "")
-    .replace(/[.,!?;:"]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+import { normalizeUtterance } from "../../../shared/text.ts";
+
 
 /** Anchored, whole-utterance only. Kept deliberately short: a false
  * positive here throws away a real answer the owner just gave, so only
@@ -49,7 +41,7 @@ const CANCEL_PATTERNS: readonly RegExp[] = [
 /** True when the owner is calling off the question they were just asked,
  * rather than answering it. */
 export function isCancelUtterance(text: string): boolean {
-  const core = normalize(text);
+  const core = normalizeUtterance(text);
   if (!core) return false;
   return CANCEL_PATTERNS.some((p) => p.test(core));
 }

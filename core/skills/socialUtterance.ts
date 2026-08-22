@@ -47,26 +47,8 @@
  * (CLAUDE.md § 7).
  */
 
-/** Lowercase, strip accents, drop surrounding punctuation, collapse
- * whitespace. Accent-stripping matters for real STT output: whisper
- * transcribes PT-PT with accents, but a typed dashboard test-console
- * line often won't have them ("ola", "obrigado"). */
-function normalize(text: string): string {
-  return (
-    text
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      // Apostrophes are *removed*, not spaced -- they sit inside a word
-      // ("how's" -> "hows", "you're" -> "youre"). Replacing them with a
-      // space instead produced "how s it going", which matched nothing;
-      // caught by this module's own tests before it ever shipped.
-      .replace(/['`´‘’]/g, "")
-      .replace(/[.,!?;:¿¡"]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-  );
-}
+import { normalizeUtterance } from "../../shared/text.ts";
+
 
 /** Optional leading/trailing address to JARVIS, plus optional politeness,
  * stripped before matching so "hey jarvis how are you" and "como estas
@@ -127,7 +109,7 @@ const SOCIAL_PATTERNS: readonly RegExp[] = [
  * entirely alone for the normal pipeline to route.
  */
 export function isSocialUtterance(utterance: string): boolean {
-  const core = stripAddress(normalize(utterance));
+  const core = stripAddress(normalizeUtterance(utterance));
   if (!core) return false;
   return SOCIAL_PATTERNS.some((p) => p.test(core));
 }
