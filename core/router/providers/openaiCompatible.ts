@@ -14,6 +14,7 @@
  * and rate-limiting instead.
  */
 
+import { readSseEvents } from "./sse.ts";
 import type { ChatChunk, ChatRequest, CostTier, Lane } from "../../../shared/types.ts";
 import type { ModelProvider, ProviderHealth } from "../provider.ts";
 import { ProviderUnavailableError } from "../provider.ts";
@@ -171,39 +172,3 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   }
 }
 
-/** OpenAI-style SSE: lines prefixed `data: `, blank line between events.
- * Identical to `nim.ts`'s own copy -- not shared as one function across
- * files because it's four lines of parsing, not worth an import for. */
-async function* readSseEvents(body: ReadableStream<Uint8Array>): AsyncIterable<string> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) {
-        // Flush a final event the server left without its trailing
-        // blank line. Real SSE servers terminate with "\n\n" after
-        // [DONE], so this is belt-and-braces -- but `ollama.ts`'s NDJSON
-        // reader has always flushed its trailing partial line, and a
-        // silent truncation of the last token is not a difference worth
-        // having between two parsers in the same directory (2026-08-17).
-        const rest = buffer.trim();
-        if (rest) yield rest;
-        break;
-      }
-      buffer += decoder.decode(value, { stream: true });
-      let newlineIndex: number;
-      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newlineIndex).trim();
-        buffer = buffer.slice(newlineIndex + 1);
-        if (line.startsWith("data:")) {
-          const data = line.slice("data:".length).trim();
-          if (data) yield data;
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
