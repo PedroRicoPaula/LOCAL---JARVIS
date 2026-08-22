@@ -28,25 +28,8 @@ export class Memory {
     this.embedder = embedder;
   }
 
-  static open(path: string, embedder: Embedder): Memory {
-    return new Memory(openDb(path), embedder);
-  }
-
   close(): void {
     this.db.close();
-  }
-
-  /** Appends the event and indexes it (both halves of hybrid recall --
-   * `memory_vec` and `events_fts`) in one step — the two are meant to
-   * always happen together for anything recall should be able to find
-   * later. Use `appendEvent` + `indexEvent` separately when the caller
-   * can't afford to block on indexing before returning (an embedding
-   * call is a real, if usually small, network/model round trip — see
-   * `core/main.ts`'s own fire-and-forget use, CLAUDE.md § 7). */
-  async remember(input: Omit<MemoryEvent, "id" | "ts"> & { ts?: number }): Promise<MemoryEvent> {
-    const event = appendEvent(this.db, input);
-    await this.indexEvent(event);
-    return event;
   }
 
   appendEvent(input: Omit<MemoryEvent, "id" | "ts"> & { ts?: number }): MemoryEvent {

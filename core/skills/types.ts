@@ -122,7 +122,3 @@ export interface Skill {
 // the wire contract, just a shared shape between loader/dispatch/context.
 // ---------------------------------------------------------------------------
 
-export interface RecalledMemory {
-  recentTurns: MemoryEvent[];
-  facts: Fact[];
-}

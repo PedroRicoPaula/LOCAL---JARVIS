@@ -214,34 +214,6 @@ test("a decision arriving after expiry (clock skew) is rejected as expired, not 
   assert.deepEqual(outcome, { ok: false, reason: "expired" });
 });
 
-test("markExecuted only succeeds on an approved request, and logs it", async () => {
-  const gate = freshGate();
-  const action: ProposedAction = { capability: "FS_WRITE", humanSummary: "write", payload: {} };
-
-  const outcomePromise = gate.propose(action, "some-skill");
-  const [request] = gate.listPending();
-  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "approve", decidedAt: Date.now() });
-  await outcomePromise;
-
-  assert.equal(gate.markExecuted(request!.id), true);
-  const audit = auditRows(gate);
-  assert.ok(audit.some((a) => a.event === "executed"));
-
-  // Calling it again (already executed, not approved anymore) must fail.
-  assert.equal(gate.markExecuted(request!.id), false);
-});
-
-test("markExecuted refuses a request that was never approved", async () => {
-  const gate = freshGate();
-  const action: ProposedAction = { capability: "FS_WRITE", humanSummary: "write", payload: {} };
-  const outcomePromise = gate.propose(action, "some-skill");
-  const [request] = gate.listPending();
-  gate.decide({ requestId: request!.id, nonce: request!.nonce, decision: "reject", decidedAt: Date.now() });
-  await outcomePromise;
-
-  assert.equal(gate.markExecuted(request!.id), false);
-});
-
 test("audit_log is genuinely append-only", () => {
   const gate = freshGate();
   const db = (gate as unknown as { db: DatabaseSync }).db;

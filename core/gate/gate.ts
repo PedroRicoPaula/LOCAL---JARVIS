@@ -137,7 +137,7 @@ export class Gate extends EventEmitter {
       diff: action.diff ?? null,
       state: "pending",
     };
-    this.insertApproval(row);
+    insertApproval(this.db, row);
     this.logAudit(id, "created", { capability: action.capability, skillId, humanSummary: action.humanSummary });
     this.emit("approval.new", rowToRequest(row));
 
@@ -242,19 +242,6 @@ export class Gate extends EventEmitter {
     }
   }
 
-  /** Called by an executor once it has verified the signed execution and
-   * actually performed the action -- for a capability with no
-   * `Executor` registered on this `Gate` instance (nothing calls this
-   * automatically for those; `decide()` handles registered ones
-   * itself). Kept for that manual/external path. */
-  markExecuted(id: string): boolean {
-    const row = this.getApprovalRow(id);
-    if (!row || row.state !== "approved") return false;
-    this.setState(id, "executed");
-    this.logAudit(id, "executed", {});
-    return true;
-  }
-
   getApproval(id: string): ApprovalRow | null {
     return this.getApprovalRow(id);
   }
@@ -291,10 +278,6 @@ export class Gate extends EventEmitter {
       this.pending.delete(id);
     }
     entry?.resolve(outcome);
-  }
-
-  private insertApproval(row: ApprovalRow): void {
-    insertApproval(this.db, row);
   }
 
   private getApprovalRow(id: string): ApprovalRow | null {

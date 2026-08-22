@@ -1,18 +1,24 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { openDb } from "../db.ts";
 import { Memory } from "../memory.ts";
 import { FakeEmbedder, ScriptedEmbedder, orthogonalVector } from "./fakes.ts";
 
-test("remember() both appends and indexes -- recall() can find it semantically later", async () => {
+test("appendEvent + indexEvent -- recall() can find it semantically later", async () => {
   const embedder = new ScriptedEmbedder(
     new Map([
       ["I avoid peanuts", orthogonalVector(0)],
       ["what do I avoid eating", orthogonalVector(0)],
     ]),
   );
-  const memory = Memory.open(":memory:", embedder);
+  const memory = new Memory(openDb(":memory:"), embedder);
 
-  await memory.remember({ kind: "utterance", actor: "owner", content: "I avoid peanuts", sessionId: "session-1" });
+  // The pair production actually runs (ADR-034: core/main.ts appends
+  // synchronously and indexes fire-and-forget, so recall never blocks on
+  // an embedding call). A `remember()` convenience that did both existed
+  // until 2026-08-22 and was only ever called by this test.
+  const event = memory.appendEvent({ kind: "utterance", actor: "owner", content: "I avoid peanuts", sessionId: "session-1" });
+  await memory.indexEvent(event);
 
   const ctx = await memory.recall({ sessionId: "session-2", queryText: "what do I avoid eating" });
 
@@ -22,7 +28,7 @@ test("remember() both appends and indexes -- recall() can find it semantically l
 });
 
 test("ROADMAP Phase 4 DoD: three facts told across three sessions, all recalled correctly in a fourth", () => {
-  const memory = Memory.open(":memory:", new FakeEmbedder());
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
 
   // Session 1: owner mentions a dietary restriction.
   const e1 = memory.appendEvent({ kind: "utterance", actor: "owner", content: "I don't eat peanuts", sessionId: "session-1" });
@@ -56,7 +62,7 @@ test("ROADMAP Phase 4 DoD: three facts told across three sessions, all recalled 
 });
 
 test("close() releases the underlying database handle", () => {
-  const memory = Memory.open(":memory:", new FakeEmbedder());
+  const memory = new Memory(openDb(":memory:"), new FakeEmbedder());
   memory.appendEvent({ kind: "note", actor: "system", content: "x" });
   memory.close();
 

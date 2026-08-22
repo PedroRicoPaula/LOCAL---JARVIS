@@ -101,6 +101,19 @@ Nothing leaves this file without becoming a numbered phase in `ROADMAP.md`.
 
 ## Platform
 
+- **`Gate.markExecuted()` existed and was deleted 2026-08-22 -- rebuild it
+  if a real out-of-process executor ever lands.** It marked an approval
+  `executed` for a capability with no `Executor` registered on the `Gate`
+  instance, i.e. the manual/external path SPEC.md § 8's webhook case
+  (ROADMAP Phase 13) would need. Nothing ever called it;
+  `docs/progress/phase-6.md` recorded at the time that it was "built and
+  tested even though nothing calls it", which is CLAUDE.md § 0.6 logged
+  rather than obeyed. Removed with its two tests. It was 6 lines --
+  cheaper to rewrite when there is a real caller than to carry, and the
+  audit-log shape it wrote (`executed`, no approval detail) is recorded
+  here so the rewrite matches.
+
+
 - ~~Bilingual conversation (PT-PT/English), the real implementation
   behind the CLAUDE.md § 0.1 rule change (ADR-033, 2026-08-05)~~ --
   **built 2026-08-06, ADR-039.** Multilingual STT (`whisper` `small`,
