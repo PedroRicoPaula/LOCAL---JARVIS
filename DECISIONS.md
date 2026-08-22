@@ -81,3 +81,4 @@ Format: Context → Decision → Consequences.
 | [ADR-067](docs/decisions/ADR-067.md) | Two defects a code review caught in this session's own fixes |
 | [ADR-068](docs/decisions/ADR-068.md) | Proving the gate's security invariants, and one real gap found doing it |
 | [ADR-069](docs/decisions/ADR-069.md) | Three parallel deep reviews: one crash, one broken language, one broken recall |
+| [ADR-070](docs/decisions/ADR-070.md) | pnpm, and finishing a migration that had been left half-done |

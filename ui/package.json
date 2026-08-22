@@ -1,5 +1,6 @@
 {
   "name": "ui",
+  "packageManager": "pnpm@11.22.0",
   "version": "0.1.0",
   "private": true,
   "scripts": {

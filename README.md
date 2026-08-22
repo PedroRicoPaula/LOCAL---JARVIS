@@ -100,6 +100,26 @@ wrong and got reversed.
 
 Everything below is free. Phase 0 takes about an hour, mostly downloads.
 
+### Dependencies
+
+**Node — pnpm, not npm.** Both `package.json` files pin it via
+`packageManager`, so Corepack refuses npm rather than silently writing a
+second lockfile alongside the committed `pnpm-lock.yaml`.
+
+```bash
+corepack enable            # ships with Node; makes the pin authoritative
+pnpm install               # repo root
+cd ui && pnpm install      # the dashboard is its own project, own lockfile
+```
+
+`ui/pnpm-workspace.yaml` answers pnpm 11's "may this dependency run its
+install script?" prompt. It is `false` for `unrs-resolver` (a transitive
+eslint dependency): its postinstall is a fallback, and the platform
+binary it would fetch already installs as an optionalDependency. Not
+running arbitrary install scripts is the safer default here.
+
+**Python** — see Phase 1 below; `.venv` plus `requirements.txt`.
+
 ### Phase 0 — pick your models
 
 **1. Record the hardware**

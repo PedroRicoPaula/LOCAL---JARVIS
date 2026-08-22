@@ -1,0 +1,14 @@
+# pnpm 11 blocks dependency install scripts by default (supply-chain
+# hardening) and asks per package. `unrs-resolver` is a transitive dep of
+# eslint's import resolver; its postinstall is the standard napi
+# fallback, and the platform binary it would fetch
+# (@unrs/resolver-binding-darwin-arm64) already installs as an
+# optionalDependency. So the script is not needed here, and not running
+# arbitrary install scripts is the safer default for this project
+# (CLAUDE.md § 5's spirit). Verified 2026-08-22 by running the real
+# `pnpm lint` and `pnpm build` with it off.
+#
+# If a future platform ever fails to resolve the binary, the failure is
+# loud (module not found), not silent -- flip this to true then.
+allowBuilds:
+  unrs-resolver: false

@@ -1,8 +1,10 @@
 .PHONY: check bench bench-gate dev install-daemon uninstall-daemon new-skill
 
-# Requires: `npm install` (TypeScript), `ruff` on PATH (brew install ruff),
+# Requires: `pnpm install` (TypeScript), `ruff` on PATH (brew install ruff),
 # .venv set up per requirements.txt (see README.md Phase 1 quickstart), and
-# `npm install` inside ui/ too (Phase 7 -- its own project, own lockfile).
+# `pnpm install` inside ui/ too (Phase 7 -- its own project, own lockfile).
+# pnpm, not npm: both package.json files pin it via `packageManager`, so
+# Corepack refuses npm rather than silently writing a second lockfile.
 # Grows as later phases add real code to check — see ROADMAP.md.
 #
 # bench/**/*.test.ts (added 2026-08-08, bench/_shared/regressionGate.ts)
@@ -17,7 +19,7 @@ check:
 	.venv/bin/pytest senses/ -q
 	node --test 'core/**/*.test.ts' 'skills/**/*.test.ts' 'bench/**/*.test.ts'
 	npx eslint 'skills/**/*.ts' --ignore-pattern 'skills/__fixtures__/**'
-	cd ui && npm run lint && npm run build
+	cd ui && pnpm lint && pnpm build
 
 # nim_smoke.sh takes no arguments. bench_local.py needs model names that
 # depend on what you pulled in `ollama pull` — see README.md Phase 0
@@ -50,7 +52,7 @@ bench-gate:
 # (SPEC.md § 2) and optional at core's own boot (core/main.ts), but Phase
 # 8's plan (Task 1.7) commits to running it here for day-to-day dev and
 # verification -- not installed as a LaunchAgent yet, see
-# launchd/com.jarvis.eyes.plist's own docstring. Requires ui/'s own `npm install` to
+# launchd/com.jarvis.eyes.plist's own docstring. Requires ui/'s own `pnpm install` to
 # have been run once (see ui/README.md).
 # PYTHONUNBUFFERED: without it, stdout is block-buffered whenever it isn't
 # a TTY (piped to a file, captured by a wrapper) and the startup/connect
@@ -70,7 +72,7 @@ dev:
 	.venv/bin/python -m senses.ears.main & \
 	.venv/bin/python -m senses.eyes.main & \
 	node core/main.ts & \
-	(cd ui && npm run dev) & \
+	(cd ui && pnpm dev) & \
 	wait
 
 # Phase 2: run `ears` as a background LaunchAgent instead of via `make dev`
