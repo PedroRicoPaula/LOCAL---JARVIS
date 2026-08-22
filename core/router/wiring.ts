@@ -138,21 +138,41 @@ export async function buildRegistry(): Promise<Registry> {
   // plan for the full reasoning.
   registry.register(nim, ["see"]);
 
+  // ONE instance per API key, registered for both lanes -- the same shape
+  // `nim` above already uses, and for a real reason. Each provider
+  // constructs its own `TokenBucket` and `ConcurrencyLimiter`
+  // (`openaiCompatible.ts`), so building a second instance for the second
+  // lane gave that one account key *two* independent budgets. Measured
+  // 2026-08-22 against the real `GroqProvider`: two instances on one key
+  // allowed 25 + 25 = 50 requests before throttling, against the 25 rpm
+  // ADR-031 documents as the conservative default. Every free-tier limit
+  // here is per *account*, not per lane, so the throttle has to be too.
   if (groqKey) {
-    registry.register(new GroqProvider({ apiKey: groqKey, models: { converse: CONVERSE_GROQ_MODEL } }), ["converse"]);
-    registry.register(new GroqProvider({ apiKey: groqKey, models: { reason: REASON_GROQ_MODEL } }), ["reason"]);
+    registry.register(
+      new GroqProvider({ apiKey: groqKey, models: { converse: CONVERSE_GROQ_MODEL, reason: REASON_GROQ_MODEL } }),
+      ["converse", "reason"],
+    );
   }
   if (mistralKey) {
-    registry.register(new MistralProvider({ apiKey: mistralKey, models: { converse: CONVERSE_MISTRAL_MODEL } }), ["converse"]);
-    registry.register(new MistralProvider({ apiKey: mistralKey, models: { reason: REASON_MISTRAL_MODEL } }), ["reason"]);
+    registry.register(
+      new MistralProvider({ apiKey: mistralKey, models: { converse: CONVERSE_MISTRAL_MODEL, reason: REASON_MISTRAL_MODEL } }),
+      ["converse", "reason"],
+    );
   }
   if (googleKey) {
-    registry.register(new GoogleProvider({ apiKey: googleKey, models: { converse: CONVERSE_GOOGLE_MODEL } }), ["converse"]);
-    registry.register(new GoogleProvider({ apiKey: googleKey, models: { reason: REASON_GOOGLE_MODEL } }), ["reason"]);
+    registry.register(
+      new GoogleProvider({ apiKey: googleKey, models: { converse: CONVERSE_GOOGLE_MODEL, reason: REASON_GOOGLE_MODEL } }),
+      ["converse", "reason"],
+    );
   }
   if (openrouterKey) {
-    registry.register(new OpenRouterProvider({ apiKey: openrouterKey, models: { converse: CONVERSE_OPENROUTER_MODEL } }), ["converse"]);
-    registry.register(new OpenRouterProvider({ apiKey: openrouterKey, models: { reason: REASON_OPENROUTER_MODEL } }), ["reason"]);
+    registry.register(
+      new OpenRouterProvider({
+        apiKey: openrouterKey,
+        models: { converse: CONVERSE_OPENROUTER_MODEL, reason: REASON_OPENROUTER_MODEL },
+      }),
+      ["converse", "reason"],
+    );
   }
 
   registry.register(ollama, ["converse"]);
