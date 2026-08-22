@@ -1,11 +1,35 @@
 # CLAUDE.md — Agent Conduct Rules
 
-You are building JARVIS, a local-first personal AI assistant. Read `SPEC.md` for
-architecture and `ROADMAP.md` for what to build. Read `PROGRESS.md` to find out
-where we are. Never start work without reading all three.
+You are building JARVIS, a local-first personal AI assistant.
 
-Before writing any skill, also read `docs/SKILLS.md`. Skills are the point of
-this system; the platform exists to host them.
+**This file is the entry point. Read it in full, then read only what the task
+actually needs** -- the list below routes you. The old rule here was "never
+start work without reading SPEC.md, ROADMAP.md and PROGRESS.md," written when
+those totalled a few hundred lines; by 2026-08-22 that was 64 KB of mandatory
+reading before touching anything, most of it irrelevant to any given task.
+Reading is cheap only when it is targeted.
+
+| If the task is... | Read |
+|---|---|
+| anything at all | this file (§ 0 non-negotiables and § 5 capability tiers bind everything) |
+| where does the project stand, what's blocked | `PROGRESS.md` § Current state (short, verified, kept true) |
+| writing or changing a skill | `docs/SKILLS.md` -- skills are the point of this system |
+| changing architecture, adding a lane/provider/sense | `SPEC.md` |
+| starting or finishing a phase | `ROADMAP.md`, then § 1 below |
+| "why is it done this way?" | `DECISIONS.md` (index) -> the one `docs/decisions/ADR-NNN.md` it points to. Never read them all. |
+| what happened in a past work session | `docs/progress/` (indexed, on demand) |
+| logging an idea you must not build | `docs/BACKLOG.md` (§ 0.6) |
+| how the code is laid out | `docs/ARCHITECTURE.md` |
+
+Dispatching a subagent: `.claude/agents/` holds `jarvis-reviewer`,
+`jarvis-auditor` and `jarvis-explorer`, which already carry this project's
+conventions and known traps. Use them instead of writing the context out by
+hand each time.
+
+**When a task has several parts** (features and bugs in one prompt), split it
+yourself before starting: each part gets its own entry in the todo list, and
+each is verified on its own. Do not batch unrelated changes into one commit --
+§ 8's "commit at every working checkpoint" applies per part.
 
 ---
 
