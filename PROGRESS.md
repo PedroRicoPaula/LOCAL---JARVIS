@@ -240,6 +240,35 @@ Full detail for each phase now lives under `docs/progress/`, one file per phase 
 ---
 
 ## Known issues
+- **Context and code both restructured, 2026-08-22.** The owner asked
+  for the system to be organised so an agent orients itself cheaply
+  instead of reading everything. Measured first: `CLAUDE.md`'s "never
+  start work without reading all three" meant **~25k tokens** before
+  touching anything. `CLAUDE.md` is now a routing table (read SPEC when
+  architecture changes, ROADMAP at a phase boundary, an ADR only via the
+  index) -- **~4.3k tokens mandatory**. `PROGRESS.md` went 628 -> ~300
+  lines: 254 lines of dated work log had been appended into `## Known
+  issues` by mistake, and `## Current state` carried 93 lines of
+  2026-08-12 history; both moved to `docs/progress/`, verified by
+  reassembling the original text byte-for-byte. `## Current state` also
+  claimed "465 tests green (Python: 50)" against a real 577/118 --
+  exactly the kind of stale fact that makes an agent confidently wrong.
+  New `.claude/agents/` (`jarvis-reviewer`, `jarvis-auditor`,
+  `jarvis-explorer`) carries the project's conventions and known traps so
+  they stop being retyped by hand. **Note:** `.claude/agents/` is read at
+  session start, so new definitions land on the next session.
+  A repo-wide simplification scan then produced six code changes, one of
+  which was a live defect: `wiring.ts` built a **separate provider
+  instance per lane per API key**, and each instance carries its own
+  `TokenBucket`/`ConcurrencyLimiter` -- measured 25 + 25 = 50 rpm against
+  a 25 rpm key, on groq/mistral/google/openrouter. Also: one SSE parser
+  instead of three byte-identical copies, one `normalizeUtterance`
+  instead of four drifted ones (`affirmative.ts` had no accent-stripping
+  and compensated by listing every accented word twice), five dead
+  symbols deleted, and `skills/look` 303 -> 233 lines. ~210 lines net
+  removed, `make check` green throughout.
+
+
 - **`converse` is remote for now, not local.** `SPEC.md` § 1 leads with
   "voice never leaves the machine" — that's no longer true for the
   `converse` lane specifically, because no local model survived this
